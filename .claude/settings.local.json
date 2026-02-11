@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm view:*)",
+      "Bash(npx create-tauri-app:*)",
+      "Bash(cargo search:*)",
+      "Bash(cargo info:*)",
+      "Bash(curl:*)",
+      "Bash(python3:*)",
+      "WebFetch(domain:crates.io)",
+      "Bash(npm install:*)",
+      "Bash(cargo update:*)",
+      "Bash(PATH=\"/home/guibibi/.mediasoup-venv/bin:$PATH\" SQLX_OFFLINE=true cargo check:*)",
+      "Bash(npm run build:*)",
+      "Bash(git add:*)"
+    ]
+  }
+}

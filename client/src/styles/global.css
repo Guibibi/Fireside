@@ -1,0 +1,214 @@
+:root {
+  /* Catppuccin Mocha palette */
+  --crust: #11111b;
+  --mantle: #181825;
+  --base: #1e1e2e;
+  --surface0: #313244;
+  --surface1: #45475a;
+  --surface2: #585b70;
+  --overlay0: #6c7086;
+  --overlay1: #7f849c;
+  --text: #cdd6f4;
+  --subtext0: #a6adc8;
+  --subtext1: #bac2de;
+  --blue: #89b4fa;
+  --green: #a6e3a1;
+  --red: #f38ba8;
+  --peach: #fab387;
+  --lavender: #b4befe;
+
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", "Fira Code", monospace;
+}
+
+*,
+*::before,
+*::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: var(--font-sans);
+  background: var(--base);
+  color: var(--text);
+  line-height: 1.5;
+}
+
+a {
+  color: var(--blue);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  background: var(--blue);
+  color: var(--crust);
+  font-weight: 600;
+}
+
+button:hover {
+  opacity: 0.9;
+}
+
+input {
+  font-family: inherit;
+  border: 1px solid var(--surface1);
+  background: var(--surface0);
+  color: var(--text);
+  padding: 0.5rem 0.75rem;
+  border-radius: 4px;
+  outline: none;
+}
+
+input:focus {
+  border-color: var(--blue);
+}
+
+/* Layout */
+.app-root {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.server-view {
+  display: flex;
+  height: 100%;
+}
+
+.sidebar {
+  width: 72px;
+  background: var(--crust);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0.5rem 0;
+  flex-shrink: 0;
+}
+
+.sidebar-header h2 {
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--subtext0);
+}
+
+.channel-list {
+  width: 240px;
+  background: var(--mantle);
+  padding: 1rem;
+  flex-shrink: 0;
+  overflow-y: auto;
+}
+
+.channel-list h3 {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--subtext0);
+  margin-bottom: 0.5rem;
+}
+
+.main-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.message-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1rem;
+}
+
+.message-input {
+  display: flex;
+  gap: 0.5rem;
+  padding: 1rem;
+  border-top: 1px solid var(--surface0);
+}
+
+.message-input input {
+  flex: 1;
+}
+
+.voice-panel {
+  padding: 0.75rem 1rem;
+  background: var(--mantle);
+  border-top: 1px solid var(--surface0);
+}
+
+.member-list {
+  width: 240px;
+  background: var(--mantle);
+  padding: 1rem;
+  flex-shrink: 0;
+  overflow-y: auto;
+}
+
+.member-list h3 {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--subtext0);
+  margin-bottom: 0.5rem;
+}
+
+/* Auth pages */
+.auth-page {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--crust);
+}
+
+.auth-form {
+  background: var(--base);
+  padding: 2rem;
+  border-radius: 8px;
+  width: 100%;
+  max-width: 400px;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.auth-form h1 {
+  text-align: center;
+  margin-bottom: 0.5rem;
+}
+
+.error {
+  color: var(--red);
+  font-size: 0.875rem;
+}
+
+.placeholder {
+  color: var(--overlay0);
+  font-size: 0.875rem;
+  font-style: italic;
+}
