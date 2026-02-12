@@ -44,7 +44,7 @@ export default function Connect() {
 
       const res = (await response.json()) as ConnectResponse;
       saveAuth(res.token, res.username, url());
-      navigate("/servers/local");
+      navigate("/chat");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to connect");
     }

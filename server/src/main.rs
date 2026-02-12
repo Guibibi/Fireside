@@ -9,10 +9,11 @@ mod ws;
 use axum::Router;
 use config::AppConfig;
 use sqlx::postgres::PgPoolOptions;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-use tokio::sync::RwLock;
+use tokio::sync::{mpsc, RwLock};
 use tower_http::cors::{Any, CorsLayer};
+use uuid::Uuid;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -20,6 +21,8 @@ pub struct AppState {
     pub config: Arc<AppConfig>,
     pub media: Arc<media::MediaService>,
     pub active_usernames: Arc<RwLock<HashSet<String>>>,
+    pub ws_connections: Arc<RwLock<HashMap<Uuid, mpsc::UnboundedSender<String>>>>,
+    pub channel_subscriptions: Arc<RwLock<HashMap<Uuid, Uuid>>>,
 }
 
 #[tokio::main]
@@ -47,6 +50,10 @@ async fn main() {
         .await
         .expect("Failed to run migrations");
 
+    seed_default_channel(&pool)
+        .await
+        .expect("Failed to seed default channel");
+
     let media_service = media::MediaService::new(config.media.worker_count).await;
 
     let state = AppState {
@@ -54,6 +61,8 @@ async fn main() {
         config: config.clone(),
         media: Arc::new(media_service),
         active_usernames: Arc::new(RwLock::new(HashSet::new())),
+        ws_connections: Arc::new(RwLock::new(HashMap::new())),
+        channel_subscriptions: Arc::new(RwLock::new(HashMap::new())),
     };
 
     let cors = CorsLayer::new()
@@ -63,7 +72,6 @@ async fn main() {
 
     let app = Router::new()
         .nest("/api", routes::auth_routes::router())
-        .nest("/api", routes::server_routes::router())
         .nest("/api", routes::channel_routes::router())
         .route("/ws", axum::routing::get(ws::ws_upgrade))
         .layer(cors)
@@ -79,4 +87,24 @@ async fn main() {
         .expect("Failed to bind");
 
     axum::serve(listener, app).await.expect("Server error");
+}
+
+async fn seed_default_channel(pool: &sqlx::PgPool) -> Result<(), sqlx::Error> {
+    let (count,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM channels")
+        .fetch_one(pool)
+        .await?;
+
+    if count == 0 {
+        sqlx::query(
+            "INSERT INTO channels (id, name, kind, position) VALUES ($1, $2, $3::channel_kind, $4)",
+        )
+        .bind(Uuid::new_v4())
+        .bind("general")
+        .bind("text")
+        .bind(0)
+        .execute(pool)
+        .await?;
+    }
+
+    Ok(())
 }

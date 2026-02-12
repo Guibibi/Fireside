@@ -1,9 +1,9 @@
 use axum::{
     extract::{Path, Query, State},
-    routing::{get, post},
+    routing::get,
     Json, Router,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::auth::validate_token;
@@ -28,8 +28,20 @@ pub struct MessageQuery {
     pub limit: Option<i64>,
 }
 
+#[derive(Serialize, sqlx::FromRow)]
+pub struct MessageWithAuthor {
+    pub id: Uuid,
+    pub channel_id: Uuid,
+    pub author_id: Uuid,
+    pub author_username: String,
+    pub content: String,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub edited_at: Option<chrono::DateTime<chrono::Utc>>,
+}
+
 pub fn router() -> Router<AppState> {
     Router::new()
+        .route("/channels", get(get_channels).post(create_channel))
         .route(
             "/channels/{channel_id}",
             get(get_channel).delete(delete_channel),
@@ -38,7 +50,6 @@ pub fn router() -> Router<AppState> {
             "/channels/{channel_id}/messages",
             get(get_messages).post(send_message),
         )
-        .route("/servers/{server_id}/channels", post(create_channel))
 }
 
 fn extract_user_id(headers: &axum::http::HeaderMap, secret: &str) -> Result<String, AppError> {
@@ -69,16 +80,13 @@ async fn lookup_user_id(state: &AppState, username: &str) -> Result<Uuid, AppErr
 async fn create_channel(
     State(state): State<AppState>,
     headers: axum::http::HeaderMap,
-    Path(server_id): Path<Uuid>,
     Json(body): Json<CreateChannelRequest>,
 ) -> Result<Json<Channel>, AppError> {
     let _user_id = extract_user_id(&headers, &state.config.jwt.secret)?;
 
-    let (max_pos,): (i32,) =
-        sqlx::query_as("SELECT COALESCE(MAX(position), -1) FROM channels WHERE server_id = $1")
-            .bind(server_id)
-            .fetch_one(&state.db)
-            .await?;
+    let (max_pos,): (i32,) = sqlx::query_as("SELECT COALESCE(MAX(position), -1) FROM channels")
+        .fetch_one(&state.db)
+        .await?;
     let position = max_pos + 1;
 
     let kind_str = match body.kind {
@@ -87,10 +95,9 @@ async fn create_channel(
     };
 
     let channel: Channel = sqlx::query_as(
-        "INSERT INTO channels (id, server_id, name, kind, position) VALUES ($1, $2, $3, $4::channel_kind, $5) RETURNING *",
+        "INSERT INTO channels (id, name, kind, position) VALUES ($1, $2, $3::channel_kind, $4) RETURNING *",
     )
     .bind(Uuid::new_v4())
-    .bind(server_id)
     .bind(&body.name)
     .bind(kind_str)
     .bind(position)
@@ -98,6 +105,19 @@ async fn create_channel(
     .await?;
 
     Ok(Json(channel))
+}
+
+async fn get_channels(
+    State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
+) -> Result<Json<Vec<Channel>>, AppError> {
+    let _user_id = extract_user_id(&headers, &state.config.jwt.secret)?;
+
+    let channels: Vec<Channel> = sqlx::query_as("SELECT * FROM channels ORDER BY position ASC")
+        .fetch_all(&state.db)
+        .await?;
+
+    Ok(Json(channels))
 }
 
 async fn get_channel(
@@ -136,14 +156,17 @@ async fn get_messages(
     headers: axum::http::HeaderMap,
     Path(channel_id): Path<Uuid>,
     Query(query): Query<MessageQuery>,
-) -> Result<Json<Vec<Message>>, AppError> {
+) -> Result<Json<Vec<MessageWithAuthor>>, AppError> {
     let _user_id = extract_user_id(&headers, &state.config.jwt.secret)?;
     let limit = query.limit.unwrap_or(50).min(100);
 
-    let messages: Vec<Message> = if let Some(before) = query.before {
+    let messages: Vec<MessageWithAuthor> = if let Some(before) = query.before {
         sqlx::query_as(
-            "SELECT * FROM messages WHERE channel_id = $1 AND created_at < (SELECT created_at FROM messages WHERE id = $2)
-             ORDER BY created_at DESC LIMIT $3",
+            "SELECT m.id, m.channel_id, m.author_id, u.username AS author_username, m.content, m.created_at, m.edited_at
+             FROM messages m
+             JOIN users u ON u.id = m.author_id
+             WHERE m.channel_id = $1 AND m.created_at < (SELECT created_at FROM messages WHERE id = $2)
+             ORDER BY m.created_at DESC LIMIT $3",
         )
         .bind(channel_id)
         .bind(before)
@@ -152,7 +175,10 @@ async fn get_messages(
         .await?
     } else {
         sqlx::query_as(
-            "SELECT * FROM messages WHERE channel_id = $1 ORDER BY created_at DESC LIMIT $2",
+            "SELECT m.id, m.channel_id, m.author_id, u.username AS author_username, m.content, m.created_at, m.edited_at
+             FROM messages m
+             JOIN users u ON u.id = m.author_id
+             WHERE m.channel_id = $1 ORDER BY m.created_at DESC LIMIT $2",
         )
         .bind(channel_id)
         .bind(limit)

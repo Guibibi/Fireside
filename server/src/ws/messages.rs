@@ -10,6 +10,15 @@ pub enum ClientMessage {
     #[serde(rename = "send_message")]
     SendMessage { channel_id: Uuid, content: String },
 
+    #[serde(rename = "subscribe_channel")]
+    SubscribeChannel { channel_id: Uuid },
+
+    #[serde(rename = "typing_start")]
+    TypingStart { channel_id: Uuid },
+
+    #[serde(rename = "typing_stop")]
+    TypingStop { channel_id: Uuid },
+
     #[serde(rename = "join_voice")]
     JoinVoice { channel_id: Uuid },
 
@@ -32,14 +41,30 @@ pub enum ServerMessage {
     #[serde(rename = "error")]
     Error { message: String },
 
+    #[serde(rename = "presence_snapshot")]
+    PresenceSnapshot { usernames: Vec<String> },
+
+    #[serde(rename = "user_connected")]
+    UserConnected { username: String },
+
+    #[serde(rename = "user_disconnected")]
+    UserDisconnected { username: String },
+
     #[serde(rename = "new_message")]
     NewMessage {
         id: Uuid,
         channel_id: Uuid,
         author_id: Uuid,
+        author_username: String,
         content: String,
         created_at: String,
     },
+
+    #[serde(rename = "typing_start")]
+    TypingStart { channel_id: Uuid, username: String },
+
+    #[serde(rename = "typing_stop")]
+    TypingStop { channel_id: Uuid, username: String },
 
     #[serde(rename = "voice_joined")]
     VoiceJoined { channel_id: Uuid, user_id: Uuid },

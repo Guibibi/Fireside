@@ -2,116 +2,239 @@
 
 ## Vision
 
-Yankcord is a self-hosted, minimal chat app. One server instance = one community. The server operator sets a server password in config. Clients install the app, point it at the server's URL/IP, enter the password + pick a username, and start chatting. No signup, no accounts, no email — just connect and talk.
+Yankcord is a self-hosted, minimal chat app. One server instance = one community. The server operator sets a server password in config. Clients install the app, point it at the server URL/IP, enter password + username, and start chatting. No signup, no email, no multi-tenant server directory.
+
+## Ground Rules (Important for Scope)
+
+- We ship both sides together for each MVP step: **server API/WS + client UI/state**.
+- JWT identity is `username`-based for MVP; no per-user password.
+- Keep the `users` table for now (stable `author_id` foreign key in `messages`), but remove credential fields.
+- Single-community mode: remove server/guild management from API and UI.
 
 ---
 
 ## Phase 1: Minimal Working Chat (MVP)
 
-Goal: a client can connect to a server, join a channel, and exchange messages with other users in real time.
+Goal: a user can connect, select a channel, load history, and exchange real-time messages with others.
 
-### 1.1 Simplify auth model
-- **Remove** user registration and per-user passwords entirely
-- Server config gets a `SERVER_PASSWORD` env var
-- New endpoint `POST /api/connect` — client sends `{ password, username }`
-  - Validate password matches `SERVER_PASSWORD`
-  - If username is taken by an active connection, reject
-  - Return a JWT containing the username (no user ID needed for now)
-- Remove `password_hash` from users table; the `users` table becomes a lightweight session ledger (username + connected_at) or can be dropped entirely in favor of in-memory tracking
-- **Files:** `server/src/auth.rs`, `server/src/routes/auth_routes.rs`, `server/src/config.rs`, migration
+### 1.1 Simplify authentication
+
+**Server**
+- Add/keep `SERVER_PASSWORD` in config.
+- `POST /api/connect` accepts `{ password, username }`.
+- Validate server password and username constraints.
+- Reject if username is currently connected.
+- Return JWT with username claim.
+- Remove credential field(s) from schema (`password_hash`), keep lightweight user rows.
+
+**Client**
+- Connect form submits `{ serverUrl, password, username }`.
+- Save token, username, and server URL in auth store.
+- Use saved server URL for HTTP + WS base URLs.
 
 ### 1.2 Remove multi-server concept
-- **Remove** `servers` table, `server_members` table, and all server CRUD routes
-- Channels belong directly to the instance (drop `server_id` FK from channels, or keep a single implicit server row)
-- Seed a `#general` channel on first startup if none exist
-- **Remove** `server_routes.rs`, simplify `channel_routes.rs`
-- **Files:** migration, `server/src/routes/server_routes.rs` (delete), `server/src/routes/channel_routes.rs`, `server/src/models.rs`
 
-### 1.3 Connect screen (client)
-- Replace Login + Register pages with a single **Connect** page
-- Fields: **Server URL** (e.g. `http://192.168.1.50:3000`), **Password**, **Username**
-- On success: save JWT + server URL to auth store, navigate to main chat view
-- **Remove** `pages/Register.tsx`, repurpose `pages/Login.tsx` → `pages/Connect.tsx`
-- Update `api/http.ts` to use the saved server URL as base instead of hardcoded localhost
-- **Files:** `client/src/pages/Connect.tsx`, `client/src/stores/auth.ts`, `client/src/api/http.ts`, `client/src/index.tsx`
+**Server**
+- Remove server CRUD/member routes and server-scoped channel endpoints.
+- Drop `servers` and `server_members` tables.
+- Make channels instance-scoped (no `server_id`).
+- Seed `#general` if no channels exist.
 
-### 1.4 Simplify layout
-- Remove `Sidebar.tsx` (no server list needed — you're connected to one server)
-- Layout becomes 3-column: **ChannelList | MessageArea | MemberList**
-- **Files:** `client/src/pages/ServerView.tsx` → rename to `Chat.tsx`, `client/src/components/Sidebar.tsx` (delete)
+**Client**
+- Remove server-centric routing/props (`serverId`) from chat flow.
+- Update API calls to non-server-scoped endpoints (`/api/channels`, etc.).
 
-### 1.5 Wire up channels
-- `ChannelList` fetches channels from `GET /api/channels` and renders them
-- Clicking a channel sets it as active (SolidJS signal)
-- Highlight the active channel
-- **Files:** `client/src/components/ChannelList.tsx`, `server/src/routes/channel_routes.rs`
+### 1.3 Finalize connect flow and routes
 
-### 1.6 Wire up messaging
-- **REST (history):** `GET /api/channels/:id/messages` — fetch past messages on channel select
-- **WebSocket (real-time):**
-  - Client sends `subscribe_channel { channel_id }` when switching channels
-  - Client sends `send_message { channel_id, content }`
-  - Server persists message to DB AND broadcasts `new_message` to all subscribers of that channel
-  - Track channel subscriptions per WS connection in a shared map (`Arc<RwLock<HashMap<ChannelId, HashSet<UserId>>>>`)
-- **MessageArea:** render message list, input box, auto-scroll on new messages
-- **Files:** `server/src/ws/handler.rs`, `server/src/ws/messages.rs`, `client/src/components/MessageArea.tsx`, `client/src/api/ws.ts`
+**Server**
+- Ensure `/api/connect` is the only auth entrypoint for MVP.
 
-### 1.7 Wire up member list
-- Track connected usernames via WebSocket connection state (shared map)
-- `MemberList` shows all currently connected users
-- Broadcast `user_connected` / `user_disconnected` on WS connect/disconnect
-- **Files:** `server/src/ws/handler.rs`, `client/src/components/MemberList.tsx`
+**Client**
+- Keep a single Connect page.
+- Route unauthenticated users to Connect; authenticated users to chat.
+- Remove stale `/login` and `/register` route aliases.
+
+### 1.4 Simplify chat layout
+
+**Server**
+- No API changes required.
+
+**Client**
+- Remove `Sidebar` (no server list).
+- Use 3-column layout: `ChannelList | MessageArea | MemberList`.
+- Rename `ServerView` to `Chat` (or equivalent) and update router imports.
+
+### 1.5 Wire channels end-to-end
+
+**Server**
+- `GET /api/channels` returns all channels ordered by position.
+
+**Client**
+- `ChannelList` fetches channels, renders list, tracks active channel.
+- Clicking a channel updates active channel state and highlight.
+
+### 1.6 Wire messaging end-to-end
+
+**Server**
+- REST history: `GET /api/channels/:id/messages`.
+- WS events:
+  - Client -> server: `subscribe_channel`, `send_message`.
+  - Server -> client: `new_message`.
+- Persist messages before broadcast.
+- Track subscriptions by **connection id** (not user id) to support reconnects and future multi-tab behavior.
+- Include enough author data in outbound message payload to render UI without extra round trips.
+
+**Client**
+- On channel switch: fetch history + send `subscribe_channel`.
+- On submit: send `send_message` via WS.
+- Render message list and input; auto-scroll on new messages.
+
+### 1.7 Wire member list end-to-end
+
+**Server**
+- Track connected usernames from authenticated WS sessions.
+- Emit `presence_snapshot` on auth success.
+- Emit `user_connected` / `user_disconnected` on join/leave.
+
+**Client**
+- `MemberList` consumes presence events and displays connected users.
 
 ---
 
 ## Phase 2: Real-Time Polish
 
 ### 2.1 Typing indicators
-- `typing_start` / `typing_stop` WS messages
-- Show "X is typing..." in MessageArea
-- Auto-expire after 3s timeout
+- WS events: `typing_start` / `typing_stop`.
+- Show `X is typing...` in message area.
+- Client-side auto-expire typing state after 3s.
 
-### 2.2 Message editing & deletion
-- `PATCH /api/messages/:id` and `DELETE /api/messages/:id` (author-only by username match)
-- WS broadcast `message_edited` / `message_deleted`
-- Inline edit UI in MessageArea
+### 2.2 Message edit/delete
+- REST: `PATCH /api/messages/:id`, `DELETE /api/messages/:id` (author-only by username ownership).
+- WS broadcast: `message_edited`, `message_deleted`.
+- Inline edit/delete controls in message UI.
 
 ### 2.3 Channel management
-- Create/delete channels (anyone for now, admin-only later)
-- WS broadcast `channel_created` / `channel_deleted` so all clients update in real time
+- REST: create/delete channels.
+- WS broadcast: `channel_created`, `channel_deleted`.
+- Live channel list updates on all clients.
 
 ---
 
 ## Phase 3: Voice & Video (future)
 
-- WebRTC via mediasoup
-- Voice channels using existing `media/` module stubs
-- VoicePanel component
+- Reuse mediasoup infrastructure already in `server/src/media`.
+- Add practical voice-channel flow and membership signaling.
+- Integrate client voice panel with real transports/producers/consumers.
 
 ---
 
 ## Phase 4: Hardening (future)
 
-- Admin role (server operator can set via config or special token)
-- Rate limiting
-- Input validation & message length limits
-- Kick/ban users
+- Server operator/admin role.
+- Rate limiting and abuse controls.
+- Stronger validation (length, charset, payload sizes).
+- Kick/ban and moderation actions.
 
 ---
 
-## File Reference
-
-Key files to create/modify/delete per step:
+## File Map (Primary Touch Points)
 
 | Step | Server | Client |
 |------|--------|--------|
-| 1.1 | `auth.rs`, `routes/auth_routes.rs`, `config.rs`, new migration | — |
-| 1.2 | Delete `routes/server_routes.rs`, update `channel_routes.rs`, `models.rs`, new migration | — |
-| 1.3 | — | New `pages/Connect.tsx`, delete `Register.tsx`, update `stores/auth.ts`, `api/http.ts`, `index.tsx` |
-| 1.4 | — | Rename `ServerView.tsx` → `Chat.tsx`, delete `Sidebar.tsx` |
-| 1.5 | Update `channel_routes.rs` (list all channels endpoint) | `components/ChannelList.tsx` |
-| 1.6 | `ws/handler.rs`, `ws/messages.rs` (broadcast + persist + subscriptions) | `components/MessageArea.tsx`, `api/ws.ts` |
-| 1.7 | `ws/handler.rs` (connection tracking) | `components/MemberList.tsx` |
-| 2.1 | `ws/messages.rs`, `ws/handler.rs` | `components/MessageArea.tsx` |
-| 2.2 | New message routes or update `channel_routes.rs` | `components/MessageArea.tsx` |
-| 2.3 | `channel_routes.rs`, `ws/messages.rs` | `components/ChannelList.tsx` |
+| 1.1 | `server/src/config.rs`, `server/src/auth.rs`, `server/src/routes/auth_routes.rs`, migration(s) | `client/src/pages/Connect.tsx`, `client/src/stores/auth.ts`, `client/src/api/http.ts`, `client/src/api/ws.ts` |
+| 1.2 | `server/src/main.rs`, `server/src/routes/server_routes.rs` (delete), `server/src/routes/channel_routes.rs`, `server/src/models.rs`, migration(s) | `client/src/index.tsx`, `client/src/pages/ServerView.tsx` (or replacement), channel/member components |
+| 1.3 | auth route cleanup | `client/src/index.tsx`, connect redirects/guards |
+| 1.4 | — | `client/src/pages/ServerView.tsx` -> `client/src/pages/Chat.tsx` (or equivalent), `client/src/components/Sidebar.tsx` (delete) |
+| 1.5 | `server/src/routes/channel_routes.rs` | `client/src/components/ChannelList.tsx` |
+| 1.6 | `server/src/ws/messages.rs`, `server/src/ws/handler.rs`, `server/src/routes/channel_routes.rs` | `client/src/api/ws.ts`, `client/src/components/MessageArea.tsx` |
+| 1.7 | `server/src/ws/messages.rs`, `server/src/ws/handler.rs` | `client/src/components/MemberList.tsx` |
+| 2.x | channel/message/ws route handlers | message/channel UI components |
+
+---
+
+## Implementation Checklist (Execution Order)
+
+Use this as the working checklist while coding. Every MVP step includes both server and client tasks.
+
+### MVP 1.1 - Simplify authentication
+
+- [x] **Server:** Ensure `SERVER_PASSWORD` exists in config loading + docs.
+- [x] **Server:** Keep `POST /api/connect` as `{ password, username }` and validate:
+  - [x] password matches server config
+  - [x] username length/format is valid
+  - [x] username is not already in active connection set
+- [x] **Server:** Keep/create lightweight user row for username if missing.
+- [x] **Server:** JWT contains username claim and works for REST + WS auth.
+- [x] **Server:** Migration removes `users.password_hash` and leaves schema valid.
+- [x] **Client:** Connect page sends server URL, password, username.
+- [x] **Client:** Save token + username + normalized server URL in auth store.
+- [x] **Client:** HTTP and WS base URLs come from saved server URL.
+- [x] **Verify:** Connect succeeds with correct password and fails with wrong password.
+
+### MVP 1.2 - Remove multi-server model
+
+- [x] **Server:** Delete server CRUD/member routes from router and module exports.
+- [x] **Server:** Migration drops `servers` and `server_members` safely.
+- [x] **Server:** Migration removes `channels.server_id` and updates constraints/indexes.
+- [x] **Server:** Add startup seed to ensure at least one `general` text channel exists.
+- [x] **Client:** Remove `serverId` dependencies from route params and components.
+- [x] **Client:** Update API calls from server-scoped endpoints to instance-scoped endpoints.
+- [x] **Verify:** App works without any `/servers/:id/*` path assumptions.
+
+### MVP 1.3 - Finalize connect route flow
+
+- [x] **Server:** Keep `/api/connect` as the only MVP auth entrypoint.
+- [x] **Client:** Keep only Connect page in routing flow.
+- [x] **Client:** Remove `/login` and `/register` aliases and stale redirects.
+- [x] **Client:** Add simple route guard: unauthenticated -> Connect, authenticated -> chat.
+- [x] **Verify:** Refresh keeps session; logout returns to Connect.
+
+### MVP 1.4 - Simplify chat layout
+
+- [x] **Client:** Remove `Sidebar` component usage and file if unused.
+- [x] **Client:** Rename `ServerView` to `Chat` (or equivalent) and update imports/routes.
+- [x] **Client:** Render 3-column layout: `ChannelList | MessageArea | MemberList`.
+- [x] **Verify:** Layout is usable at common desktop and narrow widths.
+
+### MVP 1.5 - Wire channels end-to-end
+
+- [x] **Server:** Add/confirm `GET /api/channels` returns channels ordered by position.
+- [x] **Client:** `ChannelList` fetches and renders channels from `/api/channels`.
+- [x] **Client:** Clicking channel updates active channel signal/store.
+- [x] **Client:** Active channel visual state is clearly highlighted.
+- [x] **Verify:** Channel list loads after connect and channel switching updates selection.
+
+### MVP 1.6 - Wire messaging end-to-end
+
+- [x] **Server REST:** `GET /api/channels/:id/messages` returns recent history.
+- [x] **Server WS:** Add `subscribe_channel` client event.
+- [x] **Server WS:** `send_message` validates content, persists message, then broadcasts `new_message` to current channel subscribers.
+- [x] **Server WS:** Track subscriptions by connection id.
+- [x] **Server WS:** `new_message` payload includes `author_username` (or equivalent display-ready author field).
+- [x] **Client:** On channel select, fetch history and send WS `subscribe_channel`.
+- [x] **Client:** On message submit, send WS `send_message` and clear input.
+- [x] **Client:** Render history + realtime messages in one list and auto-scroll on new items.
+- [x] **Verify:** Two clients in same channel see real-time messages; other channels do not.
+
+### MVP 1.7 - Wire member list end-to-end
+
+- [x] **Server WS:** Maintain connected authenticated usernames.
+- [x] **Server WS:** Send `presence_snapshot` after successful WS auth.
+- [x] **Server WS:** Broadcast `user_connected` and `user_disconnected` events.
+- [x] **Client:** `MemberList` initializes from snapshot and updates on presence events.
+- [x] **Verify:** Member list updates when another client connects/disconnects.
+
+### MVP Exit Criteria
+
+- [x] User can connect from a fresh client using server URL + password + username.
+- [x] User can select channels and load message history.
+- [x] User can send and receive real-time messages across multiple clients.
+- [x] User can see currently connected members in real time.
+- [x] No remaining runtime path uses deleted multi-server API/UI assumptions.
+- [x] Server and client build successfully.
+
+### Verification Commands
+
+- [x] Server: `cd server && cargo test`
+- [x] Server: `cd server && cargo build`
+- [x] Client: `cd client && npm run build`
