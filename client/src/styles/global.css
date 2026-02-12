@@ -76,6 +76,20 @@ input {
   outline: none;
 }
 
+select {
+  font-family: inherit;
+  border: 1px solid var(--surface1);
+  background: var(--surface0);
+  color: var(--text);
+  padding: 0.5rem 0.75rem;
+  border-radius: 4px;
+  outline: none;
+}
+
+select:focus {
+  border-color: var(--blue);
+}
+
 input:focus {
   border-color: var(--blue);
 }
@@ -126,6 +140,74 @@ input:focus {
   color: var(--subtext1);
   font-weight: 500;
   text-align: left;
+}
+
+.channel-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.channel-badge {
+  min-width: 1.2rem;
+  height: 1.2rem;
+  border-radius: 999px;
+  padding: 0 0.35rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--crust);
+  background: var(--peach);
+}
+
+.channel-badge.is-pulsing {
+  animation: channel-badge-pulse 420ms ease-out;
+}
+
+@keyframes channel-badge-pulse {
+  0% {
+    transform: scale(1);
+  }
+  35% {
+    transform: scale(1.18);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.channel-row {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.channel-delete {
+  background: transparent;
+  color: var(--overlay1);
+  padding: 0.35rem 0.45rem;
+  border-radius: 4px;
+  min-width: 1.9rem;
+}
+
+.channel-delete:hover {
+  background: var(--surface0);
+  color: var(--red);
+  opacity: 1;
+}
+
+.channel-create {
+  margin-top: 0.9rem;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.channel-create button {
+  width: 100%;
 }
 
 .channel-item:hover {
@@ -198,10 +280,52 @@ input:focus {
   color: var(--overlay0);
 }
 
+.message-edited {
+  font-size: 0.72rem;
+  color: var(--overlay1);
+}
+
+.message-actions {
+  display: inline-flex;
+  gap: 0.3rem;
+  margin-left: 0.2rem;
+}
+
+.message-action {
+  padding: 0.1rem 0.4rem;
+  background: transparent;
+  color: var(--overlay1);
+  font-weight: 500;
+  font-size: 0.72rem;
+}
+
+.message-action:hover {
+  opacity: 1;
+  color: var(--text);
+}
+
+.message-action-danger:hover {
+  color: var(--red);
+}
+
 .message-content {
   color: var(--subtext1);
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.message-edit {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.message-edit input {
+  flex: 1;
+}
+
+.message-edit button {
+  padding: 0.35rem 0.55rem;
 }
 
 .message-input {
@@ -330,4 +454,23 @@ input:focus {
   color: var(--overlay0);
   font-size: 0.875rem;
   font-style: italic;
+}
+
+.toast {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 1000;
+  max-width: min(26rem, calc(100vw - 2rem));
+  padding: 0.65rem 0.85rem;
+  border-radius: 8px;
+  border: 1px solid var(--surface1);
+  background: var(--base);
+  color: var(--text);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.32);
+}
+
+.toast-error {
+  border-color: var(--red);
+  color: var(--red);
 }

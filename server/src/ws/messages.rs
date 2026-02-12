@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::models::Channel;
+
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type")]
 pub enum ClientMessage {
@@ -59,6 +61,26 @@ pub enum ServerMessage {
         content: String,
         created_at: String,
     },
+
+    #[serde(rename = "message_edited")]
+    MessageEdited {
+        id: Uuid,
+        channel_id: Uuid,
+        content: String,
+        edited_at: String,
+    },
+
+    #[serde(rename = "message_deleted")]
+    MessageDeleted { id: Uuid, channel_id: Uuid },
+
+    #[serde(rename = "channel_created")]
+    ChannelCreated { channel: Channel },
+
+    #[serde(rename = "channel_deleted")]
+    ChannelDeleted { id: Uuid },
+
+    #[serde(rename = "channel_activity")]
+    ChannelActivity { channel_id: Uuid },
 
     #[serde(rename = "typing_start")]
     TypingStart { channel_id: Uuid, username: String },

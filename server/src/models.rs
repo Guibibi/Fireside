@@ -12,13 +12,14 @@ pub struct User {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, sqlx::Type)]
+#[serde(rename_all = "lowercase")]
 #[sqlx(type_name = "channel_kind", rename_all = "lowercase")]
 pub enum ChannelKind {
     Text,
     Voice,
 }
 
-#[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Serialize, Deserialize, Clone, sqlx::FromRow)]
 pub struct Channel {
     pub id: Uuid,
     pub name: String,

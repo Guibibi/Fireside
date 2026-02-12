@@ -104,19 +104,22 @@ Goal: a user can connect, select a channel, load history, and exchange real-time
 ## Phase 2: Real-Time Polish
 
 ### 2.1 Typing indicators
-- WS events: `typing_start` / `typing_stop`.
-- Show `X is typing...` in message area.
-- Client-side auto-expire typing state after 3s.
+- [x] WS events: `typing_start` / `typing_stop`.
+- [x] Show `X is typing...` in message area.
+- [x] Client-side auto-expire typing state after 3s.
 
 ### 2.2 Message edit/delete
-- REST: `PATCH /api/messages/:id`, `DELETE /api/messages/:id` (author-only by username ownership).
-- WS broadcast: `message_edited`, `message_deleted`.
-- Inline edit/delete controls in message UI.
+- [x] REST: `PATCH /api/messages/:id`, `DELETE /api/messages/:id` (author-only by username ownership).
+- [x] WS broadcast: `message_edited`, `message_deleted`.
+- [x] Inline edit/delete controls in message UI.
 
 ### 2.3 Channel management
-- REST: create/delete channels.
-- WS broadcast: `channel_created`, `channel_deleted`.
-- Live channel list updates on all clients.
+- [x] REST: create/delete channels.
+- [x] WS broadcast: `channel_created`, `channel_deleted`.
+- [x] Live channel list updates on all clients.
+- [x] Global `channel_activity` event added for unread badges without cross-channel message leakage.
+- [x] Channel delete guard prevents deleting the last text channel, with atomic transaction + lock.
+- [x] Non-blocking client error toast for channel action failures.
 
 ---
 
@@ -237,4 +240,9 @@ Use this as the working checklist while coding. Every MVP step includes both ser
 
 - [x] Server: `cd server && cargo test`
 - [x] Server: `cd server && cargo build`
+- [x] Client: `cd client && npm run build`
+
+### Phase 2 Verification Commands
+
+- [x] Server: `cd server && cargo check`
 - [x] Client: `cd client && npm run build`

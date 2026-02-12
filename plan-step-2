@@ -1,0 +1,222 @@
+# Step 2 Implementation Plan (Server + Client)
+
+## Goal
+
+Deliver Phase 2 real-time polish across both backend and frontend:
+
+- 2.1 Typing indicators
+- 2.2 Message edit/delete
+- 2.3 Channel management (create/delete + live updates)
+
+## Current Baseline (from code)
+
+- 2.1 Typing indicators is mostly implemented already in:
+  - `server/src/ws/messages.rs`
+  - `server/src/ws/handler.rs`
+  - `client/src/api/ws.ts`
+  - `client/src/components/MessageArea.tsx`
+- 2.2 Message edit/delete is not implemented yet (REST + WS + UI missing).
+- 2.3 Channel create/delete REST exists in `server/src/routes/channel_routes.rs`, but WS broadcasts and client live updates are not implemented yet.
+
+---
+
+## 2.1 Typing Indicators (Finalize + Verify)
+
+### Server
+- [ ] Confirm `typing_start` / `typing_stop` are only forwarded to subscribers of the same channel.
+- [ ] Confirm sender is excluded for typing broadcasts.
+- [ ] Keep behavior stateless server-side (client auto-expiry remains source of truth).
+
+### Client
+- [ ] Keep existing debounce-based `typing_start`/`typing_stop` behavior.
+- [ ] Keep 3s auto-expire timers for remote typing users.
+- [ ] Ensure typing users are cleared on channel switch and component cleanup.
+
+### Verify
+- [ ] Two clients in same channel: typing indicator appears/disappears correctly.
+- [ ] Typing does not appear in other channels.
+- [ ] Indicator self-cleans on disconnect/channel switch.
+
+---
+
+## 2.2 Message Edit/Delete
+
+## API + WS Contract Additions
+
+### REST
+- [ ] Add `PATCH /api/messages/:id` with body `{ content }`.
+- [ ] Add `DELETE /api/messages/:id`.
+
+### WS Server Events
+- [ ] Add `message_edited` payload:
+  - `id`, `channel_id`, `content`, `edited_at`
+- [ ] Add `message_deleted` payload:
+  - `id`, `channel_id`
+
+## Server Tasks
+
+### Routes and ownership checks
+- [ ] Extend routing (likely in `server/src/routes/channel_routes.rs`) with:
+  - `PATCH /messages/{message_id}`
+  - `DELETE /messages/{message_id}`
+- [ ] Resolve caller username from bearer token (existing auth helper pattern).
+- [ ] Enforce author-only mutation:
+  - message author username must equal JWT username.
+- [ ] Validate edited content:
+  - trimmed length in `[1, 4000]`.
+
+### DB updates
+- [ ] `PATCH` updates:
+  - `content = $new_content`
+  - `edited_at = now()`
+- [ ] `DELETE` removes the message row by id.
+
+### Broadcasting
+- [ ] Broadcast `message_edited` and `message_deleted` to subscribers of that message's `channel_id`.
+- [ ] Refactor WS broadcast helpers so REST handlers can reuse channel broadcast logic (shared helper/module instead of ws-handler-local function).
+
+### Error handling
+- [ ] 404 when message does not exist.
+- [ ] 403/401-equivalent on ownership violation.
+- [ ] 400 for invalid content.
+
+## Client Tasks
+
+### WS and HTTP client
+- [ ] Extend `client/src/api/ws.ts` `ServerMessage` union:
+  - `message_edited`
+  - `message_deleted`
+- [ ] Add `patch` helper in `client/src/api/http.ts`.
+
+### Message UI
+- [ ] In `client/src/components/MessageArea.tsx`:
+  - show edit/delete controls for own messages only (`author_username === username()`).
+  - inline edit mode with save/cancel.
+  - delete action with minimal confirmation UX.
+- [ ] Submit edits via REST `PATCH /messages/:id`.
+- [ ] Submit deletes via REST `DELETE /messages/:id`.
+- [ ] Apply incoming WS updates to local message list:
+  - edit -> update content + edited metadata
+  - delete -> remove message by id
+
+### UX details
+- [ ] Show "(edited)" marker when `edited_at` exists.
+- [ ] Disable edit/send actions while request is in-flight.
+- [ ] Preserve auto-scroll behavior for new messages.
+
+### Verify
+- [ ] Author can edit/delete own message.
+- [ ] Non-author cannot edit/delete (server-enforced).
+- [ ] All connected clients see edits/deletes in real time.
+- [ ] No duplicate entries or stale ghost messages after updates.
+
+---
+
+## 2.3 Channel Management (Live)
+
+## API + WS Contract Additions
+
+### REST (existing)
+- [ ] Continue using:
+  - `POST /api/channels`
+  - `DELETE /api/channels/:id`
+
+### WS Server Events
+- [ ] Add `channel_created` payload with channel object.
+- [ ] Add `channel_deleted` payload with `{ id }` (optionally include deleted active replacement hint if added later).
+
+## Server Tasks
+
+### Create/Delete hardening
+- [ ] Validate channel name (trimmed, non-empty, reasonable max length).
+- [ ] Keep deterministic `position` assignment on create.
+- [ ] Delete channel by id; return not-found for invalid id.
+
+### Broadcasting + cleanup
+- [ ] On create success, broadcast `channel_created` globally.
+- [ ] On delete success, broadcast `channel_deleted` globally.
+- [ ] Remove channel subscriptions for deleted channel from `channel_subscriptions`.
+
+### Optional guardrails (decision point)
+- [ ] Decide whether to block deleting the last text channel.
+  - Recommended: block deleting the last text channel to keep chat usable.
+
+## Client Tasks
+
+### Channel list live sync
+- [ ] Extend `client/src/api/ws.ts` `ServerMessage` union:
+  - `channel_created`
+  - `channel_deleted`
+- [ ] Update `client/src/components/ChannelList.tsx`:
+  - maintain live channel list updates from WS
+  - add UI to create channel
+  - add UI to delete channel (minimal confirm)
+- [ ] Keep active channel valid:
+  - if active channel deleted, select first available channel or `null`.
+
+### Cross-component behavior
+- [ ] Ensure `MessageArea` reacts safely when active channel becomes `null` or switches due to deletion.
+- [ ] Ensure `MemberList` unaffected by channel CRUD events.
+
+### Verify
+- [ ] Creating channel in client A appears in client B without refresh.
+- [ ] Deleting channel in client A removes it in client B without refresh.
+- [ ] Active channel fallback works after deletion.
+
+---
+
+## Implementation Order (Recommended)
+
+1. [ ] Extract/reuse WS broadcast utilities so both WS handler and REST routes can broadcast events.
+2. [ ] Add WS message types (`message_edited`, `message_deleted`, `channel_created`, `channel_deleted`) server + client.
+3. [ ] Implement server REST for message edit/delete with ownership checks.
+4. [ ] Implement client message edit/delete UI and wire REST + WS handling.
+5. [ ] Add server channel create/delete WS broadcasts + subscription cleanup.
+6. [ ] Implement client channel management UI and live list syncing.
+7. [ ] Run verification matrix with two clients connected.
+
+---
+
+## Verification Matrix
+
+### Automated
+- [ ] `cd server && cargo test`
+- [ ] `cd server && cargo build`
+- [ ] `cd client && npm run build`
+
+### Manual realtime checks
+- [ ] Open two clients, same channel:
+  - typing indicator behavior
+  - message edit propagation
+  - message delete propagation
+  - channel create propagation
+  - channel delete propagation
+- [ ] Open two clients, different channels:
+  - channel-scoped events remain scoped where expected
+
+---
+
+## Primary Touch Points
+
+### Server
+- `server/src/ws/messages.rs`
+- `server/src/ws/handler.rs`
+- `server/src/routes/channel_routes.rs` (or split out message routes if preferred)
+- `server/src/main.rs` (if route/module registration changes)
+
+### Client
+- `client/src/api/ws.ts`
+- `client/src/api/http.ts`
+- `client/src/components/MessageArea.tsx`
+- `client/src/components/ChannelList.tsx`
+- `client/src/stores/chat.ts` (if channel list state becomes shared)
+
+---
+
+## Exit Criteria for Step 2
+
+- [ ] Typing indicators are stable and channel-scoped.
+- [ ] Message edit/delete works with author-only server enforcement.
+- [ ] Edit/delete events sync live across connected clients.
+- [ ] Channel create/delete updates all clients in real time.
+- [ ] Server and client build successfully.

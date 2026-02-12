@@ -9,6 +9,8 @@ use uuid::Uuid;
 use crate::auth::validate_token;
 use crate::errors::AppError;
 use crate::models::{Channel, ChannelKind, Message};
+use crate::ws::broadcast::{broadcast_channel_message, broadcast_global_message, remove_channel_subscribers};
+use crate::ws::messages::ServerMessage;
 use crate::AppState;
 
 #[derive(Deserialize)]
@@ -19,6 +21,11 @@ pub struct CreateChannelRequest {
 
 #[derive(Deserialize)]
 pub struct SendMessageRequest {
+    pub content: String,
+}
+
+#[derive(Deserialize)]
+pub struct EditMessageRequest {
     pub content: String,
 }
 
@@ -50,9 +57,13 @@ pub fn router() -> Router<AppState> {
             "/channels/{channel_id}/messages",
             get(get_messages).post(send_message),
         )
+        .route(
+            "/messages/{message_id}",
+            axum::routing::patch(edit_message).delete(delete_message),
+        )
 }
 
-fn extract_user_id(headers: &axum::http::HeaderMap, secret: &str) -> Result<String, AppError> {
+fn extract_username(headers: &axum::http::HeaderMap, secret: &str) -> Result<String, AppError> {
     let header = headers
         .get("authorization")
         .and_then(|v| v.to_str().ok())
@@ -82,7 +93,14 @@ async fn create_channel(
     headers: axum::http::HeaderMap,
     Json(body): Json<CreateChannelRequest>,
 ) -> Result<Json<Channel>, AppError> {
-    let _user_id = extract_user_id(&headers, &state.config.jwt.secret)?;
+    let _username = extract_username(&headers, &state.config.jwt.secret)?;
+
+    let trimmed_name = body.name.trim();
+    if trimmed_name.is_empty() || trimmed_name.len() > 100 {
+        return Err(AppError::BadRequest(
+            "Channel name must be between 1 and 100 characters".into(),
+        ));
+    }
 
     let (max_pos,): (i32,) = sqlx::query_as("SELECT COALESCE(MAX(position), -1) FROM channels")
         .fetch_one(&state.db)
@@ -98,11 +116,18 @@ async fn create_channel(
         "INSERT INTO channels (id, name, kind, position) VALUES ($1, $2, $3::channel_kind, $4) RETURNING *",
     )
     .bind(Uuid::new_v4())
-    .bind(&body.name)
+    .bind(trimmed_name)
     .bind(kind_str)
     .bind(position)
     .fetch_one(&state.db)
     .await?;
+
+    broadcast_global_message(
+        &state,
+        ServerMessage::ChannelCreated { channel: channel.clone() },
+        None,
+    )
+    .await;
 
     Ok(Json(channel))
 }
@@ -111,7 +136,7 @@ async fn get_channels(
     State(state): State<AppState>,
     headers: axum::http::HeaderMap,
 ) -> Result<Json<Vec<Channel>>, AppError> {
-    let _user_id = extract_user_id(&headers, &state.config.jwt.secret)?;
+    let _username = extract_username(&headers, &state.config.jwt.secret)?;
 
     let channels: Vec<Channel> = sqlx::query_as("SELECT * FROM channels ORDER BY position ASC")
         .fetch_all(&state.db)
@@ -125,7 +150,7 @@ async fn get_channel(
     headers: axum::http::HeaderMap,
     Path(channel_id): Path<Uuid>,
 ) -> Result<Json<Channel>, AppError> {
-    let _user_id = extract_user_id(&headers, &state.config.jwt.secret)?;
+    let _username = extract_username(&headers, &state.config.jwt.secret)?;
 
     let channel: Channel = sqlx::query_as("SELECT * FROM channels WHERE id = $1")
         .bind(channel_id)
@@ -141,12 +166,48 @@ async fn delete_channel(
     headers: axum::http::HeaderMap,
     Path(channel_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let _user_id = extract_user_id(&headers, &state.config.jwt.secret)?;
+    let _username = extract_username(&headers, &state.config.jwt.secret)?;
 
-    sqlx::query("DELETE FROM channels WHERE id = $1")
-        .bind(channel_id)
-        .execute(&state.db)
+    let mut tx = state.db.begin().await?;
+
+    sqlx::query("SELECT pg_advisory_xact_lock($1)")
+        .bind(7_231_901_i64)
+        .execute(&mut *tx)
         .await?;
+
+    let target_kind: Option<(ChannelKind,)> =
+        sqlx::query_as("SELECT kind FROM channels WHERE id = $1")
+            .bind(channel_id)
+            .fetch_optional(&mut *tx)
+            .await?;
+
+    let Some((kind,)) = target_kind else {
+        return Err(AppError::NotFound("Channel not found".into()));
+    };
+
+    let (text_count,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM channels WHERE kind = 'text'::channel_kind")
+        .fetch_one(&mut *tx)
+        .await?;
+
+    if kind == ChannelKind::Text && text_count <= 1 {
+        return Err(AppError::BadRequest(
+            "Cannot delete the last text channel".into(),
+        ));
+    }
+
+    let result = sqlx::query("DELETE FROM channels WHERE id = $1")
+        .bind(channel_id)
+        .execute(&mut *tx)
+        .await?;
+
+    if result.rows_affected() == 0 {
+        return Err(AppError::NotFound("Channel not found".into()));
+    }
+
+    tx.commit().await?;
+
+    remove_channel_subscribers(&state, channel_id).await;
+    broadcast_global_message(&state, ServerMessage::ChannelDeleted { id: channel_id }, None).await;
 
     Ok(Json(serde_json::json!({ "deleted": true })))
 }
@@ -157,7 +218,7 @@ async fn get_messages(
     Path(channel_id): Path<Uuid>,
     Query(query): Query<MessageQuery>,
 ) -> Result<Json<Vec<MessageWithAuthor>>, AppError> {
-    let _user_id = extract_user_id(&headers, &state.config.jwt.secret)?;
+    let _username = extract_username(&headers, &state.config.jwt.secret)?;
     let limit = query.limit.unwrap_or(50).min(100);
 
     let messages: Vec<MessageWithAuthor> = if let Some(before) = query.before {
@@ -195,10 +256,11 @@ async fn send_message(
     Path(channel_id): Path<Uuid>,
     Json(body): Json<SendMessageRequest>,
 ) -> Result<Json<Message>, AppError> {
-    let username = extract_user_id(&headers, &state.config.jwt.secret)?;
+    let username = extract_username(&headers, &state.config.jwt.secret)?;
     let user_id = lookup_user_id(&state, &username).await?;
+    let trimmed_content = body.content.trim();
 
-    if body.content.is_empty() || body.content.len() > 4000 {
+    if trimmed_content.is_empty() || trimmed_content.len() > 4000 {
         return Err(AppError::BadRequest(
             "Message content must be between 1 and 4000 characters".into(),
         ));
@@ -210,9 +272,112 @@ async fn send_message(
     .bind(Uuid::new_v4())
     .bind(channel_id)
     .bind(user_id)
-    .bind(&body.content)
+    .bind(trimmed_content)
     .fetch_one(&state.db)
     .await?;
 
     Ok(Json(message))
+}
+
+async fn edit_message(
+    State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Path(message_id): Path<Uuid>,
+    Json(body): Json<EditMessageRequest>,
+) -> Result<Json<Message>, AppError> {
+    let username = extract_username(&headers, &state.config.jwt.secret)?;
+    let user_id = lookup_user_id(&state, &username).await?;
+
+    let trimmed_content = body.content.trim();
+    if trimmed_content.is_empty() || trimmed_content.len() > 4000 {
+        return Err(AppError::BadRequest(
+            "Message content must be between 1 and 4000 characters".into(),
+        ));
+    }
+
+    let existing: Option<(Uuid, Uuid)> =
+        sqlx::query_as("SELECT channel_id, author_id FROM messages WHERE id = $1")
+            .bind(message_id)
+            .fetch_optional(&state.db)
+            .await?;
+
+    let Some((channel_id, author_id)) = existing else {
+        return Err(AppError::NotFound("Message not found".into()));
+    };
+
+    if author_id != user_id {
+        return Err(AppError::Unauthorized(
+            "You can only edit your own messages".into(),
+        ));
+    }
+
+    let edited: Message = sqlx::query_as(
+        "UPDATE messages SET content = $1, edited_at = now() WHERE id = $2 RETURNING *",
+    )
+    .bind(trimmed_content)
+    .bind(message_id)
+    .fetch_one(&state.db)
+    .await?;
+
+    let Some(edited_at) = edited.edited_at else {
+        return Err(AppError::Internal("Missing edited timestamp".into()));
+    };
+
+    broadcast_channel_message(
+        &state,
+        channel_id,
+        ServerMessage::MessageEdited {
+            id: edited.id,
+            channel_id,
+            content: edited.content.clone(),
+            edited_at: edited_at.to_rfc3339(),
+        },
+        None,
+    )
+    .await;
+
+    Ok(Json(edited))
+}
+
+async fn delete_message(
+    State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Path(message_id): Path<Uuid>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let username = extract_username(&headers, &state.config.jwt.secret)?;
+    let user_id = lookup_user_id(&state, &username).await?;
+
+    let existing: Option<(Uuid, Uuid)> =
+        sqlx::query_as("SELECT channel_id, author_id FROM messages WHERE id = $1")
+            .bind(message_id)
+            .fetch_optional(&state.db)
+            .await?;
+
+    let Some((channel_id, author_id)) = existing else {
+        return Err(AppError::NotFound("Message not found".into()));
+    };
+
+    if author_id != user_id {
+        return Err(AppError::Unauthorized(
+            "You can only delete your own messages".into(),
+        ));
+    }
+
+    sqlx::query("DELETE FROM messages WHERE id = $1")
+        .bind(message_id)
+        .execute(&state.db)
+        .await?;
+
+    broadcast_channel_message(
+        &state,
+        channel_id,
+        ServerMessage::MessageDeleted {
+            id: message_id,
+            channel_id,
+        },
+        None,
+    )
+    .await;
+
+    Ok(Json(serde_json::json!({ "deleted": true })))
 }

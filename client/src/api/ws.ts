@@ -1,4 +1,5 @@
 import { getWsUrl, token } from "../stores/auth";
+import type { Channel } from "../stores/chat";
 
 export type ServerMessage =
   | { type: "authenticated"; user_id: string; username: string }
@@ -14,7 +15,19 @@ export type ServerMessage =
     author_username: string;
     content: string;
     created_at: string;
+    edited_at?: string | null;
   }
+  | {
+    type: "message_edited";
+    id: string;
+    channel_id: string;
+    content: string;
+    edited_at: string;
+  }
+  | { type: "message_deleted"; id: string; channel_id: string }
+  | { type: "channel_created"; channel: Channel }
+  | { type: "channel_deleted"; id: string }
+  | { type: "channel_activity"; channel_id: string }
   | { type: "typing_start"; channel_id: string; username: string }
   | { type: "typing_stop"; channel_id: string; username: string }
   | { type: "voice_joined"; channel_id: string; user_id: string }

@@ -1,5 +1,5 @@
 import { For, Show, createEffect, createResource, createSignal, onCleanup, onMount } from "solid-js";
-import { get } from "../api/http";
+import { del, get, patch } from "../api/http";
 import { connect, onMessage, send } from "../api/ws";
 import { username } from "../stores/auth";
 import { activeChannelId } from "../stores/chat";
@@ -27,9 +27,15 @@ export default function MessageArea() {
   const [wsError, setWsError] = createSignal("");
   const [messages, setMessages] = createSignal<ChannelMessage[]>([]);
   const [typingUsernames, setTypingUsernames] = createSignal<string[]>([]);
+  const [editingMessageId, setEditingMessageId] = createSignal<string | null>(null);
+  const [editDraft, setEditDraft] = createSignal("");
+  const [savingMessageId, setSavingMessageId] = createSignal<string | null>(null);
+  const [deletingMessageId, setDeletingMessageId] = createSignal<string | null>(null);
+  const [isSending, setIsSending] = createSignal(false);
   let listRef: HTMLDivElement | undefined;
-  let typingDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   let activeTypingChannelId: string | null = null;
+  let typingHeartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  let previousMessageCount = 0;
   const typingExpiryTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   const [history] = createResource(activeChannelId, fetchMessages);
@@ -64,10 +70,27 @@ export default function MessageArea() {
     setTypingUsernames([]);
   }
 
+  function startTypingHeartbeat() {
+    if (typingHeartbeatTimer) {
+      return;
+    }
+
+    typingHeartbeatTimer = setInterval(() => {
+      const channelId = activeChannelId();
+      const hasDraft = draft().trim().length > 0;
+
+      if (!channelId || !hasDraft || activeTypingChannelId !== channelId) {
+        return;
+      }
+
+      send({ type: "typing_start", channel_id: channelId });
+    }, 2000);
+  }
+
   function stopTypingBroadcast() {
-    if (typingDebounceTimer) {
-      clearTimeout(typingDebounceTimer);
-      typingDebounceTimer = null;
+    if (typingHeartbeatTimer) {
+      clearInterval(typingHeartbeatTimer);
+      typingHeartbeatTimer = null;
     }
 
     if (activeTypingChannelId) {
@@ -92,13 +115,67 @@ export default function MessageArea() {
       activeTypingChannelId = channelId;
     }
 
-    if (typingDebounceTimer) {
-      clearTimeout(typingDebounceTimer);
+    startTypingHeartbeat();
+  }
+
+  function beginEdit(message: ChannelMessage) {
+    setEditingMessageId(message.id);
+    setEditDraft(message.content);
+    setWsError("");
+  }
+
+  function cancelEdit() {
+    setEditingMessageId(null);
+    setEditDraft("");
+    setSavingMessageId(null);
+  }
+
+  async function saveEdit(messageId: string) {
+    const content = editDraft().trim();
+    if (!content || savingMessageId() || deletingMessageId()) {
+      return;
     }
 
-    typingDebounceTimer = setTimeout(() => {
-      stopTypingBroadcast();
-    }, 1200);
+    setWsError("");
+    setSavingMessageId(messageId);
+    try {
+      const updated = await patch<ChannelMessage>(`/messages/${messageId}`, { content });
+      setMessages((current) => current.map((message) => (
+        message.id === updated.id
+          ? { ...message, content: updated.content, edited_at: updated.edited_at }
+          : message
+      )));
+      cancelEdit();
+    } catch (error) {
+      setWsError(error instanceof Error ? error.message : "Failed to edit message");
+    } finally {
+      setSavingMessageId(null);
+    }
+  }
+
+  async function removeMessage(message: ChannelMessage) {
+    if (savingMessageId() || deletingMessageId()) {
+      return;
+    }
+
+    const confirmed = window.confirm("Delete this message?");
+    if (!confirmed) {
+      return;
+    }
+
+    setWsError("");
+    setDeletingMessageId(message.id);
+    try {
+      await del<{ deleted: true }>(`/messages/${message.id}`);
+      setMessages((current) => current.filter((entry) => entry.id !== message.id));
+      if (editingMessageId() === message.id) {
+        cancelEdit();
+      }
+    } catch (error) {
+      setWsError(error instanceof Error ? error.message : "Failed to delete message");
+    } finally {
+      setDeletingMessageId(null);
+    }
   }
 
   function typingText() {
@@ -148,10 +225,36 @@ export default function MessageArea() {
               author_username: msg.author_username,
               content: msg.content,
               created_at: msg.created_at,
+              edited_at: msg.edited_at ?? null,
             },
           ];
         });
 
+        return;
+      }
+
+      if (msg.type === "message_edited") {
+        if (msg.channel_id !== activeChannelId()) {
+          return;
+        }
+
+        setMessages((current) => current.map((message) => (
+          message.id === msg.id
+            ? { ...message, content: msg.content, edited_at: msg.edited_at }
+            : message
+        )));
+        return;
+      }
+
+      if (msg.type === "message_deleted") {
+        if (msg.channel_id !== activeChannelId()) {
+          return;
+        }
+
+        setMessages((current) => current.filter((message) => message.id !== msg.id));
+        if (editingMessageId() === msg.id) {
+          cancelEdit();
+        }
         return;
       }
 
@@ -190,6 +293,10 @@ export default function MessageArea() {
     clearTypingUsers();
 
     setMessages([]);
+    cancelEdit();
+    setDeletingMessageId(null);
+    setWsError("");
+    previousMessageCount = 0;
 
     if (!channelId) {
       return;
@@ -224,11 +331,15 @@ export default function MessageArea() {
 
   createEffect(() => {
     messages();
-    queueMicrotask(() => {
-      if (listRef) {
-        listRef.scrollTop = listRef.scrollHeight;
-      }
-    });
+    const count = messages().length;
+    if (count > previousMessageCount) {
+      queueMicrotask(() => {
+        if (listRef) {
+          listRef.scrollTop = listRef.scrollHeight;
+        }
+      });
+    }
+    previousMessageCount = count;
   });
 
   function handleSubmit(e: Event) {
@@ -241,9 +352,11 @@ export default function MessageArea() {
       return;
     }
 
+    setIsSending(true);
     send({ type: "send_message", channel_id: channelId, content });
     stopTypingBroadcast();
     setDraft("");
+    queueMicrotask(() => setIsSending(false));
   }
 
   return (
@@ -270,8 +383,60 @@ export default function MessageArea() {
                             minute: "2-digit",
                           })}
                         </time>
+                        <Show when={message.edited_at}>
+                          <span class="message-edited">(edited)</span>
+                        </Show>
+                        <Show when={message.author_username === username()}>
+                          <div class="message-actions">
+                            <button
+                              type="button"
+                              class="message-action"
+                              onClick={() => beginEdit(message)}
+                              disabled={!!savingMessageId() || !!deletingMessageId()}
+                            >
+                              edit
+                            </button>
+                            <button
+                              type="button"
+                              class="message-action message-action-danger"
+                              onClick={() => void removeMessage(message)}
+                              disabled={!!savingMessageId() || !!deletingMessageId()}
+                            >
+                              delete
+                            </button>
+                          </div>
+                        </Show>
                       </div>
-                      <p class="message-content">{message.content}</p>
+                      <Show
+                        when={editingMessageId() === message.id}
+                        fallback={<p class="message-content">{message.content}</p>}
+                      >
+                        <form class="message-edit" onSubmit={(e) => {
+                          e.preventDefault();
+                          void saveEdit(message.id);
+                        }}>
+                          <input
+                            type="text"
+                            value={editDraft()}
+                            onInput={(e) => setEditDraft(e.currentTarget.value)}
+                            maxlength={4000}
+                            disabled={savingMessageId() === message.id || !!deletingMessageId()}
+                          />
+                          <button
+                            type="submit"
+                            disabled={savingMessageId() === message.id || !!deletingMessageId()}
+                          >
+                            save
+                          </button>
+                          <button
+                            type="button"
+                            onClick={cancelEdit}
+                            disabled={savingMessageId() === message.id || !!deletingMessageId()}
+                          >
+                            cancel
+                          </button>
+                        </form>
+                      </Show>
                     </li>
                   )}
                 </For>
@@ -286,9 +451,11 @@ export default function MessageArea() {
           placeholder={activeChannelId() ? "Send a message..." : "Select a channel to start messaging"}
           value={draft()}
           onInput={(e) => handleDraftInput(e.currentTarget.value)}
-          disabled={!activeChannelId()}
+          disabled={!activeChannelId() || !!savingMessageId() || !!deletingMessageId()}
         />
-        <button type="submit">Send</button>
+        <button type="submit" disabled={!activeChannelId() || isSending() || !!savingMessageId() || !!deletingMessageId()}>
+          Send
+        </button>
       </form>
       <Show when={typingUsernames().length > 0}>
         <p class="typing-indicator">{typingText()}</p>
