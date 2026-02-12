@@ -10,6 +10,8 @@ Ship practical, end-to-end voice/video for channels using the existing mediasoup
 - Keep text chat behavior unchanged while adding voice/video as an adjacent real-time layer.
 - Ship server + client slices together for each milestone.
 - Prefer incremental, testable steps over one large media rewrite.
+- Default media routing architecture is mediasoup SFU.
+- Keep transport/session abstractions structured so an optional P2P mode can be added without breaking SFU wire contracts.
 
 ---
 
@@ -161,9 +163,9 @@ Goal: users can hear each other in a voice-enabled channel.
 
 ---
 
-## Milestone 3.4 - Video Publish/Subscribe
+## Milestone 3.4 - Camera Video Publish/Subscribe (SFU)
 
-Goal: optional camera video works alongside voice.
+Goal: optional camera video works alongside voice using mediasoup SFU routing.
 
 ### Server
 
@@ -186,7 +188,36 @@ Goal: optional camera video works alongside voice.
 
 ---
 
-## Milestone 3.5 - UX and Reliability Pass
+## Milestone 3.5 - Screen Sharing Publish/Subscribe (SFU first, optional P2P mode)
+
+Goal: users can share their screen independently from camera, with SFU as default and optional P2P mode as a separate transport strategy.
+
+### Server
+
+- Add explicit signaling semantics for screen-share producer lifecycle (start/stop/update).
+- Keep screen-share routing channel-scoped through mediasoup SFU by default.
+- Define mode contract for media routing:
+  - `sfu` (default)
+  - `p2p` (optional, guarded/feature-flagged)
+- If/when `p2p` is enabled, keep auth and channel membership checks identical to SFU path.
+
+### Client
+
+- Add screen-share start/stop using `getDisplayMedia` and separate local state from camera state.
+- Render remote screen-share tiles with clear presenter identity.
+- Define coexistence behavior (camera + screen allowed or mutually exclusive) and enforce consistently.
+- Add UX affordances for share end events (browser stop button, permission revocation, window close).
+
+### Verify
+
+- One user can start/stop screen share without dropping voice.
+- Other channel members see screen tile lifecycle changes in real time.
+- Same-channel only visibility is preserved (no cross-channel leakage).
+- If P2P mode is enabled, behavior matches SFU feature parity for core share flow.
+
+---
+
+## Milestone 3.6 - UX and Reliability Pass
 
 Goal: make voice/video usable in day-to-day sessions.
 
@@ -243,7 +274,14 @@ Goal: make voice/video usable in day-to-day sessions.
 - [ ] **Client:** Handle camera permission/device errors gracefully.
 - [ ] **Verify:** Video toggles live without degrading audio continuity.
 
-### Phase 3.5 - Reliability and polish
+### Phase 3.5 - Screen sharing
+
+- [ ] **Server:** Add screen-share signaling and channel-scoped SFU routing.
+- [ ] **Client:** Add start/stop share, presenter tile UI, and share-end handling.
+- [ ] **Client:** Implement/guard optional routing mode toggle (`sfu` default, `p2p` optional).
+- [ ] **Verify:** Screen share is stable and isolated per channel.
+
+### Phase 3.6 - Reliability and polish
 
 - [ ] **Server:** Add media session cleanup guards and stronger signaling validation.
 - [ ] **Client:** Add clear voice/video connection status and actionable failure UI.
@@ -254,7 +292,9 @@ Goal: make voice/video usable in day-to-day sessions.
 
 - [ ] Users can join/leave voice sessions and see live participant presence.
 - [ ] Users can publish and receive channel-scoped audio.
-- [ ] Users can publish and receive optional video streams.
+- [ ] Users can publish and receive optional camera video streams.
+- [ ] Users can publish and receive optional screen-share streams.
+- [ ] SFU remains the default routing mode; optional P2P mode does not break SFU behavior.
 - [ ] Voice/video state recovers from expected disconnect and device-change scenarios.
 - [ ] Server and client complete build/check commands successfully.
 
