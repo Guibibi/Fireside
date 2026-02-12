@@ -1,0 +1,9 @@
+.git
+.github
+**/.DS_Store
+**/node_modules
+**/dist
+**/target
+**/.env
+**/.env.*
+client/src-tauri/target

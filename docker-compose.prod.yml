@@ -1,0 +1,57 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-yankcord}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
+      POSTGRES_DB: ${POSTGRES_DB:-yankcord}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-yankcord} -d ${POSTGRES_DB:-yankcord}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  server:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    network_mode: host
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgres://${POSTGRES_USER:-yankcord}:${POSTGRES_PASSWORD:-password}@127.0.0.1:5432/${POSTGRES_DB:-yankcord}}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in server/.env.docker}
+      JWT_EXPIRATION_HOURS: ${JWT_EXPIRATION_HOURS:-24}
+      SERVER_PASSWORD: ${SERVER_PASSWORD:?set SERVER_PASSWORD in server/.env.docker}
+      HOST: ${HOST:-0.0.0.0}
+      PORT: ${PORT:-3000}
+      MEDIA_WORKER_COUNT: ${MEDIA_WORKER_COUNT:-2}
+      WEBRTC_LISTEN_IP: ${WEBRTC_LISTEN_IP:-0.0.0.0}
+      WEBRTC_ANNOUNCED_IP: ${WEBRTC_ANNOUNCED_IP:-}
+      RUST_LOG: ${RUST_LOG:-yankcord_server=info,tower_http=info}
+
+  web:
+    build:
+      context: .
+      dockerfile: client/Dockerfile.web
+    restart: unless-stopped
+    depends_on:
+      - server
+    network_mode: host
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-:80}
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  postgres_data:
+  caddy_data:
+  caddy_config:

@@ -184,3 +184,60 @@ DEPLOY_USER=ubuntu REPO_DIR=/opt/yankcord SITE_ADDRESS=chat.example.com bash scr
 ```
 
 After bootstrap, clone/pull the repo into `REPO_DIR`, set `server/.env`, then deploy with `scripts/deploy-ovh.sh`.
+
+## Docker Production Stack
+
+You can run the hosted stack fully in containers using:
+
+- `postgres` (`postgres:15-alpine`)
+- `server` (built from `server/Dockerfile`)
+- `web` (Caddy serving `client/dist` + reverse proxy to backend)
+
+Files:
+
+- `docker-compose.prod.yml`
+- `server/.env.docker.example`
+- `scripts/deploy-docker.sh`
+
+### 1) Prepare environment file
+
+```bash
+cp server/.env.docker.example server/.env.docker
+```
+
+Required values to edit:
+
+- `POSTGRES_PASSWORD`
+- `JWT_SECRET`
+- `SERVER_PASSWORD`
+- `WEBRTC_ANNOUNCED_IP` (public IP or DNS)
+- `SITE_ADDRESS`
+  - use `:80` for plain HTTP
+  - use your domain (example `chat.example.com`) for automatic HTTPS in Caddy
+
+### 2) Start stack
+
+```bash
+sudo docker compose --env-file server/.env.docker -f docker-compose.prod.yml up -d --build
+```
+
+Or use helper script:
+
+```bash
+REPO_DIR=/opt/yankcord bash scripts/deploy-docker.sh
+```
+
+### 3) Validate
+
+```bash
+sudo docker compose --env-file server/.env.docker -f docker-compose.prod.yml ps
+sudo docker compose --env-file server/.env.docker -f docker-compose.prod.yml logs --tail=100 server
+sudo docker compose --env-file server/.env.docker -f docker-compose.prod.yml logs --tail=100 web
+```
+
+### Notes for voice/media
+
+- The `server` and `web` containers run with `network_mode: host` in `docker-compose.prod.yml`.
+- This is intentional so mediasoup can bind host UDP ports reliably with current server config.
+- Open VM firewall for HTTPS (`443/tcp`) and your media traffic policy.
+- If using plain HTTP (`SITE_ADDRESS=:80`), browser WebRTC/security behavior may be restricted outside local testing.
