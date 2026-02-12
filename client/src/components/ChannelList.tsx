@@ -20,6 +20,7 @@ import {
   applyVoiceJoined,
   applyVoiceLeft,
   applyVoiceSnapshot,
+  clearVoiceRejoinNotice,
   joinedVoiceChannelId,
   micMuted,
   participantsByChannel,
@@ -28,8 +29,10 @@ import {
   speakerMuted,
   toggleMicMuted,
   toggleSpeakerMuted,
+  voiceRejoinNotice,
   voiceActionState,
 } from "../stores/voice";
+import UserSettingsDock from "./UserSettingsDock";
 
 async function fetchChannels() {
   return get<Channel[]>("/channels");
@@ -278,6 +281,7 @@ export default function ChannelList() {
 
       if (msg.type === "voice_joined") {
         setJoinedVoiceChannel(msg.channel_id);
+        clearVoiceRejoinNotice();
         setVoiceActionState("idle");
         void initializeMediaTransports(msg.channel_id).catch((error) => {
           showErrorToast(error instanceof Error ? error.message : "Failed to initialize media transports");
@@ -407,22 +411,36 @@ export default function ChannelList() {
           <button type="submit" disabled={isSaving()}>Create</button>
         </form>
 
-        <Show when={joinedVoiceChannelId()}>
-          <div class="voice-dock">
-            <div class="voice-dock-actions">
+        <div class="channel-footer">
+          <Show when={voiceRejoinNotice() && !joinedVoiceChannelId()}>
+            <div class="channel-footer-banner" role="status" aria-live="polite">
+              <span>Voice disconnected after profile update. Click a voice channel to rejoin.</span>
               <button
                 type="button"
-                class="voice-dock-icon voice-dock-disconnect"
-                onClick={leaveVoiceChannel}
-                disabled={voiceActionState() !== "idle"}
-                title={voiceActionState() === "leaving" ? "Disconnecting..." : "Disconnect"}
-                aria-label={voiceActionState() === "leaving" ? "Disconnecting..." : "Disconnect"}
+                class="channel-footer-banner-dismiss"
+                onClick={clearVoiceRejoinNotice}
+                aria-label="Dismiss voice rejoin notice"
               >
-                <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
-                  <path d="M7 9a5 5 0 0 1 10 0v4h2V9a7 7 0 1 0-14 0v4h2z" fill="currentColor" />
-                  <path d="M12 22 8 18h3v-5h2v5h3z" fill="currentColor" />
-                </svg>
+                Dismiss
               </button>
+            </div>
+          </Show>
+          <Show when={joinedVoiceChannelId()}>
+            <div class="voice-dock">
+              <div class="voice-dock-actions">
+                <button
+                  type="button"
+                  class="voice-dock-icon voice-dock-disconnect"
+                  onClick={leaveVoiceChannel}
+                  disabled={voiceActionState() !== "idle"}
+                  title={voiceActionState() === "leaving" ? "Disconnecting..." : "Disconnect"}
+                  aria-label={voiceActionState() === "leaving" ? "Disconnecting..." : "Disconnect"}
+                >
+                  <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+                    <path d="M7 9a5 5 0 0 1 10 0v4h2V9a7 7 0 1 0-14 0v4h2z" fill="currentColor" />
+                    <path d="M12 22 8 18h3v-5h2v5h3z" fill="currentColor" />
+                  </svg>
+                </button>
                 <button
                   type="button"
                   class="voice-dock-icon voice-dock-toggle"
@@ -430,14 +448,14 @@ export default function ChannelList() {
                   title={micMuted() ? "Unmute microphone" : "Mute microphone"}
                   aria-label={micMuted() ? "Unmute microphone" : "Mute microphone"}
                 >
-                <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
-                  <path d="M12 15a3 3 0 0 0 3-3V7a3 3 0 1 0-6 0v5a3 3 0 0 0 3 3z" fill="currentColor" />
-                  <path d="M18 11v1a6 6 0 0 1-12 0v-1H4v1a8 8 0 0 0 7 7.94V23h2v-3.06A8 8 0 0 0 20 12v-1z" fill="currentColor" />
-                  <Show when={micMuted()}>
-                    <path d="M4 4 20 20" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none" />
-                  </Show>
-                </svg>
-              </button>
+                  <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+                    <path d="M12 15a3 3 0 0 0 3-3V7a3 3 0 1 0-6 0v5a3 3 0 0 0 3 3z" fill="currentColor" />
+                    <path d="M18 11v1a6 6 0 0 1-12 0v-1H4v1a8 8 0 0 0 7 7.94V23h2v-3.06A8 8 0 0 0 20 12v-1z" fill="currentColor" />
+                    <Show when={micMuted()}>
+                      <path d="M4 4 20 20" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none" />
+                    </Show>
+                  </svg>
+                </button>
                 <button
                   type="button"
                   class="voice-dock-icon voice-dock-toggle"
@@ -445,21 +463,23 @@ export default function ChannelList() {
                   title={speakerMuted() ? "Unmute speakers" : "Mute speakers"}
                   aria-label={speakerMuted() ? "Unmute speakers" : "Mute speakers"}
                 >
-                <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
-                  <path d="M5 10v4h4l5 4V6l-5 4z" fill="currentColor" />
-                  <Show when={!speakerMuted()}>
-                    <path d="M16.5 8.5a5 5 0 0 1 0 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none" />
-                  </Show>
-                  <Show when={speakerMuted()}>
-                    <path d="M16 8 21 16" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none" />
-                    <path d="M21 8 16 16" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none" />
-                  </Show>
-                </svg>
-              </button>
+                  <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+                    <path d="M5 10v4h4l5 4V6l-5 4z" fill="currentColor" />
+                    <Show when={!speakerMuted()}>
+                      <path d="M16.5 8.5a5 5 0 0 1 0 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none" />
+                    </Show>
+                    <Show when={speakerMuted()}>
+                      <path d="M16 8 21 16" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none" />
+                      <path d="M21 8 16 16" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none" />
+                    </Show>
+                  </svg>
+                </button>
+              </div>
+              <p class="voice-dock-channel">Connected: {connectedVoiceChannelName()}</p>
             </div>
-            <p class="voice-dock-channel">Connected: {connectedVoiceChannelName()}</p>
-          </div>
-        </Show>
+          </Show>
+          <UserSettingsDock />
+        </div>
       </Show>
       </Show>
       <Show when={toastError()}>

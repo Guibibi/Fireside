@@ -34,6 +34,13 @@ export function saveAuth(t: string, uname: string, url: string) {
   setServerUrl(normalizedUrl);
 }
 
+export function updateAuthIdentity(t: string, uname: string) {
+  localStorage.setItem("yankcord_token", t);
+  localStorage.setItem("yankcord_username", uname);
+  setToken(t);
+  setUsername(uname);
+}
+
 export function clearAuth() {
   localStorage.removeItem("yankcord_token");
   localStorage.removeItem("yankcord_username");

@@ -53,23 +53,28 @@ export function connect(url = getWsUrl()) {
     return;
   }
 
-  socket = new WebSocket(url);
+  const ws = new WebSocket(url);
+  socket = ws;
 
-  socket.onopen = () => {
+  ws.onopen = () => {
+    if (socket !== ws) {
+      return;
+    }
+
     const t = token();
     if (t) {
-      socket?.send(JSON.stringify({ type: "authenticate", token: t }));
+      ws.send(JSON.stringify({ type: "authenticate", token: t }));
     }
 
     while (pendingSends.length > 0) {
       const payload = pendingSends.shift();
       if (payload) {
-        socket?.send(payload);
+        ws.send(payload);
       }
     }
   };
 
-  socket.onmessage = (ev) => {
+  ws.onmessage = (ev) => {
     try {
       const msg: ServerMessage = JSON.parse(ev.data);
 
@@ -114,8 +119,10 @@ export function connect(url = getWsUrl()) {
     }
   };
 
-  socket.onclose = () => {
-    socket = null;
+  ws.onclose = () => {
+    if (socket === ws) {
+      socket = null;
+    }
   };
 }
 

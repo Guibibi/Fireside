@@ -1,6 +1,12 @@
 import { Device } from "mediasoup-client";
 import type { Consumer, Producer, Transport } from "mediasoup-client/types";
 import { onMessage, send } from "./ws";
+import {
+  preferredAudioInputDeviceId,
+  preferredAudioOutputDeviceId,
+  savePreferredAudioInputDeviceId,
+  savePreferredAudioOutputDeviceId,
+} from "../stores/settings";
 
 interface IceParameters {
   usernameFragment: string;
@@ -78,6 +84,21 @@ interface PendingRequest {
   reject: (error: Error) => void;
   timeoutId: ReturnType<typeof setTimeout>;
 }
+
+export interface AudioDeviceOption {
+  deviceId: string;
+  kind: MediaDeviceKind;
+  label: string;
+}
+
+export interface AudioDeviceInventory {
+  inputs: AudioDeviceOption[];
+  outputs: AudioDeviceOption[];
+}
+
+type SinkableAudioElement = HTMLAudioElement & {
+  setSinkId?: (sinkId: string) => Promise<void>;
+};
 
 let device: Device | null = null;
 let sendTransport: Transport | null = null;
@@ -272,12 +293,26 @@ function wireSendTransportProduce(channelId: string, transport: Transport) {
   });
 }
 
+function audioInputConstraint(deviceId: string | null = preferredAudioInputDeviceId()): MediaTrackConstraints | boolean {
+  const selectedDeviceId = deviceId;
+  if (!selectedDeviceId) {
+    return true;
+  }
+
+  return {
+    deviceId: { exact: selectedDeviceId },
+  };
+}
+
 async function startLocalAudioProducer(channelId: string) {
   if (!sendTransport || micProducer) {
     return;
   }
 
-  micStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+  micStream = await navigator.mediaDevices.getUserMedia({
+    audio: audioInputConstraint(),
+    video: false,
+  });
   const [audioTrack] = micStream.getAudioTracks();
 
   if (!audioTrack) {
@@ -319,6 +354,13 @@ function ensureAudioElement(consumerId: string): HTMLAudioElement {
   audio.muted = speakersMuted;
   audio.style.display = "none";
   document.body.appendChild(audio);
+
+  const sinkTarget = preferredAudioOutputDeviceId();
+  if (sinkTarget && isSpeakerSelectionSupported()) {
+    const sinkable = audio as SinkableAudioElement;
+    void sinkable.setSinkId?.(sinkTarget).catch(() => undefined);
+  }
+
   remoteAudioElements.set(consumerId, audio);
   return audio;
 }
@@ -520,6 +562,135 @@ export function setSpeakersMuted(muted: boolean) {
   speakersMuted = muted;
   for (const audio of remoteAudioElements.values()) {
     audio.muted = muted;
+  }
+}
+
+export function isSpeakerSelectionSupported(): boolean {
+  const audio = document.createElement("audio") as SinkableAudioElement;
+  return typeof audio.setSinkId === "function";
+}
+
+function normalizeDeviceLabel(device: MediaDeviceInfo, fallbackPrefix: string, fallbackIndex: number) {
+  if (device.label.trim().length > 0) {
+    return device.label;
+  }
+
+  return `${fallbackPrefix} ${fallbackIndex}`;
+}
+
+export async function listAudioDevices(): Promise<AudioDeviceInventory> {
+  const devices = await navigator.mediaDevices.enumerateDevices();
+
+  const inputsRaw = devices.filter((device) => device.kind === "audioinput");
+  const outputsRaw = devices.filter((device) => device.kind === "audiooutput");
+
+  const inputs = inputsRaw
+    .map((device, index) => ({
+      deviceId: device.deviceId,
+      kind: device.kind,
+      label: normalizeDeviceLabel(device, "Microphone", index + 1),
+    }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+
+  const outputs = outputsRaw
+    .map((device, index) => ({
+      deviceId: device.deviceId,
+      kind: device.kind,
+      label: normalizeDeviceLabel(device, "Speaker", index + 1),
+    }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+
+  return {
+    inputs,
+    outputs,
+  };
+}
+
+async function applySpeakerDeviceToElement(audio: HTMLAudioElement, deviceId: string | null) {
+  if (!isSpeakerSelectionSupported()) {
+    return;
+  }
+
+  const sinkable = audio as SinkableAudioElement;
+  await sinkable.setSinkId?.(deviceId ?? "");
+}
+
+export async function setPreferredMicrophoneDevice(deviceId: string | null) {
+  if (!initializedForChannelId || !sendTransport) {
+    savePreferredAudioInputDeviceId(deviceId);
+    return;
+  }
+
+  const nextStream = await navigator.mediaDevices.getUserMedia({
+    audio: audioInputConstraint(deviceId),
+    video: false,
+  });
+  const [nextTrack] = nextStream.getAudioTracks();
+
+  if (!nextTrack) {
+    nextStream.getTracks().forEach((track) => track.stop());
+    throw new Error("Microphone track was not available");
+  }
+
+  nextTrack.enabled = !microphoneMuted;
+
+  const previousStream = micStream;
+  const previousTrack = micTrack;
+
+  try {
+    if (micProducer) {
+      await micProducer.replaceTrack({ track: nextTrack });
+    } else {
+      micProducer = await sendTransport.produce({
+        track: nextTrack,
+        stopTracks: false,
+      });
+
+      micProducer.on("transportclose", () => {
+        micProducer = null;
+      });
+
+      micProducer.on("trackended", () => {
+        micProducer = null;
+      });
+    }
+
+    micStream = nextStream;
+    micTrack = nextTrack;
+    previousTrack?.stop();
+    previousStream?.getTracks().forEach((track) => track.stop());
+    savePreferredAudioInputDeviceId(deviceId);
+  } catch (error) {
+    nextTrack.stop();
+    nextStream.getTracks().forEach((track) => track.stop());
+    throw error;
+  }
+}
+
+export async function setPreferredSpeakerDevice(deviceId: string | null) {
+  savePreferredAudioOutputDeviceId(deviceId);
+
+  if (!isSpeakerSelectionSupported()) {
+    return;
+  }
+
+  await Promise.all(
+    Array.from(remoteAudioElements.values()).map((audio) => applySpeakerDeviceToElement(audio, deviceId)),
+  );
+}
+
+export async function resetPreferredAudioDevices() {
+  savePreferredAudioInputDeviceId(null);
+  savePreferredAudioOutputDeviceId(null);
+
+  if (initializedForChannelId && sendTransport) {
+    await setPreferredMicrophoneDevice(null);
+  }
+
+  if (isSpeakerSelectionSupported()) {
+    await Promise.all(
+      Array.from(remoteAudioElements.values()).map((audio) => applySpeakerDeviceToElement(audio, null)),
+    );
   }
 }
 

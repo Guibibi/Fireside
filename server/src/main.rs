@@ -82,6 +82,7 @@ async fn main() {
     let app = Router::new()
         .nest("/api", routes::auth_routes::router())
         .nest("/api", routes::channel_routes::router())
+        .nest("/api", routes::user_routes::router())
         .route("/ws", axum::routing::get(ws::ws_upgrade))
         .layer(cors)
         .with_state(state);

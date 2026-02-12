@@ -12,6 +12,7 @@ const [participantsByChannel, setParticipantsByChannel] = createSignal<Record<st
 const [voiceActionState, setVoiceActionState] = createSignal<VoiceActionState>("idle");
 const [micMuted, setMicMuted] = createSignal(false);
 const [speakerMuted, setSpeakerMuted] = createSignal(false);
+const [voiceRejoinNotice, setVoiceRejoinNotice] = createSignal(false);
 
 function sortUnique(usernames: string[]): string[] {
   return [...new Set(usernames)].sort((a, b) => a.localeCompare(b));
@@ -71,6 +72,15 @@ export function resetVoiceState() {
   setVoiceActionState("idle");
   setMicMuted(false);
   setSpeakerMuted(false);
+  setVoiceRejoinNotice(false);
+}
+
+export function showVoiceRejoinNotice() {
+  setVoiceRejoinNotice(true);
+}
+
+export function clearVoiceRejoinNotice() {
+  setVoiceRejoinNotice(false);
 }
 
 export function toggleMicMuted() {
@@ -88,4 +98,5 @@ export {
   setVoiceActionState,
   micMuted,
   speakerMuted,
+  voiceRejoinNotice,
 };
