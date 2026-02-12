@@ -1,7 +1,6 @@
 import ChannelList from "../components/ChannelList";
 import MessageArea from "../components/MessageArea";
 import MemberList from "../components/MemberList";
-import VoicePanel from "../components/VoicePanel";
 import { cleanupMediaTransports } from "../api/media";
 import { useNavigate } from "@solidjs/router";
 import { clearAuth } from "../stores/auth";
@@ -29,7 +28,6 @@ export default function Chat() {
           <button type="button" onClick={handleLogout}>Logout</button>
         </div>
         <MessageArea />
-        <VoicePanel />
       </div>
       <MemberList />
     </div>
