@@ -12,7 +12,8 @@
       "Bash(cargo update:*)",
       "Bash(PATH=\"/home/guibibi/.mediasoup-venv/bin:$PATH\" SQLX_OFFLINE=true cargo check:*)",
       "Bash(npm run build:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(wc:*)"
     ]
   }
 }
