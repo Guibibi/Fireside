@@ -1,4 +1,4 @@
-import { token } from "../stores/auth";
+import { getWsUrl, token } from "../stores/auth";
 
 export type ServerMessage =
   | { type: "authenticated"; user_id: string; username: string }
@@ -13,7 +13,7 @@ type MessageHandler = (msg: ServerMessage) => void;
 let socket: WebSocket | null = null;
 let handlers: MessageHandler[] = [];
 
-export function connect(url = "ws://localhost:3000/ws") {
+export function connect(url = getWsUrl()) {
   if (socket?.readyState === WebSocket.OPEN) return;
 
   socket = new WebSocket(url);

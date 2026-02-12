@@ -8,10 +8,7 @@ pub enum ClientMessage {
     Authenticate { token: String },
 
     #[serde(rename = "send_message")]
-    SendMessage {
-        channel_id: Uuid,
-        content: String,
-    },
+    SendMessage { channel_id: Uuid, content: String },
 
     #[serde(rename = "join_voice")]
     JoinVoice { channel_id: Uuid },

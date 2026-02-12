@@ -19,16 +19,16 @@ pub struct CreateServerRequest {
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/servers", post(create_server).get(list_my_servers))
-        .route("/servers/{server_id}", get(get_server).delete(delete_server))
+        .route(
+            "/servers/{server_id}",
+            get(get_server).delete(delete_server),
+        )
         .route("/servers/{server_id}/join", post(join_server))
         .route("/servers/{server_id}/members", get(list_members))
         .route("/servers/{server_id}/channels", get(list_channels))
 }
 
-fn extract_claims(
-    headers: &axum::http::HeaderMap,
-    secret: &str,
-) -> Result<Claims, AppError> {
+fn extract_claims(headers: &axum::http::HeaderMap, secret: &str) -> Result<Claims, AppError> {
     let header = headers
         .get("authorization")
         .and_then(|v| v.to_str().ok())
@@ -41,27 +41,37 @@ fn extract_claims(
     validate_token(token, secret).map_err(|_| AppError::Unauthorized("Invalid token".into()))
 }
 
+async fn lookup_user_id(state: &AppState, username: &str) -> Result<Uuid, AppError> {
+    let row: Option<(Uuid,)> = sqlx::query_as("SELECT id FROM users WHERE username = $1")
+        .bind(username)
+        .fetch_optional(&state.db)
+        .await?;
+
+    row.map(|(id,)| id)
+        .ok_or_else(|| AppError::Unauthorized("User not found".into()))
+}
+
 async fn create_server(
     State(state): State<AppState>,
     headers: axum::http::HeaderMap,
     Json(body): Json<CreateServerRequest>,
 ) -> Result<Json<Server>, AppError> {
     let claims = extract_claims(&headers, &state.config.jwt.secret)?;
+    let user_id = lookup_user_id(&state, &claims.username).await?;
     let server_id = Uuid::new_v4();
 
-    let server: Server = sqlx::query_as(
-        "INSERT INTO servers (id, name, owner_id) VALUES ($1, $2, $3) RETURNING *",
-    )
-    .bind(server_id)
-    .bind(&body.name)
-    .bind(claims.sub)
-    .fetch_one(&state.db)
-    .await?;
+    let server: Server =
+        sqlx::query_as("INSERT INTO servers (id, name, owner_id) VALUES ($1, $2, $3) RETURNING *")
+            .bind(server_id)
+            .bind(&body.name)
+            .bind(user_id)
+            .fetch_one(&state.db)
+            .await?;
 
     // Auto-join owner
     sqlx::query("INSERT INTO server_members (server_id, user_id) VALUES ($1, $2)")
         .bind(server_id)
-        .bind(claims.sub)
+        .bind(user_id)
         .execute(&state.db)
         .await?;
 
@@ -82,6 +92,7 @@ async fn list_my_servers(
     headers: axum::http::HeaderMap,
 ) -> Result<Json<Vec<Server>>, AppError> {
     let claims = extract_claims(&headers, &state.config.jwt.secret)?;
+    let user_id = lookup_user_id(&state, &claims.username).await?;
 
     let servers: Vec<Server> = sqlx::query_as(
         "SELECT s.* FROM servers s
@@ -89,7 +100,7 @@ async fn list_my_servers(
          WHERE sm.user_id = $1
          ORDER BY s.created_at",
     )
-    .bind(claims.sub)
+    .bind(user_id)
     .fetch_all(&state.db)
     .await?;
 
@@ -118,6 +129,7 @@ async fn delete_server(
     Path(server_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let claims = extract_claims(&headers, &state.config.jwt.secret)?;
+    let user_id = lookup_user_id(&state, &claims.username).await?;
 
     let server: Server = sqlx::query_as("SELECT * FROM servers WHERE id = $1")
         .bind(server_id)
@@ -125,8 +137,10 @@ async fn delete_server(
         .await?
         .ok_or_else(|| AppError::NotFound("Server not found".into()))?;
 
-    if server.owner_id != claims.sub {
-        return Err(AppError::Unauthorized("Only the owner can delete a server".into()));
+    if server.owner_id != user_id {
+        return Err(AppError::Unauthorized(
+            "Only the owner can delete a server".into(),
+        ));
     }
 
     sqlx::query("DELETE FROM servers WHERE id = $1")
@@ -143,12 +157,15 @@ async fn join_server(
     Path(server_id): Path<Uuid>,
 ) -> Result<Json<ServerMember>, AppError> {
     let claims = extract_claims(&headers, &state.config.jwt.secret)?;
+    let user_id = lookup_user_id(&state, &claims.username).await?;
 
-    let exists: Option<(Uuid,)> = sqlx::query_as("SELECT server_id FROM server_members WHERE server_id = $1 AND user_id = $2")
-        .bind(server_id)
-        .bind(claims.sub)
-        .fetch_optional(&state.db)
-        .await?;
+    let exists: Option<(Uuid,)> = sqlx::query_as(
+        "SELECT server_id FROM server_members WHERE server_id = $1 AND user_id = $2",
+    )
+    .bind(server_id)
+    .bind(user_id)
+    .fetch_optional(&state.db)
+    .await?;
 
     if exists.is_some() {
         return Err(AppError::Conflict("Already a member".into()));
@@ -158,7 +175,7 @@ async fn join_server(
         "INSERT INTO server_members (server_id, user_id) VALUES ($1, $2) RETURNING *",
     )
     .bind(server_id)
-    .bind(claims.sub)
+    .bind(user_id)
     .fetch_one(&state.db)
     .await?;
 

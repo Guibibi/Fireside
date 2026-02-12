@@ -6,7 +6,6 @@ use uuid::Uuid;
 pub struct User {
     pub id: Uuid,
     pub username: String,
-    pub password_hash: String,
     pub display_name: Option<String>,
     pub avatar_url: Option<String>,
     pub created_at: DateTime<Utc>,

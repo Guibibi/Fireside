@@ -9,7 +9,9 @@ mod ws;
 use axum::Router;
 use config::AppConfig;
 use sqlx::postgres::PgPoolOptions;
+use std::collections::HashSet;
 use std::sync::Arc;
+use tokio::sync::RwLock;
 use tower_http::cors::{Any, CorsLayer};
 
 #[derive(Clone)]
@@ -17,6 +19,7 @@ pub struct AppState {
     pub db: sqlx::PgPool,
     pub config: Arc<AppConfig>,
     pub media: Arc<media::MediaService>,
+    pub active_usernames: Arc<RwLock<HashSet<String>>>,
 }
 
 #[tokio::main]
@@ -50,6 +53,7 @@ async fn main() {
         db: pool,
         config: config.clone(),
         media: Arc::new(media_service),
+        active_usernames: Arc::new(RwLock::new(HashSet::new())),
     };
 
     let cors = CorsLayer::new()
@@ -66,7 +70,9 @@ async fn main() {
         .with_state(state);
 
     let addr = format!("{}:{}", config.server.host, config.server.port);
-    tracing::info!("Listening on {addr}");
+    let http_url = format!("http://{addr}");
+    let ws_url = format!("ws://{addr}/ws");
+    tracing::info!("Yankcord server started: API {http_url}/api | WebSocket {ws_url}");
 
     let listener = tokio::net::TcpListener::bind(&addr)
         .await

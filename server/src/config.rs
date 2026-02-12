@@ -13,6 +13,7 @@ pub struct AppConfig {
 pub struct ServerConfig {
     pub host: String,
     pub port: u16,
+    pub password: String,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -38,8 +39,8 @@ impl AppConfig {
         let config_path = std::env::var("CONFIG_PATH").unwrap_or_else(|_| "config.toml".into());
 
         if Path::new(&config_path).exists() {
-            let contents = std::fs::read_to_string(&config_path)
-                .expect("Failed to read config file");
+            let contents =
+                std::fs::read_to_string(&config_path).expect("Failed to read config file");
             toml::from_str(&contents).expect("Failed to parse config file")
         } else {
             // Fall back to environment variables
@@ -50,14 +51,14 @@ impl AppConfig {
                         .unwrap_or_else(|_| "3000".into())
                         .parse()
                         .expect("PORT must be a number"),
+                    password: std::env::var("SERVER_PASSWORD")
+                        .expect("SERVER_PASSWORD must be set"),
                 },
                 database: DatabaseConfig {
-                    url: std::env::var("DATABASE_URL")
-                        .expect("DATABASE_URL must be set"),
+                    url: std::env::var("DATABASE_URL").expect("DATABASE_URL must be set"),
                 },
                 jwt: JwtConfig {
-                    secret: std::env::var("JWT_SECRET")
-                        .expect("JWT_SECRET must be set"),
+                    secret: std::env::var("JWT_SECRET").expect("JWT_SECRET must be set"),
                     expiration_hours: std::env::var("JWT_EXPIRATION_HOURS")
                         .unwrap_or_else(|_| "24".into())
                         .parse()

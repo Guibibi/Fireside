@@ -1,6 +1,4 @@
-import { token } from "../stores/auth";
-
-const BASE_URL = "http://localhost:3000/api";
+import { getApiBaseUrl, token } from "../stores/auth";
 
 async function request<T>(
   path: string,
@@ -16,7 +14,7 @@ async function request<T>(
     headers["Authorization"] = `Bearer ${currentToken}`;
   }
 
-  const res = await fetch(`${BASE_URL}${path}`, {
+  const res = await fetch(`${getApiBaseUrl()}${path}`, {
     ...options,
     headers,
   });

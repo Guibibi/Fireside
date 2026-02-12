@@ -30,15 +30,18 @@ pub struct MessageQuery {
 
 pub fn router() -> Router<AppState> {
     Router::new()
-        .route("/channels/{channel_id}", get(get_channel).delete(delete_channel))
-        .route("/channels/{channel_id}/messages", get(get_messages).post(send_message))
+        .route(
+            "/channels/{channel_id}",
+            get(get_channel).delete(delete_channel),
+        )
+        .route(
+            "/channels/{channel_id}/messages",
+            get(get_messages).post(send_message),
+        )
         .route("/servers/{server_id}/channels", post(create_channel))
 }
 
-fn extract_user_id(
-    headers: &axum::http::HeaderMap,
-    secret: &str,
-) -> Result<Uuid, AppError> {
+fn extract_user_id(headers: &axum::http::HeaderMap, secret: &str) -> Result<String, AppError> {
     let header = headers
         .get("authorization")
         .and_then(|v| v.to_str().ok())
@@ -48,9 +51,19 @@ fn extract_user_id(
         .strip_prefix("Bearer ")
         .ok_or_else(|| AppError::Unauthorized("Invalid authorization format".into()))?;
 
-    let claims =
-        validate_token(token, secret).map_err(|_| AppError::Unauthorized("Invalid token".into()))?;
-    Ok(claims.sub)
+    let claims = validate_token(token, secret)
+        .map_err(|_| AppError::Unauthorized("Invalid token".into()))?;
+    Ok(claims.username)
+}
+
+async fn lookup_user_id(state: &AppState, username: &str) -> Result<Uuid, AppError> {
+    let row: Option<(Uuid,)> = sqlx::query_as("SELECT id FROM users WHERE username = $1")
+        .bind(username)
+        .fetch_optional(&state.db)
+        .await?;
+
+    row.map(|(id,)| id)
+        .ok_or_else(|| AppError::Unauthorized("User not found".into()))
 }
 
 async fn create_channel(
@@ -156,7 +169,8 @@ async fn send_message(
     Path(channel_id): Path<Uuid>,
     Json(body): Json<SendMessageRequest>,
 ) -> Result<Json<Message>, AppError> {
-    let user_id = extract_user_id(&headers, &state.config.jwt.secret)?;
+    let username = extract_user_id(&headers, &state.config.jwt.secret)?;
+    let user_id = lookup_user_id(&state, &username).await?;
 
     if body.content.is_empty() || body.content.len() > 4000 {
         return Err(AppError::BadRequest(
