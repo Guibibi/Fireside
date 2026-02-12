@@ -216,6 +216,14 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
     let removed_voice_channel =
         cleanup_connection(&state, Some(&disconnected_username), Some(connection_id)).await;
     if let Some(channel_id) = removed_voice_channel {
+        broadcast_voice_activity_to_channel(
+            &state,
+            channel_id,
+            &disconnected_username,
+            false,
+            None,
+        )
+        .await;
         broadcast_global_message(
             &state,
             ServerMessage::VoiceUserLeft {
@@ -409,6 +417,14 @@ async fn handle_client_message(
 
             if let Some(previous_channel_id) = previous_channel_id {
                 if previous_channel_id != channel_id {
+                    broadcast_voice_activity_to_channel(
+                        state,
+                        previous_channel_id,
+                        &claims.username,
+                        false,
+                        None,
+                    )
+                    .await;
                     let closed_producers =
                         state.media.cleanup_connection_media(connection_id).await;
                     broadcast_closed_producers(state, &closed_producers, Some(connection_id)).await;
@@ -460,6 +476,15 @@ async fn handle_client_message(
                     }
                 }
 
+                broadcast_voice_activity_to_channel(
+                    state,
+                    left_channel_id_value,
+                    &claims.username,
+                    false,
+                    None,
+                )
+                .await;
+
                 broadcast_global_message(
                     state,
                     ServerMessage::VoiceUserLeft {
@@ -499,6 +524,28 @@ async fn handle_client_message(
                     user_id,
                 },
             );
+        }
+        ClientMessage::VoiceActivity {
+            channel_id,
+            speaking,
+        } => {
+            let joined_channel = {
+                let voice_members_by_connection = state.voice_members_by_connection.read().await;
+                voice_members_by_connection.get(&connection_id).copied()
+            };
+
+            if joined_channel != Some(channel_id) {
+                return;
+            }
+
+            broadcast_voice_activity_to_channel(
+                state,
+                channel_id,
+                &claims.username,
+                speaking,
+                None,
+            )
+            .await;
         }
         ClientMessage::MediaSignal {
             channel_id,
@@ -832,6 +879,43 @@ async fn broadcast_media_signal_to_voice_channel(
                 ServerMessage::MediaSignal {
                     channel_id,
                     payload: payload.clone(),
+                },
+            );
+        }
+    }
+}
+
+async fn broadcast_voice_activity_to_channel(
+    state: &AppState,
+    channel_id: Uuid,
+    username: &str,
+    speaking: bool,
+    exclude_connection_id: Option<Uuid>,
+) {
+    let target_connections: Vec<Uuid> = {
+        let voice_members_by_connection = state.voice_members_by_connection.read().await;
+        voice_members_by_connection
+            .iter()
+            .filter_map(|(connection_id, voice_channel_id)| {
+                if *voice_channel_id == channel_id && Some(*connection_id) != exclude_connection_id
+                {
+                    Some(*connection_id)
+                } else {
+                    None
+                }
+            })
+            .collect()
+    };
+
+    let connections = state.ws_connections.read().await;
+    for connection_id in target_connections {
+        if let Some(tx) = connections.get(&connection_id) {
+            send_server_message(
+                tx,
+                ServerMessage::VoiceUserSpeaking {
+                    channel_id,
+                    username: username.to_owned(),
+                    speaking,
                 },
             );
         }

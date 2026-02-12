@@ -218,6 +218,12 @@ input:focus {
   border-radius: 999px;
   background: var(--surface2);
   flex-shrink: 0;
+  transition: background-color 130ms ease, box-shadow 130ms ease;
+}
+
+.channel-voice-member-dot.is-speaking {
+  background: #3ddc84;
+  box-shadow: 0 0 0.35rem color-mix(in srgb, #3ddc84 75%, transparent);
 }
 
 .channel-delete {

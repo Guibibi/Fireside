@@ -113,6 +113,13 @@ let signalListenerInitialized = false;
 let requestCounter = 0;
 let microphoneMuted = false;
 let speakersMuted = false;
+let micLevelAudioContext: AudioContext | null = null;
+let micLevelSourceNode: MediaStreamAudioSourceNode | null = null;
+let micLevelAnalyserNode: AnalyserNode | null = null;
+let micLevelData: Uint8Array | null = null;
+let micLevelMonitorFrame: number | null = null;
+let micSpeakingHoldUntil = 0;
+let micSpeakingLastSent = false;
 
 const remoteConsumers = new Map<string, Consumer>();
 const consumerIdByProducerId = new Map<string, string>();
@@ -120,6 +127,97 @@ const remoteAudioElements = new Map<string, HTMLAudioElement>();
 const queuedProducerAnnouncements = new Map<string, MediaKind | undefined>();
 
 const pendingRequests = new Map<string, PendingRequest>();
+
+function reportVoiceActivity(channelId: string, speaking: boolean) {
+  if (micSpeakingLastSent === speaking) {
+    return;
+  }
+
+  micSpeakingLastSent = speaking;
+  send({
+    type: "voice_activity",
+    channel_id: channelId,
+    speaking,
+  });
+}
+
+function stopMicLevelMonitoring(channelId: string | null) {
+  if (micLevelMonitorFrame !== null) {
+    cancelAnimationFrame(micLevelMonitorFrame);
+    micLevelMonitorFrame = null;
+  }
+
+  micSpeakingHoldUntil = 0;
+
+  if (channelId && micSpeakingLastSent) {
+    reportVoiceActivity(channelId, false);
+  }
+
+  micLevelSourceNode?.disconnect();
+  micLevelSourceNode = null;
+  micLevelAnalyserNode?.disconnect();
+  micLevelAnalyserNode = null;
+  micLevelData = null;
+
+  if (micLevelAudioContext) {
+    void micLevelAudioContext.close().catch(() => undefined);
+    micLevelAudioContext = null;
+  }
+
+  micSpeakingLastSent = false;
+}
+
+function startMicLevelMonitoring(channelId: string, stream: MediaStream) {
+  stopMicLevelMonitoring(initializedForChannelId ?? channelId);
+
+  const audioContext = new AudioContext();
+  const sourceNode = audioContext.createMediaStreamSource(stream);
+  const analyserNode = audioContext.createAnalyser();
+
+  analyserNode.fftSize = 512;
+  analyserNode.smoothingTimeConstant = 0.85;
+  sourceNode.connect(analyserNode);
+
+  const data = new Uint8Array(analyserNode.frequencyBinCount);
+
+  micLevelAudioContext = audioContext;
+  micLevelSourceNode = sourceNode;
+  micLevelAnalyserNode = analyserNode;
+  micLevelData = data;
+  micSpeakingHoldUntil = 0;
+  micSpeakingLastSent = false;
+
+  const levelThreshold = 0.04;
+  const speakingHoldMs = 220;
+
+  const monitor = () => {
+    if (!micLevelAnalyserNode || !micLevelData || initializedForChannelId !== channelId) {
+      return;
+    }
+
+    micLevelAnalyserNode.getByteTimeDomainData(micLevelData);
+
+    let sum = 0;
+    for (let i = 0; i < micLevelData.length; i += 1) {
+      const normalized = (micLevelData[i] - 128) / 128;
+      sum += normalized * normalized;
+    }
+
+    const rms = Math.sqrt(sum / micLevelData.length);
+    const now = performance.now();
+
+    if (rms >= levelThreshold && !microphoneMuted) {
+      micSpeakingHoldUntil = now + speakingHoldMs;
+    }
+
+    const speaking = !microphoneMuted && now <= micSpeakingHoldUntil;
+    reportVoiceActivity(channelId, speaking);
+
+    micLevelMonitorFrame = requestAnimationFrame(monitor);
+  };
+
+  micLevelMonitorFrame = requestAnimationFrame(monitor);
+}
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -216,6 +314,8 @@ function requestMediaSignal(channelId: string, action: string, extra: Record<str
 }
 
 function closeTransports() {
+  stopMicLevelMonitoring(initializedForChannelId);
+
   micProducer?.close();
   micProducer = null;
 
@@ -321,6 +421,8 @@ async function startLocalAudioProducer(channelId: string) {
 
   micTrack = audioTrack;
   micTrack.enabled = !microphoneMuted;
+
+  startMicLevelMonitoring(channelId, micStream);
 
   const produced = await sendTransport.produce({
     track: micTrack,
@@ -556,6 +658,15 @@ export function setMicrophoneMuted(muted: boolean) {
   if (micTrack) {
     micTrack.enabled = !muted;
   }
+
+  const channelId = initializedForChannelId;
+  if (!channelId) {
+    return;
+  }
+
+  if (muted) {
+    reportVoiceActivity(channelId, false);
+  }
 }
 
 export function setSpeakersMuted(muted: boolean) {
@@ -657,6 +768,7 @@ export async function setPreferredMicrophoneDevice(deviceId: string | null) {
 
     micStream = nextStream;
     micTrack = nextTrack;
+    startMicLevelMonitoring(initializedForChannelId, nextStream);
     previousTrack?.stop();
     previousStream?.getTracks().forEach((track) => track.stop());
     savePreferredAudioInputDeviceId(deviceId);

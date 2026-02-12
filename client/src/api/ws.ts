@@ -38,6 +38,7 @@ export type ServerMessage =
   | { type: "voice_left"; channel_id: string; user_id: string }
   | { type: "voice_user_joined"; channel_id: string; username: string }
   | { type: "voice_user_left"; channel_id: string; username: string }
+  | { type: "voice_user_speaking"; channel_id: string; username: string; speaking: boolean }
   | { type: "media_signal"; channel_id: string; payload: unknown };
 
 type MessageHandler = (msg: ServerMessage) => void;

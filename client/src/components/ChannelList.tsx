@@ -19,8 +19,10 @@ import {
 import {
   applyVoiceJoined,
   applyVoiceLeft,
+  applyVoiceSpeaking,
   applyVoiceSnapshot,
   clearVoiceRejoinNotice,
+  isVoiceMemberSpeaking,
   joinedVoiceChannelId,
   micMuted,
   participantsByChannel,
@@ -279,6 +281,11 @@ export default function ChannelList() {
         return;
       }
 
+      if (msg.type === "voice_user_speaking") {
+        applyVoiceSpeaking(msg.channel_id, msg.username, msg.speaking);
+        return;
+      }
+
       if (msg.type === "voice_joined") {
         setJoinedVoiceChannel(msg.channel_id);
         clearVoiceRejoinNotice();
@@ -378,7 +385,10 @@ export default function ChannelList() {
                       <For each={voiceMembers(channel.id)}>
                         {(username) => (
                           <li class="channel-voice-member">
-                            <span class="channel-voice-member-dot" aria-hidden="true" />
+                            <span
+                              class={`channel-voice-member-dot${isVoiceMemberSpeaking(channel.id, username) ? " is-speaking" : ""}`}
+                              aria-hidden="true"
+                            />
                             <span>{username}</span>
                           </li>
                         )}

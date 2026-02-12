@@ -33,6 +33,9 @@ pub enum ClientMessage {
     #[serde(rename = "leave_voice")]
     LeaveVoice { channel_id: Uuid },
 
+    #[serde(rename = "voice_activity")]
+    VoiceActivity { channel_id: Uuid, speaking: bool },
+
     #[serde(rename = "media_signal")]
     MediaSignal {
         channel_id: Uuid,
@@ -108,6 +111,13 @@ pub enum ServerMessage {
 
     #[serde(rename = "voice_user_left")]
     VoiceUserLeft { channel_id: Uuid, username: String },
+
+    #[serde(rename = "voice_user_speaking")]
+    VoiceUserSpeaking {
+        channel_id: Uuid,
+        username: String,
+        speaking: bool,
+    },
 
     #[serde(rename = "media_signal")]
     MediaSignal {
