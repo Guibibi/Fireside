@@ -126,3 +126,61 @@ These are not implemented yet, but are recommended for production reliability.
 - Voice still works when one user is on mobile data/hotspot.
 - Logs show no recurrent media transport errors.
 - Backup and restore of Postgres verified.
+
+## Deployment Helper Script
+
+`scripts/deploy-ovh.sh` automates pull/build/restart on VM.
+
+- Default run:
+  - `bash scripts/deploy-ovh.sh`
+- Expected defaults:
+  - repo at `/opt/yankcord`
+  - backend systemd service `yankcord-server`
+  - reverse proxy systemd service `caddy`
+- Useful overrides:
+  - `REPO_DIR=/srv/yankcord`
+  - `SERVER_SERVICE=yankcord-server`
+  - `CADDY_SERVICE=caddy`
+  - `UPDATE_REPO=false` (skip fetch/pull)
+  - `BUILD_CLIENT=false` (skip npm install/build)
+  - `BUILD_SERVER=false` (skip cargo build)
+  - `RELOAD_CADDY=false` (skip caddy reload)
+  - `START_POSTGRES=true` (run `postgres` from `server/docker-compose.yml`)
+  - `POSTGRES_COMPOSE_FILE=server/docker-compose.yml` (custom compose path)
+
+Example with Docker-managed Postgres:
+
+```bash
+START_POSTGRES=true bash scripts/deploy-ovh.sh
+```
+
+The script aborts if the repo worktree is dirty while `UPDATE_REPO=true` to avoid broken fast-forward pulls during deploy.
+
+## Ubuntu VM Bootstrap Script
+
+`scripts/bootstrap-ubuntu-vm.sh` installs runtime dependencies and writes systemd/Caddy templates.
+
+- Default run:
+  - `bash scripts/bootstrap-ubuntu-vm.sh`
+- What it does:
+  - installs base build tools
+  - installs Node.js 20 (if Node 18+ is not present)
+  - installs Rust toolchain for deploy user (if missing)
+  - installs Caddy and writes a Yankcord `Caddyfile`
+  - writes `/etc/systemd/system/yankcord-server.service`
+- Useful overrides:
+  - `DEPLOY_USER=ubuntu`
+  - `REPO_DIR=/opt/yankcord`
+  - `SITE_ADDRESS=chat.example.com` (required for automatic HTTPS)
+  - `SERVER_PORT=3000`
+  - `INSTALL_CADDY=false`
+  - `WRITE_CADDYFILE=false`
+  - `INSTALL_DOCKER=true` (optional if Docker is not already installed)
+
+Example:
+
+```bash
+DEPLOY_USER=ubuntu REPO_DIR=/opt/yankcord SITE_ADDRESS=chat.example.com bash scripts/bootstrap-ubuntu-vm.sh
+```
+
+After bootstrap, clone/pull the repo into `REPO_DIR`, set `server/.env`, then deploy with `scripts/deploy-ovh.sh`.
