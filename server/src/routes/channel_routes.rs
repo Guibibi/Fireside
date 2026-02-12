@@ -9,7 +9,9 @@ use uuid::Uuid;
 use crate::auth::validate_token;
 use crate::errors::AppError;
 use crate::models::{Channel, ChannelKind, Message};
-use crate::ws::broadcast::{broadcast_channel_message, broadcast_global_message, remove_channel_subscribers};
+use crate::ws::broadcast::{
+    broadcast_channel_message, broadcast_global_message, remove_channel_subscribers,
+};
 use crate::ws::messages::ServerMessage;
 use crate::AppState;
 
@@ -124,7 +126,9 @@ async fn create_channel(
 
     broadcast_global_message(
         &state,
-        ServerMessage::ChannelCreated { channel: channel.clone() },
+        ServerMessage::ChannelCreated {
+            channel: channel.clone(),
+        },
         None,
     )
     .await;
@@ -185,9 +189,10 @@ async fn delete_channel(
         return Err(AppError::NotFound("Channel not found".into()));
     };
 
-    let (text_count,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM channels WHERE kind = 'text'::channel_kind")
-        .fetch_one(&mut *tx)
-        .await?;
+    let (text_count,): (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM channels WHERE kind = 'text'::channel_kind")
+            .fetch_one(&mut *tx)
+            .await?;
 
     if kind == ChannelKind::Text && text_count <= 1 {
         return Err(AppError::BadRequest(
@@ -207,7 +212,12 @@ async fn delete_channel(
     tx.commit().await?;
 
     remove_channel_subscribers(&state, channel_id).await;
-    broadcast_global_message(&state, ServerMessage::ChannelDeleted { id: channel_id }, None).await;
+    broadcast_global_message(
+        &state,
+        ServerMessage::ChannelDeleted { id: channel_id },
+        None,
+    )
+    .await;
 
     Ok(Json(serde_json::json!({ "deleted": true })))
 }

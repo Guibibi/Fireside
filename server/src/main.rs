@@ -56,7 +56,12 @@ async fn main() {
         .await
         .expect("Failed to seed default channel");
 
-    let media_service = media::MediaService::new(config.media.worker_count).await;
+    let media_service = media::MediaService::new(
+        config.media.worker_count,
+        config.media.webrtc_listen_ip.clone(),
+        config.media.announced_ip.clone(),
+    )
+    .await;
 
     let state = AppState {
         db: pool,

@@ -26,7 +26,9 @@ pub async fn broadcast_channel_message(
         subscriptions
             .iter()
             .filter_map(|(connection_id, subscribed_channel)| {
-                if *subscribed_channel == channel_id && Some(*connection_id) != exclude_connection_id {
+                if *subscribed_channel == channel_id
+                    && Some(*connection_id) != exclude_connection_id
+                {
                     Some(*connection_id)
                 } else {
                     None
@@ -51,6 +53,7 @@ pub async fn broadcast_channel_message(
     }
 
     if !stale.is_empty() {
+        let stale_connection_ids = stale.clone();
         let mut connections = state.ws_connections.write().await;
         let mut subscriptions = state.channel_subscriptions.write().await;
         let mut voice_members_by_connection = state.voice_members_by_connection.write().await;
@@ -58,6 +61,15 @@ pub async fn broadcast_channel_message(
             connections.remove(&connection_id);
             subscriptions.remove(&connection_id);
             voice_members_by_connection.remove(&connection_id);
+        }
+
+        drop(voice_members_by_connection);
+        drop(subscriptions);
+        drop(connections);
+
+        for connection_id in stale_connection_ids {
+            let closed_producers = state.media.cleanup_connection_media(connection_id).await;
+            broadcast_closed_producers(state, &closed_producers, Some(connection_id)).await;
         }
     }
 }
@@ -102,6 +114,7 @@ pub async fn broadcast_global_message(
     }
 
     if !stale.is_empty() {
+        let stale_connection_ids = stale.clone();
         let mut connections = state.ws_connections.write().await;
         let mut subscriptions = state.channel_subscriptions.write().await;
         let mut voice_members_by_connection = state.voice_members_by_connection.write().await;
@@ -109,6 +122,55 @@ pub async fn broadcast_global_message(
             connections.remove(&connection_id);
             subscriptions.remove(&connection_id);
             voice_members_by_connection.remove(&connection_id);
+        }
+
+        drop(voice_members_by_connection);
+        drop(subscriptions);
+        drop(connections);
+
+        for connection_id in stale_connection_ids {
+            let closed_producers = state.media.cleanup_connection_media(connection_id).await;
+            broadcast_closed_producers(state, &closed_producers, Some(connection_id)).await;
+        }
+    }
+}
+
+async fn broadcast_closed_producers(
+    state: &AppState,
+    closed_producers: &[crate::media::transport::ClosedProducer],
+    exclude_connection_id: Option<Uuid>,
+) {
+    for closed in closed_producers {
+        let target_connections: Vec<Uuid> = {
+            let subscriptions = state.channel_subscriptions.read().await;
+            subscriptions
+                .iter()
+                .filter_map(|(connection_id, subscribed_channel)| {
+                    if *subscribed_channel == closed.channel_id
+                        && Some(*connection_id) != exclude_connection_id
+                    {
+                        Some(*connection_id)
+                    } else {
+                        None
+                    }
+                })
+                .collect()
+        };
+
+        let connections = state.ws_connections.read().await;
+        for connection_id in target_connections {
+            if let Some(tx) = connections.get(&connection_id) {
+                send_server_message(
+                    tx,
+                    ServerMessage::MediaSignal {
+                        channel_id: closed.channel_id,
+                        payload: serde_json::json!({
+                            "action": "producer_closed",
+                            "producer_id": closed.producer_id,
+                        }),
+                    },
+                );
+            }
         }
     }
 }

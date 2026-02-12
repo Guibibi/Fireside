@@ -1,5 +1,11 @@
 import { For, Show, createEffect, createSignal, onCleanup, onMount } from "solid-js";
 import { del, get, post } from "../api/http";
+import {
+  cleanupMediaTransports,
+  initializeMediaTransports,
+  setMicrophoneMuted,
+  setSpeakersMuted,
+} from "../api/media";
 import { connect, onMessage, send } from "../api/ws";
 import {
   activeChannelId,
@@ -80,6 +86,18 @@ export default function ChannelList() {
 
     setVoiceActionState("leaving");
     send({ type: "leave_voice", channel_id: channelId });
+  }
+
+  function handleToggleMicMuted() {
+    const nextMuted = !micMuted();
+    toggleMicMuted();
+    setMicrophoneMuted(nextMuted);
+  }
+
+  function handleToggleSpeakerMuted() {
+    const nextMuted = !speakerMuted();
+    toggleSpeakerMuted();
+    setSpeakersMuted(nextMuted);
   }
 
   function selectChannel(channel: Channel) {
@@ -256,12 +274,18 @@ export default function ChannelList() {
       if (msg.type === "voice_joined") {
         setJoinedVoiceChannel(msg.channel_id);
         setVoiceActionState("idle");
+        void initializeMediaTransports(msg.channel_id).catch((error) => {
+          showErrorToast(error instanceof Error ? error.message : "Failed to initialize media transports");
+        });
+        setMicrophoneMuted(micMuted());
+        setSpeakersMuted(speakerMuted());
         return;
       }
 
       if (msg.type === "voice_left") {
         if (joinedVoiceChannelId() === msg.channel_id) {
           setJoinedVoiceChannel(null);
+          cleanupMediaTransports();
         }
         setVoiceActionState("idle");
         return;
@@ -375,13 +399,13 @@ export default function ChannelList() {
                   <path d="M12 22 8 18h3v-5h2v5h3z" fill="currentColor" />
                 </svg>
               </button>
-              <button
-                type="button"
-                class="voice-dock-icon voice-dock-toggle"
-                onClick={toggleMicMuted}
-                title={micMuted() ? "Unmute microphone" : "Mute microphone"}
-                aria-label={micMuted() ? "Unmute microphone" : "Mute microphone"}
-              >
+                <button
+                  type="button"
+                  class="voice-dock-icon voice-dock-toggle"
+                  onClick={handleToggleMicMuted}
+                  title={micMuted() ? "Unmute microphone" : "Mute microphone"}
+                  aria-label={micMuted() ? "Unmute microphone" : "Mute microphone"}
+                >
                 <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
                   <path d="M12 15a3 3 0 0 0 3-3V7a3 3 0 1 0-6 0v5a3 3 0 0 0 3 3z" fill="currentColor" />
                   <path d="M18 11v1a6 6 0 0 1-12 0v-1H4v1a8 8 0 0 0 7 7.94V23h2v-3.06A8 8 0 0 0 20 12v-1z" fill="currentColor" />
@@ -390,13 +414,13 @@ export default function ChannelList() {
                   </Show>
                 </svg>
               </button>
-              <button
-                type="button"
-                class="voice-dock-icon voice-dock-toggle"
-                onClick={toggleSpeakerMuted}
-                title={speakerMuted() ? "Unmute speakers" : "Mute speakers"}
-                aria-label={speakerMuted() ? "Unmute speakers" : "Mute speakers"}
-              >
+                <button
+                  type="button"
+                  class="voice-dock-icon voice-dock-toggle"
+                  onClick={handleToggleSpeakerMuted}
+                  title={speakerMuted() ? "Unmute speakers" : "Mute speakers"}
+                  aria-label={speakerMuted() ? "Unmute speakers" : "Mute speakers"}
+                >
                 <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
                   <path d="M5 10v4h4l5 4V6l-5 4z" fill="currentColor" />
                   <Show when={!speakerMuted()}>

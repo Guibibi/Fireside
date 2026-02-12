@@ -140,6 +140,34 @@ Goal: a user can connect, select a channel, load history, and exchange real-time
 
 ---
 
+## Phase 5: Nice-to-Have Social & UX Features (future)
+
+- **User avatars**
+  - Add profile avatar upload/storage (with size/type validation).
+  - Render avatars in message list, member list, and presence surfaces.
+
+- **GIF search support**
+  - Add GIF picker with provider integration (e.g. Tenor/Giphy).
+  - Post GIF embeds as rich message attachments.
+
+- **Image support in chat**
+  - Add image upload + preview + download/open actions.
+  - Generate thumbnails and validate file constraints on server.
+
+- **Custom emojis**
+  - Add per-instance emoji management (upload/delete/list).
+  - Support `:shortcode:` parsing + emoji picker in composer.
+
+- **Message reactions**
+  - Add emoji reactions with per-user uniqueness per message.
+  - Broadcast reaction add/remove in real time.
+
+- **Voice participant avatars**
+  - Show connected users' avatars in voice UI tiles/participant row.
+  - Highlight speaking/active states once audio-level signaling exists.
+
+---
+
 ## File Map (Primary Touch Points)
 
 | Step | Server | Client |

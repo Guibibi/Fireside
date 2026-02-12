@@ -6,6 +6,8 @@ use axum::{
     response::IntoResponse,
 };
 use futures_util::{SinkExt, StreamExt};
+use mediasoup::prelude::{DtlsParameters, MediaKind, RtpCapabilities, RtpParameters};
+use serde::Deserialize;
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
@@ -14,7 +16,39 @@ use super::broadcast::{
 };
 use super::messages::{ClientMessage, ServerMessage, VoicePresenceChannel};
 use crate::auth::validate_token;
+use crate::media::transport::TransportDirection;
 use crate::AppState;
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "action", rename_all = "snake_case")]
+enum MediaSignalRequest {
+    GetRouterRtpCapabilities {
+        request_id: Option<String>,
+    },
+    CreateWebrtcTransport {
+        request_id: Option<String>,
+        direction: String,
+    },
+    ConnectWebrtcTransport {
+        request_id: Option<String>,
+        transport_id: String,
+        dtls_parameters: DtlsParameters,
+    },
+    MediaProduce {
+        request_id: Option<String>,
+        kind: String,
+        rtp_parameters: RtpParameters,
+    },
+    MediaConsume {
+        request_id: Option<String>,
+        producer_id: String,
+        rtp_capabilities: RtpCapabilities,
+    },
+    MediaResumeConsumer {
+        request_id: Option<String>,
+        consumer_id: String,
+    },
+}
 
 pub async fn ws_upgrade(ws: WebSocketUpgrade, State(state): State<AppState>) -> impl IntoResponse {
     ws.on_upgrade(move |socket| handle_socket(socket, state))
@@ -192,6 +226,8 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
         )
         .await;
     }
+    let closed_producers = state.media.cleanup_connection_media(connection_id).await;
+    broadcast_closed_producers(&state, &closed_producers, Some(connection_id)).await;
     broadcast_global_message(
         &state,
         ServerMessage::UserDisconnected {
@@ -346,7 +382,8 @@ async fn handle_client_message(
             };
 
             let previous_channel_id = {
-                let mut voice_members_by_connection = state.voice_members_by_connection.write().await;
+                let mut voice_members_by_connection =
+                    state.voice_members_by_connection.write().await;
                 voice_members_by_connection.insert(connection_id, channel_id)
             };
 
@@ -355,7 +392,8 @@ async fn handle_client_message(
 
                 if let Some(previous_channel_id) = previous_channel_id {
                     if previous_channel_id != channel_id {
-                        if let Some(usernames) = voice_members_by_channel.get_mut(&previous_channel_id)
+                        if let Some(usernames) =
+                            voice_members_by_channel.get_mut(&previous_channel_id)
                         {
                             usernames.remove(&claims.username);
                             if usernames.is_empty() {
@@ -371,6 +409,9 @@ async fn handle_client_message(
 
             if let Some(previous_channel_id) = previous_channel_id {
                 if previous_channel_id != channel_id {
+                    let closed_producers =
+                        state.media.cleanup_connection_media(connection_id).await;
+                    broadcast_closed_producers(state, &closed_producers, Some(connection_id)).await;
                     broadcast_global_message(
                         state,
                         ServerMessage::VoiceUserLeft {
@@ -405,7 +446,8 @@ async fn handle_client_message(
         }
         ClientMessage::LeaveVoice { channel_id } => {
             let left_channel_id = {
-                let mut voice_members_by_connection = state.voice_members_by_connection.write().await;
+                let mut voice_members_by_connection =
+                    state.voice_members_by_connection.write().await;
                 voice_members_by_connection.remove(&connection_id)
             };
 
@@ -428,6 +470,9 @@ async fn handle_client_message(
                 )
                 .await;
             }
+
+            let closed_producers = state.media.cleanup_connection_media(connection_id).await;
+            broadcast_closed_producers(state, &closed_producers, Some(connection_id)).await;
 
             let user_id_row: Option<(Uuid,)> =
                 sqlx::query_as("SELECT id FROM users WHERE username = $1")
@@ -459,13 +504,7 @@ async fn handle_client_message(
             channel_id,
             payload,
         } => {
-            send_server_message(
-                out_tx,
-                ServerMessage::MediaSignal {
-                    channel_id,
-                    payload,
-                },
-            );
+            handle_media_signal_message(state, connection_id, channel_id, payload, out_tx).await;
         }
         ClientMessage::Authenticate { .. } => {
             send_server_message(
@@ -476,4 +515,363 @@ async fn handle_client_message(
             );
         }
     }
+}
+
+async fn handle_media_signal_message(
+    state: &AppState,
+    connection_id: Uuid,
+    channel_id: Uuid,
+    payload: serde_json::Value,
+    out_tx: &mpsc::UnboundedSender<String>,
+) {
+    let request = match serde_json::from_value::<MediaSignalRequest>(payload) {
+        Ok(request) => request,
+        Err(error) => {
+            send_server_message(
+                out_tx,
+                ServerMessage::MediaSignal {
+                    channel_id,
+                    payload: serde_json::json!({
+                        "action": "signal_error",
+                        "message": format!("Invalid media signal payload: {error}")
+                    }),
+                },
+            );
+            return;
+        }
+    };
+
+    let joined_channel = {
+        let voice_members_by_connection = state.voice_members_by_connection.read().await;
+        voice_members_by_connection.get(&connection_id).copied()
+    };
+
+    if joined_channel != Some(channel_id) {
+        let request_id = request_id_for(&request);
+        send_media_signal_error(
+            out_tx,
+            channel_id,
+            request_id,
+            "Media signaling requires joining the voice channel first",
+        );
+        return;
+    }
+
+    match request {
+        MediaSignalRequest::GetRouterRtpCapabilities { request_id } => {
+            match state.media.router_rtp_capabilities(channel_id).await {
+                Ok(rtp_capabilities) => {
+                    send_server_message(
+                        out_tx,
+                        ServerMessage::MediaSignal {
+                            channel_id,
+                            payload: serde_json::json!({
+                                "action": "router_rtp_capabilities",
+                                "request_id": request_id,
+                                "rtp_capabilities": rtp_capabilities,
+                            }),
+                        },
+                    );
+                }
+                Err(error_message) => {
+                    send_media_signal_error(out_tx, channel_id, request_id, &error_message);
+                }
+            }
+        }
+        MediaSignalRequest::CreateWebrtcTransport {
+            request_id,
+            direction,
+        } => {
+            let direction = match direction.as_str() {
+                "send" => TransportDirection::Send,
+                "recv" => TransportDirection::Recv,
+                _ => {
+                    send_media_signal_error(
+                        out_tx,
+                        channel_id,
+                        request_id,
+                        "direction must be 'send' or 'recv'",
+                    );
+                    return;
+                }
+            };
+
+            match state
+                .media
+                .create_webrtc_transport_for_connection(connection_id, channel_id, direction)
+                .await
+            {
+                Ok(transport) => {
+                    send_server_message(
+                        out_tx,
+                        ServerMessage::MediaSignal {
+                            channel_id,
+                            payload: serde_json::json!({
+                                "action": "webrtc_transport_created",
+                                "request_id": request_id,
+                                "direction": direction.as_str(),
+                                "transport": transport,
+                            }),
+                        },
+                    );
+
+                    if direction == TransportDirection::Recv {
+                        let existing_producers = state
+                            .media
+                            .list_channel_producers(channel_id, Some(connection_id))
+                            .await;
+
+                        for producer in existing_producers {
+                            send_server_message(
+                                out_tx,
+                                ServerMessage::MediaSignal {
+                                    channel_id,
+                                    payload: serde_json::json!({
+                                        "action": "new_producer",
+                                        "producer_id": producer.producer_id,
+                                        "kind": producer.kind,
+                                    }),
+                                },
+                            );
+                        }
+                    }
+                }
+                Err(error_message) => {
+                    send_media_signal_error(out_tx, channel_id, request_id, &error_message);
+                }
+            }
+        }
+        MediaSignalRequest::ConnectWebrtcTransport {
+            request_id,
+            transport_id,
+            dtls_parameters,
+        } => {
+            match state
+                .media
+                .connect_webrtc_transport_for_connection(
+                    connection_id,
+                    channel_id,
+                    &transport_id,
+                    dtls_parameters,
+                )
+                .await
+            {
+                Ok(()) => {
+                    send_server_message(
+                        out_tx,
+                        ServerMessage::MediaSignal {
+                            channel_id,
+                            payload: serde_json::json!({
+                                "action": "webrtc_transport_connected",
+                                "request_id": request_id,
+                                "transport_id": transport_id,
+                            }),
+                        },
+                    );
+                }
+                Err(error_message) => {
+                    send_media_signal_error(out_tx, channel_id, request_id, &error_message);
+                }
+            }
+        }
+        MediaSignalRequest::MediaProduce {
+            request_id,
+            kind,
+            rtp_parameters,
+        } => {
+            let kind = match kind.as_str() {
+                "audio" => MediaKind::Audio,
+                "video" => MediaKind::Video,
+                _ => {
+                    send_media_signal_error(
+                        out_tx,
+                        channel_id,
+                        request_id,
+                        "kind must be 'audio' or 'video'",
+                    );
+                    return;
+                }
+            };
+
+            match state
+                .media
+                .create_producer_for_connection(connection_id, channel_id, kind, rtp_parameters)
+                .await
+            {
+                Ok(producer) => {
+                    send_server_message(
+                        out_tx,
+                        ServerMessage::MediaSignal {
+                            channel_id,
+                            payload: serde_json::json!({
+                                "action": "media_produced",
+                                "request_id": request_id,
+                                "producer_id": producer.producer_id,
+                                "kind": producer.kind,
+                            }),
+                        },
+                    );
+
+                    broadcast_media_signal_to_voice_channel(
+                        state,
+                        channel_id,
+                        serde_json::json!({
+                            "action": "new_producer",
+                            "producer_id": producer.producer_id,
+                            "kind": producer.kind,
+                        }),
+                        Some(connection_id),
+                    )
+                    .await;
+                }
+                Err(error_message) => {
+                    send_media_signal_error(out_tx, channel_id, request_id, &error_message);
+                }
+            }
+        }
+        MediaSignalRequest::MediaConsume {
+            request_id,
+            producer_id,
+            rtp_capabilities,
+        } => {
+            match state
+                .media
+                .create_consumer_for_connection(
+                    connection_id,
+                    channel_id,
+                    &producer_id,
+                    rtp_capabilities,
+                )
+                .await
+            {
+                Ok(consumer) => {
+                    send_server_message(
+                        out_tx,
+                        ServerMessage::MediaSignal {
+                            channel_id,
+                            payload: serde_json::json!({
+                                "action": "media_consumer_created",
+                                "request_id": request_id,
+                                "consumer": consumer,
+                            }),
+                        },
+                    );
+                }
+                Err(error_message) => {
+                    send_media_signal_error(out_tx, channel_id, request_id, &error_message);
+                }
+            }
+        }
+        MediaSignalRequest::MediaResumeConsumer {
+            request_id,
+            consumer_id,
+        } => {
+            match state
+                .media
+                .resume_consumer_for_connection(connection_id, channel_id, &consumer_id)
+                .await
+            {
+                Ok(()) => {
+                    send_server_message(
+                        out_tx,
+                        ServerMessage::MediaSignal {
+                            channel_id,
+                            payload: serde_json::json!({
+                                "action": "media_consumer_resumed",
+                                "request_id": request_id,
+                                "consumer_id": consumer_id,
+                            }),
+                        },
+                    );
+                }
+                Err(error_message) => {
+                    send_media_signal_error(out_tx, channel_id, request_id, &error_message);
+                }
+            }
+        }
+    }
+}
+
+fn request_id_for(request: &MediaSignalRequest) -> Option<String> {
+    match request {
+        MediaSignalRequest::GetRouterRtpCapabilities { request_id }
+        | MediaSignalRequest::CreateWebrtcTransport { request_id, .. }
+        | MediaSignalRequest::ConnectWebrtcTransport { request_id, .. }
+        | MediaSignalRequest::MediaProduce { request_id, .. }
+        | MediaSignalRequest::MediaConsume { request_id, .. }
+        | MediaSignalRequest::MediaResumeConsumer { request_id, .. } => request_id.clone(),
+    }
+}
+
+async fn broadcast_media_signal_to_voice_channel(
+    state: &AppState,
+    channel_id: Uuid,
+    payload: serde_json::Value,
+    exclude_connection_id: Option<Uuid>,
+) {
+    let target_connections: Vec<Uuid> = {
+        let voice_members_by_connection = state.voice_members_by_connection.read().await;
+        voice_members_by_connection
+            .iter()
+            .filter_map(|(connection_id, voice_channel_id)| {
+                if *voice_channel_id == channel_id && Some(*connection_id) != exclude_connection_id
+                {
+                    Some(*connection_id)
+                } else {
+                    None
+                }
+            })
+            .collect()
+    };
+
+    let connections = state.ws_connections.read().await;
+    for connection_id in target_connections {
+        if let Some(tx) = connections.get(&connection_id) {
+            send_server_message(
+                tx,
+                ServerMessage::MediaSignal {
+                    channel_id,
+                    payload: payload.clone(),
+                },
+            );
+        }
+    }
+}
+
+async fn broadcast_closed_producers(
+    state: &AppState,
+    closed_producers: &[crate::media::transport::ClosedProducer],
+    exclude_connection_id: Option<Uuid>,
+) {
+    for closed in closed_producers {
+        broadcast_media_signal_to_voice_channel(
+            state,
+            closed.channel_id,
+            serde_json::json!({
+                "action": "producer_closed",
+                "producer_id": closed.producer_id,
+            }),
+            exclude_connection_id,
+        )
+        .await;
+    }
+}
+
+fn send_media_signal_error(
+    out_tx: &mpsc::UnboundedSender<String>,
+    channel_id: Uuid,
+    request_id: Option<String>,
+    message: &str,
+) {
+    send_server_message(
+        out_tx,
+        ServerMessage::MediaSignal {
+            channel_id,
+            payload: serde_json::json!({
+                "action": "signal_error",
+                "request_id": request_id,
+                "message": message,
+            }),
+        },
+    );
 }

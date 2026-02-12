@@ -5,6 +5,8 @@ pub mod transport;
 
 use mediasoup::prelude::*;
 use std::collections::HashMap;
+use std::net::{IpAddr, Ipv4Addr};
+use std::str::FromStr;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use uuid::Uuid;
@@ -12,10 +14,17 @@ use uuid::Uuid;
 pub struct MediaService {
     workers: Vec<Worker>,
     routers: Arc<Mutex<HashMap<Uuid, Router>>>,
+    connection_media: Arc<Mutex<HashMap<Uuid, transport::ConnectionMediaState>>>,
+    webrtc_listen_ip: IpAddr,
+    announced_ip: Option<String>,
 }
 
 impl MediaService {
-    pub async fn new(worker_count: usize) -> Self {
+    pub async fn new(
+        worker_count: usize,
+        webrtc_listen_ip: String,
+        announced_ip: Option<String>,
+    ) -> Self {
         let mut workers = Vec::new();
 
         let worker_manager = WorkerManager::new();
@@ -28,9 +37,21 @@ impl MediaService {
             workers.push(worker);
         }
 
+        let parsed_webrtc_listen_ip = IpAddr::from_str(&webrtc_listen_ip).unwrap_or_else(|error| {
+            tracing::warn!(
+                "Invalid WEBRTC_LISTEN_IP '{}': {}. Falling back to 127.0.0.1",
+                webrtc_listen_ip,
+                error
+            );
+            IpAddr::V4(Ipv4Addr::LOCALHOST)
+        });
+
         MediaService {
             workers,
             routers: Arc::new(Mutex::new(HashMap::new())),
+            connection_media: Arc::new(Mutex::new(HashMap::new())),
+            webrtc_listen_ip: parsed_webrtc_listen_ip,
+            announced_ip,
         }
     }
 
@@ -51,5 +72,25 @@ impl MediaService {
 
         routers.insert(channel_id, router.clone());
         router
+    }
+
+    pub(super) fn webrtc_listen_info(&self) -> ListenInfo {
+        ListenInfo {
+            protocol: Protocol::Udp,
+            ip: self.webrtc_listen_ip,
+            announced_address: self.announced_ip.clone(),
+            expose_internal_ip: false,
+            port: None,
+            port_range: None,
+            flags: None,
+            send_buffer_size: None,
+            recv_buffer_size: None,
+        }
+    }
+
+    pub(super) fn connection_media(
+        &self,
+    ) -> Arc<Mutex<HashMap<Uuid, transport::ConnectionMediaState>>> {
+        self.connection_media.clone()
     }
 }
