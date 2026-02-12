@@ -184,8 +184,40 @@ input:focus {
 
 .channel-row {
   display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.channel-row-main {
+  display: flex;
   align-items: center;
   gap: 0.35rem;
+}
+
+.channel-voice-members {
+  list-style: none;
+  margin-left: 1.55rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.1rem 0 0.15rem;
+}
+
+.channel-voice-member {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--overlay1);
+  font-size: 0.77rem;
+  line-height: 1.2;
+}
+
+.channel-voice-member-dot {
+  width: 0.35rem;
+  height: 0.35rem;
+  border-radius: 999px;
+  background: var(--surface2);
+  flex-shrink: 0;
 }
 
 .channel-delete {

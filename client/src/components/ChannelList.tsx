@@ -22,6 +22,7 @@ import {
   applyVoiceSnapshot,
   joinedVoiceChannelId,
   micMuted,
+  participantsByChannel,
   setJoinedVoiceChannel,
   setVoiceActionState,
   speakerMuted,
@@ -124,6 +125,10 @@ export default function ChannelList() {
     }
 
     return count > 99 ? "99+" : String(count);
+  }
+
+  function voiceMembers(channelId: string) {
+    return participantsByChannel()[channelId] ?? [];
   }
 
   function pulseBadge(channelId: string) {
@@ -335,28 +340,47 @@ export default function ChannelList() {
             <For each={sortedChannels()}>
               {(channel) => (
                 <li class="channel-row">
-                  <button
-                    type="button"
-                    class={`channel-item${activeChannelId() === channel.id ? " is-active" : ""}${joinedVoiceChannelId() === channel.id ? " is-voice-connected" : ""}`}
-                    onClick={() => selectChannel(channel)}
+                  <div class="channel-row-main">
+                    <button
+                      type="button"
+                      class={`channel-item${activeChannelId() === channel.id ? " is-active" : ""}${joinedVoiceChannelId() === channel.id ? " is-voice-connected" : ""}`}
+                      onClick={() => selectChannel(channel)}
+                    >
+                      <span class="channel-prefix">{channel.kind === "voice" ? "~" : "#"}</span>
+                      <span class="channel-name">{channel.name}</span>
+                      <Show when={unreadCount(channel.id) > 0}>
+                        <span class={`channel-badge${pulsingByChannel()[channel.id] ? " is-pulsing" : ""}`}>
+                          {formatUnreadBadge(channel.id)}
+                        </span>
+                      </Show>
+                    </button>
+                    <button
+                      type="button"
+                      class="channel-delete"
+                      onClick={() => void handleDeleteChannel(channel)}
+                      disabled={isSaving()}
+                      title="Delete channel"
+                    >
+                      x
+                    </button>
+                  </div>
+                  <Show
+                    when={
+                      channel.kind === "voice"
+                      && voiceMembers(channel.id).length > 0
+                    }
                   >
-                    <span class="channel-prefix">{channel.kind === "voice" ? "~" : "#"}</span>
-                    <span class="channel-name">{channel.name}</span>
-                    <Show when={unreadCount(channel.id) > 0}>
-                      <span class={`channel-badge${pulsingByChannel()[channel.id] ? " is-pulsing" : ""}`}>
-                        {formatUnreadBadge(channel.id)}
-                      </span>
-                    </Show>
-                  </button>
-                  <button
-                    type="button"
-                    class="channel-delete"
-                    onClick={() => void handleDeleteChannel(channel)}
-                    disabled={isSaving()}
-                    title="Delete channel"
-                  >
-                    x
-                  </button>
+                    <ul class="channel-voice-members">
+                      <For each={voiceMembers(channel.id)}>
+                        {(username) => (
+                          <li class="channel-voice-member">
+                            <span class="channel-voice-member-dot" aria-hidden="true" />
+                            <span>{username}</span>
+                          </li>
+                        )}
+                      </For>
+                    </ul>
+                  </Show>
                 </li>
               )}
             </For>
