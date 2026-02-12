@@ -1,4 +1,8 @@
-use axum::{extract::State, routing::patch, Json, Router};
+use axum::{
+    extract::State,
+    routing::{get, patch},
+    Json, Router,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::auth::{create_token, validate_token};
@@ -16,8 +20,15 @@ pub struct UpdateCurrentUserResponse {
     pub username: String,
 }
 
+#[derive(Serialize)]
+pub struct UsersResponse {
+    pub usernames: Vec<String>,
+}
+
 pub fn router() -> Router<AppState> {
-    Router::new().route("/users/me", patch(update_current_user))
+    Router::new()
+        .route("/users", get(get_users))
+        .route("/users/me", patch(update_current_user))
 }
 
 fn extract_username(headers: &axum::http::HeaderMap, secret: &str) -> Result<String, AppError> {
@@ -82,4 +93,18 @@ async fn update_current_user(
         token,
         username: next_username.to_string(),
     }))
+}
+
+async fn get_users(
+    State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
+) -> Result<Json<UsersResponse>, AppError> {
+    let _username = extract_username(&headers, &state.config.jwt.secret)?;
+
+    let usernames: Vec<String> =
+        sqlx::query_scalar("SELECT username FROM users ORDER BY username ASC")
+            .fetch_all(&state.db)
+            .await?;
+
+    Ok(Json(UsersResponse { usernames }))
 }

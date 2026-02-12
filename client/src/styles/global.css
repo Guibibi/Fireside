@@ -736,7 +736,15 @@ input:focus {
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--subtext0);
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.65rem;
+}
+
+.member-section-title {
+  margin: 0.65rem 0 0.4rem;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--overlay1);
 }
 
 .member-items {
@@ -757,11 +765,37 @@ input:focus {
   background: var(--surface0);
 }
 
+.member-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.member-status-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.member-status-dot-online {
+  background: var(--green);
+}
+
+.member-status-dot-offline {
+  background: var(--overlay0);
+}
+
 .member-voice-indicator {
   font-size: 0.7rem;
   color: var(--green);
   text-transform: uppercase;
   letter-spacing: 0.03em;
+}
+
+.member-item-offline {
+  color: var(--overlay1);
 }
 
 @media (max-width: 1024px) {
