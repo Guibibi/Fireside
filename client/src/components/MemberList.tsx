@@ -1,8 +1,11 @@
-import { For, Show, createSignal, onCleanup, onMount } from "solid-js";
+import { For, Show, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import { connect, onMessage } from "../api/ws";
+import { activeChannelId } from "../stores/chat";
+import { participantsInChannel } from "../stores/voice";
 
 export default function MemberList() {
   const [members, setMembers] = createSignal<string[]>([]);
+  const activeVoiceParticipants = createMemo(() => new Set(participantsInChannel(activeChannelId())));
 
   onMount(() => {
     connect();
@@ -41,7 +44,14 @@ export default function MemberList() {
       >
         <ul class="member-items">
           <For each={members()}>
-            {(member) => <li class="member-item">{member}</li>}
+            {(member) => (
+              <li class="member-item">
+                <span>{member}</span>
+                <Show when={activeVoiceParticipants().has(member)}>
+                  <span class="member-voice-indicator">in voice</span>
+                </Show>
+              </li>
+            )}
           </For>
         </ul>
       </Show>

@@ -53,9 +53,11 @@ pub async fn broadcast_channel_message(
     if !stale.is_empty() {
         let mut connections = state.ws_connections.write().await;
         let mut subscriptions = state.channel_subscriptions.write().await;
+        let mut voice_members_by_connection = state.voice_members_by_connection.write().await;
         for connection_id in stale {
             connections.remove(&connection_id);
             subscriptions.remove(&connection_id);
+            voice_members_by_connection.remove(&connection_id);
         }
     }
 }
@@ -102,18 +104,26 @@ pub async fn broadcast_global_message(
     if !stale.is_empty() {
         let mut connections = state.ws_connections.write().await;
         let mut subscriptions = state.channel_subscriptions.write().await;
+        let mut voice_members_by_connection = state.voice_members_by_connection.write().await;
         for connection_id in stale {
             connections.remove(&connection_id);
             subscriptions.remove(&connection_id);
+            voice_members_by_connection.remove(&connection_id);
         }
     }
 }
 
-pub async fn cleanup_connection(state: &AppState, username: Option<&str>, connection_id: Option<Uuid>) {
+pub async fn cleanup_connection(
+    state: &AppState,
+    username: Option<&str>,
+    connection_id: Option<Uuid>,
+) -> Option<Uuid> {
     if let Some(username) = username {
         let mut active_usernames = state.active_usernames.write().await;
         active_usernames.remove(username);
     }
+
+    let mut removed_voice_channel = None;
 
     if let Some(connection_id) = connection_id {
         let mut ws_connections = state.ws_connections.write().await;
@@ -121,7 +131,22 @@ pub async fn cleanup_connection(state: &AppState, username: Option<&str>, connec
 
         let mut subscriptions = state.channel_subscriptions.write().await;
         subscriptions.remove(&connection_id);
+
+        let mut voice_members_by_connection = state.voice_members_by_connection.write().await;
+        removed_voice_channel = voice_members_by_connection.remove(&connection_id);
     }
+
+    if let (Some(voice_channel_id), Some(username)) = (removed_voice_channel, username) {
+        let mut voice_members_by_channel = state.voice_members_by_channel.write().await;
+        if let Some(usernames) = voice_members_by_channel.get_mut(&voice_channel_id) {
+            usernames.remove(username);
+            if usernames.is_empty() {
+                voice_members_by_channel.remove(&voice_channel_id);
+            }
+        }
+    }
+
+    removed_voice_channel
 }
 
 pub async fn remove_channel_subscribers(state: &AppState, channel_id: Uuid) {

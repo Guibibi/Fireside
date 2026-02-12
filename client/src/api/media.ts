@@ -1,5 +1,5 @@
 import { Device } from "mediasoup-client";
-import type { Transport, Producer, Consumer } from "mediasoup-client/lib/types";
+import type { Transport, Producer, Consumer } from "mediasoup-client/types";
 import { send, onMessage } from "./ws";
 
 let device: Device | null = null;

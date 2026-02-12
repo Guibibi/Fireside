@@ -1,9 +1,11 @@
 import ChannelList from "../components/ChannelList";
 import MessageArea from "../components/MessageArea";
 import MemberList from "../components/MemberList";
+import VoicePanel from "../components/VoicePanel";
 import { useNavigate } from "@solidjs/router";
 import { clearAuth } from "../stores/auth";
 import { resetChatState } from "../stores/chat";
+import { resetVoiceState } from "../stores/voice";
 import { disconnect } from "../api/ws";
 
 export default function Chat() {
@@ -12,6 +14,7 @@ export default function Chat() {
   function handleLogout() {
     disconnect();
     resetChatState();
+    resetVoiceState();
     clearAuth();
     navigate("/connect");
   }
@@ -24,6 +27,7 @@ export default function Chat() {
           <button type="button" onClick={handleLogout}>Logout</button>
         </div>
         <MessageArea />
+        <VoicePanel />
       </div>
       <MemberList />
     </div>

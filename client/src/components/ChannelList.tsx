@@ -1,6 +1,6 @@
 import { For, Show, createEffect, createSignal, onCleanup, onMount } from "solid-js";
 import { del, get, post } from "../api/http";
-import { connect, onMessage } from "../api/ws";
+import { connect, onMessage, send } from "../api/ws";
 import {
   activeChannelId,
   Channel,
@@ -10,6 +10,19 @@ import {
   setActiveChannelId,
   unreadCount,
 } from "../stores/chat";
+import {
+  applyVoiceJoined,
+  applyVoiceLeft,
+  applyVoiceSnapshot,
+  joinedVoiceChannelId,
+  micMuted,
+  setJoinedVoiceChannel,
+  setVoiceActionState,
+  speakerMuted,
+  toggleMicMuted,
+  toggleSpeakerMuted,
+  voiceActionState,
+} from "../stores/voice";
 
 async function fetchChannels() {
   return get<Channel[]>("/channels");
@@ -50,9 +63,33 @@ export default function ChannelList() {
     setActiveChannelId(nextChannels[0]?.id ?? null);
   }
 
-  function selectChannel(channelId: string) {
-    setActiveChannelId(channelId);
-    clearUnread(channelId);
+  function joinVoiceChannel(channelId: string) {
+    if (voiceActionState() !== "idle" || joinedVoiceChannelId() === channelId) {
+      return;
+    }
+
+    setVoiceActionState("joining");
+    send({ type: "join_voice", channel_id: channelId });
+  }
+
+  function leaveVoiceChannel() {
+    const channelId = joinedVoiceChannelId();
+    if (!channelId || voiceActionState() !== "idle") {
+      return;
+    }
+
+    setVoiceActionState("leaving");
+    send({ type: "leave_voice", channel_id: channelId });
+  }
+
+  function selectChannel(channel: Channel) {
+    if (channel.kind === "voice") {
+      joinVoiceChannel(channel.id);
+      return;
+    }
+
+    setActiveChannelId(channel.id);
+    clearUnread(channel.id);
   }
 
   function clearActiveChannelUnread() {
@@ -198,6 +235,41 @@ export default function ChannelList() {
           incrementUnread(msg.channel_id);
           pulseBadge(msg.channel_id);
         }
+        return;
+      }
+
+      if (msg.type === "voice_presence_snapshot") {
+        applyVoiceSnapshot(msg.channels);
+        return;
+      }
+
+      if (msg.type === "voice_user_joined") {
+        applyVoiceJoined(msg.channel_id, msg.username);
+        return;
+      }
+
+      if (msg.type === "voice_user_left") {
+        applyVoiceLeft(msg.channel_id, msg.username);
+        return;
+      }
+
+      if (msg.type === "voice_joined") {
+        setJoinedVoiceChannel(msg.channel_id);
+        setVoiceActionState("idle");
+        return;
+      }
+
+      if (msg.type === "voice_left") {
+        if (joinedVoiceChannelId() === msg.channel_id) {
+          setJoinedVoiceChannel(null);
+        }
+        setVoiceActionState("idle");
+        return;
+      }
+
+      if (msg.type === "error" && voiceActionState() !== "idle") {
+        setVoiceActionState("idle");
+        showErrorToast(msg.message);
       }
     });
 
@@ -215,6 +287,15 @@ export default function ChannelList() {
   });
 
   const sortedChannels = () => [...channels()].sort((a, b) => a.position - b.position);
+  const connectedVoiceChannelName = () => {
+    const connectedChannelId = joinedVoiceChannelId();
+    if (!connectedChannelId) {
+      return null;
+    }
+
+    const channel = sortedChannels().find((entry) => entry.id === connectedChannelId);
+    return channel ? channel.name : "Unknown channel";
+  };
 
   createEffect(() => {
     clearActiveChannelUnread();
@@ -232,8 +313,8 @@ export default function ChannelList() {
                 <li class="channel-row">
                   <button
                     type="button"
-                    class={`channel-item${activeChannelId() === channel.id ? " is-active" : ""}`}
-                    onClick={() => selectChannel(channel.id)}
+                    class={`channel-item${activeChannelId() === channel.id ? " is-active" : ""}${joinedVoiceChannelId() === channel.id ? " is-voice-connected" : ""}`}
+                    onClick={() => selectChannel(channel)}
                   >
                     <span class="channel-prefix">{channel.kind === "voice" ? "~" : "#"}</span>
                     <span class="channel-name">{channel.name}</span>
@@ -277,6 +358,60 @@ export default function ChannelList() {
           </select>
           <button type="submit" disabled={isSaving()}>Create</button>
         </form>
+
+        <Show when={joinedVoiceChannelId()}>
+          <div class="voice-dock">
+            <div class="voice-dock-actions">
+              <button
+                type="button"
+                class="voice-dock-icon voice-dock-disconnect"
+                onClick={leaveVoiceChannel}
+                disabled={voiceActionState() !== "idle"}
+                title={voiceActionState() === "leaving" ? "Disconnecting..." : "Disconnect"}
+                aria-label={voiceActionState() === "leaving" ? "Disconnecting..." : "Disconnect"}
+              >
+                <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+                  <path d="M7 9a5 5 0 0 1 10 0v4h2V9a7 7 0 1 0-14 0v4h2z" fill="currentColor" />
+                  <path d="M12 22 8 18h3v-5h2v5h3z" fill="currentColor" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                class="voice-dock-icon voice-dock-toggle"
+                onClick={toggleMicMuted}
+                title={micMuted() ? "Unmute microphone" : "Mute microphone"}
+                aria-label={micMuted() ? "Unmute microphone" : "Mute microphone"}
+              >
+                <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+                  <path d="M12 15a3 3 0 0 0 3-3V7a3 3 0 1 0-6 0v5a3 3 0 0 0 3 3z" fill="currentColor" />
+                  <path d="M18 11v1a6 6 0 0 1-12 0v-1H4v1a8 8 0 0 0 7 7.94V23h2v-3.06A8 8 0 0 0 20 12v-1z" fill="currentColor" />
+                  <Show when={micMuted()}>
+                    <path d="M4 4 20 20" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none" />
+                  </Show>
+                </svg>
+              </button>
+              <button
+                type="button"
+                class="voice-dock-icon voice-dock-toggle"
+                onClick={toggleSpeakerMuted}
+                title={speakerMuted() ? "Unmute speakers" : "Mute speakers"}
+                aria-label={speakerMuted() ? "Unmute speakers" : "Mute speakers"}
+              >
+                <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+                  <path d="M5 10v4h4l5 4V6l-5 4z" fill="currentColor" />
+                  <Show when={!speakerMuted()}>
+                    <path d="M16.5 8.5a5 5 0 0 1 0 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none" />
+                  </Show>
+                  <Show when={speakerMuted()}>
+                    <path d="M16 8 21 16" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none" />
+                    <path d="M21 8 16 16" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none" />
+                  </Show>
+                </svg>
+              </button>
+            </div>
+            <p class="voice-dock-channel">Connected: {connectedVoiceChannelName()}</p>
+          </div>
+        </Show>
       </Show>
       </Show>
       <Show when={toastError()}>

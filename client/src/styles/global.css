@@ -111,6 +111,8 @@ input:focus {
   background: var(--mantle);
   padding: 1rem;
   flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
   overflow-y: auto;
 }
 
@@ -206,6 +208,50 @@ input:focus {
   gap: 0.45rem;
 }
 
+.voice-dock {
+  margin-top: auto;
+  position: sticky;
+  bottom: -1rem;
+  padding-top: 0.8rem;
+  background: linear-gradient(to bottom, rgba(24, 24, 37, 0), var(--mantle) 20%);
+}
+
+.voice-dock-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.voice-dock-disconnect {
+  background: var(--red);
+  color: var(--crust);
+}
+
+.voice-dock-toggle {
+  background: var(--surface1);
+  color: var(--text);
+}
+
+.voice-dock-icon {
+  width: 2rem;
+  height: 2rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border-radius: 999px;
+}
+
+.voice-dock-icon svg {
+  display: block;
+}
+
+.voice-dock-channel {
+  margin-top: 0.45rem;
+  font-size: 0.78rem;
+  color: var(--subtext0);
+}
+
 .channel-create button {
   width: 100%;
 }
@@ -218,6 +264,11 @@ input:focus {
 
 .channel-item.is-active {
   background: var(--surface1);
+  color: var(--text);
+}
+
+.channel-item.is-voice-connected {
+  outline: 1px solid var(--green);
   color: var(--text);
 }
 
@@ -356,6 +407,76 @@ input:focus {
   border-top: 1px solid var(--surface0);
 }
 
+.voice-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.6rem;
+}
+
+.voice-panel-header h4 {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--subtext0);
+}
+
+.voice-status {
+  font-size: 0.75rem;
+  color: var(--overlay1);
+}
+
+.voice-status-live {
+  color: var(--green);
+}
+
+.voice-actions {
+  display: flex;
+  gap: 0.45rem;
+  margin-bottom: 0.55rem;
+}
+
+.voice-actions button {
+  padding: 0.4rem 0.7rem;
+}
+
+.voice-leave {
+  background: var(--surface1);
+  color: var(--text);
+}
+
+.voice-participants {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.voice-participant {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.3rem 0.45rem;
+  border-radius: 6px;
+  background: var(--surface0);
+  color: var(--subtext1);
+}
+
+.voice-you {
+  font-size: 0.72rem;
+  color: var(--green);
+}
+
+.voice-note {
+  margin-bottom: 0.5rem;
+  font-size: 0.8rem;
+  color: var(--overlay1);
+}
+
+.voice-error {
+  margin-top: 0.45rem;
+}
+
 .member-list {
   width: 240px;
   background: var(--mantle);
@@ -380,10 +501,21 @@ input:focus {
 }
 
 .member-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
   padding: 0.35rem 0.45rem;
   border-radius: 4px;
   color: var(--subtext1);
   background: var(--surface0);
+}
+
+.member-voice-indicator {
+  font-size: 0.7rem;
+  color: var(--green);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
 }
 
 @media (max-width: 1024px) {

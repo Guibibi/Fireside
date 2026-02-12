@@ -23,6 +23,8 @@ pub struct AppState {
     pub active_usernames: Arc<RwLock<HashSet<String>>>,
     pub ws_connections: Arc<RwLock<HashMap<Uuid, mpsc::UnboundedSender<String>>>>,
     pub channel_subscriptions: Arc<RwLock<HashMap<Uuid, Uuid>>>,
+    pub voice_members_by_connection: Arc<RwLock<HashMap<Uuid, Uuid>>>,
+    pub voice_members_by_channel: Arc<RwLock<HashMap<Uuid, HashSet<String>>>>,
 }
 
 #[tokio::main]
@@ -63,6 +65,8 @@ async fn main() {
         active_usernames: Arc::new(RwLock::new(HashSet::new())),
         ws_connections: Arc::new(RwLock::new(HashMap::new())),
         channel_subscriptions: Arc::new(RwLock::new(HashMap::new())),
+        voice_members_by_connection: Arc::new(RwLock::new(HashMap::new())),
+        voice_members_by_channel: Arc::new(RwLock::new(HashMap::new())),
     };
 
     let cors = CorsLayer::new()

@@ -3,6 +3,12 @@ use uuid::Uuid;
 
 use crate::models::Channel;
 
+#[derive(Debug, Serialize)]
+pub struct VoicePresenceChannel {
+    pub channel_id: Uuid,
+    pub usernames: Vec<String>,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type")]
 pub enum ClientMessage {
@@ -45,6 +51,9 @@ pub enum ServerMessage {
 
     #[serde(rename = "presence_snapshot")]
     PresenceSnapshot { usernames: Vec<String> },
+
+    #[serde(rename = "voice_presence_snapshot")]
+    VoicePresenceSnapshot { channels: Vec<VoicePresenceChannel> },
 
     #[serde(rename = "user_connected")]
     UserConnected { username: String },
@@ -93,6 +102,12 @@ pub enum ServerMessage {
 
     #[serde(rename = "voice_left")]
     VoiceLeft { channel_id: Uuid, user_id: Uuid },
+
+    #[serde(rename = "voice_user_joined")]
+    VoiceUserJoined { channel_id: Uuid, username: String },
+
+    #[serde(rename = "voice_user_left")]
+    VoiceUserLeft { channel_id: Uuid, username: String },
 
     #[serde(rename = "media_signal")]
     MediaSignal {

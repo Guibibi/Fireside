@@ -30,8 +30,14 @@ export type ServerMessage =
   | { type: "channel_activity"; channel_id: string }
   | { type: "typing_start"; channel_id: string; username: string }
   | { type: "typing_stop"; channel_id: string; username: string }
+  | {
+    type: "voice_presence_snapshot";
+    channels: { channel_id: string; usernames: string[] }[];
+  }
   | { type: "voice_joined"; channel_id: string; user_id: string }
   | { type: "voice_left"; channel_id: string; user_id: string }
+  | { type: "voice_user_joined"; channel_id: string; username: string }
+  | { type: "voice_user_left"; channel_id: string; username: string }
   | { type: "media_signal"; channel_id: string; payload: unknown };
 
 type MessageHandler = (msg: ServerMessage) => void;
@@ -40,6 +46,7 @@ let socket: WebSocket | null = null;
 let handlers: MessageHandler[] = [];
 let pendingSends: string[] = [];
 let latestPresenceUsernames: string[] | null = null;
+let latestVoicePresenceChannels: { channel_id: string; usernames: string[] }[] | null = null;
 
 export function connect(url = getWsUrl()) {
   if (socket?.readyState === WebSocket.OPEN || socket?.readyState === WebSocket.CONNECTING) {
@@ -68,6 +75,11 @@ export function connect(url = getWsUrl()) {
 
       if (msg.type === "presence_snapshot") {
         latestPresenceUsernames = [...msg.usernames];
+      } else if (msg.type === "voice_presence_snapshot") {
+        latestVoicePresenceChannels = msg.channels.map((channel) => ({
+          channel_id: channel.channel_id,
+          usernames: [...new Set(channel.usernames)].sort((a, b) => a.localeCompare(b)),
+        }));
       } else if (msg.type === "user_connected") {
         latestPresenceUsernames = latestPresenceUsernames
           ? [...new Set([...latestPresenceUsernames, msg.username])]
@@ -76,6 +88,24 @@ export function connect(url = getWsUrl()) {
         latestPresenceUsernames = latestPresenceUsernames
           ? latestPresenceUsernames.filter((username) => username !== msg.username)
           : [];
+      } else if (msg.type === "voice_user_joined") {
+        const current = latestVoicePresenceChannels ?? [];
+        const channelsById = new Map(current.map((channel) => [channel.channel_id, [...channel.usernames]]));
+        const nextUsers = channelsById.get(msg.channel_id) ?? [];
+        channelsById.set(msg.channel_id, [...new Set([...nextUsers, msg.username])].sort((a, b) => a.localeCompare(b)));
+        latestVoicePresenceChannels = Array.from(channelsById.entries()).map(([channel_id, usernames]) => ({ channel_id, usernames }));
+      } else if (msg.type === "voice_user_left") {
+        const current = latestVoicePresenceChannels ?? [];
+        const channelsById = new Map(current.map((channel) => [channel.channel_id, [...channel.usernames]]));
+        const nextUsers = (channelsById.get(msg.channel_id) ?? []).filter((username) => username !== msg.username);
+
+        if (nextUsers.length === 0) {
+          channelsById.delete(msg.channel_id);
+        } else {
+          channelsById.set(msg.channel_id, nextUsers);
+        }
+
+        latestVoicePresenceChannels = Array.from(channelsById.entries()).map(([channel_id, usernames]) => ({ channel_id, usernames }));
       }
 
       handlers.forEach((h) => h(msg));
@@ -94,6 +124,7 @@ export function disconnect() {
   socket = null;
   pendingSends = [];
   latestPresenceUsernames = null;
+  latestVoicePresenceChannels = null;
 }
 
 export function send(data: unknown) {
@@ -121,6 +152,16 @@ export function onMessage(handler: MessageHandler) {
     handler({
       type: "presence_snapshot",
       usernames: [...latestPresenceUsernames],
+    });
+  }
+
+  if (latestVoicePresenceChannels) {
+    handler({
+      type: "voice_presence_snapshot",
+      channels: latestVoicePresenceChannels.map((channel) => ({
+        channel_id: channel.channel_id,
+        usernames: [...channel.usernames],
+      })),
     });
   }
 

@@ -12,7 +12,7 @@ use uuid::Uuid;
 use super::broadcast::{
     broadcast_channel_message, broadcast_global_message, cleanup_connection, send_server_message,
 };
-use super::messages::{ClientMessage, ServerMessage};
+use super::messages::{ClientMessage, ServerMessage, VoicePresenceChannel};
 use crate::auth::validate_token;
 use crate::AppState;
 
@@ -124,6 +124,30 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
         },
     );
 
+    let voice_presence_channels: Vec<VoicePresenceChannel> = {
+        let voice_members_by_channel = state.voice_members_by_channel.read().await;
+        let mut channels: Vec<VoicePresenceChannel> = voice_members_by_channel
+            .iter()
+            .map(|(channel_id, usernames)| {
+                let mut sorted_usernames: Vec<String> = usernames.iter().cloned().collect();
+                sorted_usernames.sort_unstable();
+                VoicePresenceChannel {
+                    channel_id: *channel_id,
+                    usernames: sorted_usernames,
+                }
+            })
+            .collect();
+        channels.sort_by_key(|entry| entry.channel_id);
+        channels
+    };
+
+    send_server_message(
+        &out_tx,
+        ServerMessage::VoicePresenceSnapshot {
+            channels: voice_presence_channels,
+        },
+    );
+
     broadcast_global_message(
         &state,
         ServerMessage::UserConnected {
@@ -155,7 +179,19 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
     }
 
     let disconnected_username = claims.username.clone();
-    cleanup_connection(&state, Some(&disconnected_username), Some(connection_id)).await;
+    let removed_voice_channel =
+        cleanup_connection(&state, Some(&disconnected_username), Some(connection_id)).await;
+    if let Some(channel_id) = removed_voice_channel {
+        broadcast_global_message(
+            &state,
+            ServerMessage::VoiceUserLeft {
+                channel_id,
+                username: disconnected_username.clone(),
+            },
+            None,
+        )
+        .await;
+    }
     broadcast_global_message(
         &state,
         ServerMessage::UserDisconnected {
@@ -263,6 +299,34 @@ async fn handle_client_message(
             broadcast_channel_message(state, channel_id, response, Some(connection_id)).await;
         }
         ClientMessage::JoinVoice { channel_id } => {
+            let channel_kind_row: Option<(String,)> =
+                sqlx::query_as("SELECT kind::text FROM channels WHERE id = $1")
+                    .bind(channel_id)
+                    .fetch_optional(&state.db)
+                    .await
+                    .ok()
+                    .flatten();
+
+            let Some((channel_kind,)) = channel_kind_row else {
+                send_server_message(
+                    out_tx,
+                    ServerMessage::Error {
+                        message: "Channel not found".into(),
+                    },
+                );
+                return;
+            };
+
+            if channel_kind != "voice" {
+                send_server_message(
+                    out_tx,
+                    ServerMessage::Error {
+                        message: "Selected channel is not voice-enabled".into(),
+                    },
+                );
+                return;
+            }
+
             let user_id_row: Option<(Uuid,)> =
                 sqlx::query_as("SELECT id FROM users WHERE username = $1")
                     .bind(&claims.username)
@@ -281,6 +345,56 @@ async fn handle_client_message(
                 return;
             };
 
+            let previous_channel_id = {
+                let mut voice_members_by_connection = state.voice_members_by_connection.write().await;
+                voice_members_by_connection.insert(connection_id, channel_id)
+            };
+
+            let joined_new_channel = {
+                let mut voice_members_by_channel = state.voice_members_by_channel.write().await;
+
+                if let Some(previous_channel_id) = previous_channel_id {
+                    if previous_channel_id != channel_id {
+                        if let Some(usernames) = voice_members_by_channel.get_mut(&previous_channel_id)
+                        {
+                            usernames.remove(&claims.username);
+                            if usernames.is_empty() {
+                                voice_members_by_channel.remove(&previous_channel_id);
+                            }
+                        }
+                    }
+                }
+
+                let channel_members = voice_members_by_channel.entry(channel_id).or_default();
+                channel_members.insert(claims.username.clone())
+            };
+
+            if let Some(previous_channel_id) = previous_channel_id {
+                if previous_channel_id != channel_id {
+                    broadcast_global_message(
+                        state,
+                        ServerMessage::VoiceUserLeft {
+                            channel_id: previous_channel_id,
+                            username: claims.username.clone(),
+                        },
+                        None,
+                    )
+                    .await;
+                }
+            }
+
+            if joined_new_channel || previous_channel_id != Some(channel_id) {
+                broadcast_global_message(
+                    state,
+                    ServerMessage::VoiceUserJoined {
+                        channel_id,
+                        username: claims.username.clone(),
+                    },
+                    None,
+                )
+                .await;
+            }
+
             send_server_message(
                 out_tx,
                 ServerMessage::VoiceJoined {
@@ -290,6 +404,31 @@ async fn handle_client_message(
             );
         }
         ClientMessage::LeaveVoice { channel_id } => {
+            let left_channel_id = {
+                let mut voice_members_by_connection = state.voice_members_by_connection.write().await;
+                voice_members_by_connection.remove(&connection_id)
+            };
+
+            if let Some(left_channel_id_value) = left_channel_id {
+                let mut voice_members_by_channel = state.voice_members_by_channel.write().await;
+                if let Some(usernames) = voice_members_by_channel.get_mut(&left_channel_id_value) {
+                    usernames.remove(&claims.username);
+                    if usernames.is_empty() {
+                        voice_members_by_channel.remove(&left_channel_id_value);
+                    }
+                }
+
+                broadcast_global_message(
+                    state,
+                    ServerMessage::VoiceUserLeft {
+                        channel_id: left_channel_id_value,
+                        username: claims.username.clone(),
+                    },
+                    None,
+                )
+                .await;
+            }
+
             let user_id_row: Option<(Uuid,)> =
                 sqlx::query_as("SELECT id FROM users WHERE username = $1")
                     .bind(&claims.username)
@@ -311,7 +450,7 @@ async fn handle_client_message(
             send_server_message(
                 out_tx,
                 ServerMessage::VoiceLeft {
-                    channel_id,
+                    channel_id: left_channel_id.unwrap_or(channel_id),
                     user_id,
                 },
             );
