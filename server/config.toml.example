@@ -12,4 +12,5 @@ expiration_hours = 24
 [media]
 worker_count = 2
 webrtc_listen_ip = "0.0.0.0"
+# Local LAN testing: use LAN IP. Public VM: use public IP/address.
 announced_ip = "127.0.0.1"

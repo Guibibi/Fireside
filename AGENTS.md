@@ -156,3 +156,12 @@ Single-test patterns (client):
 - Do not commit secrets (`.env`, credentials, tokens).
 - Keep commits scoped and descriptive.
 - Document any new scripts, env vars, or protocol changes in this file and project docs.
+
+## Deployment Notes
+
+- VM deployment planning and public-network checklist live in `docs/deploy.md`.
+- If adding production env vars (CORS, media port ranges, TURN/ICE config), update:
+  - `server/src/config.rs`
+  - `server/.env.example`
+  - `server/config.toml.example`
+  - `docs/deploy.md`

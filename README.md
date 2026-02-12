@@ -104,6 +104,8 @@ Then send/receive messages:
 
 The server can be configured via environment variables (`.env`) or a TOML file (`config.toml`). See `.env.example` and `config.toml.example` for all options.
 
+Production VM planning and network checklist: `docs/deploy.md`.
+
 ## Project Structure
 
 ```
