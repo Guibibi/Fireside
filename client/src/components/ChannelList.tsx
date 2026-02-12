@@ -6,7 +6,7 @@ import {
   setMicrophoneMuted,
   setSpeakersMuted,
 } from "../api/media";
-import { connect, onMessage, send } from "../api/ws";
+import { connect, onClose, onMessage, send } from "../api/ws";
 import {
   activeChannelId,
   Channel,
@@ -26,9 +26,11 @@ import {
   joinedVoiceChannelId,
   micMuted,
   participantsByChannel,
+  removeVoiceChannelState,
   setJoinedVoiceChannel,
   setVoiceActionState,
   speakerMuted,
+  showVoiceRejoinNotice,
   toggleMicMuted,
   toggleSpeakerMuted,
   voiceRejoinNotice,
@@ -249,6 +251,13 @@ export default function ChannelList() {
       }
 
       if (msg.type === "channel_deleted") {
+        if (joinedVoiceChannelId() === msg.id) {
+          setJoinedVoiceChannel(null);
+          setVoiceActionState("idle");
+          cleanupMediaTransports();
+        }
+
+        removeVoiceChannelState(msg.id);
         setChannels((current) => {
           const next = current.filter((channel) => channel.id !== msg.id);
           ensureValidActiveChannel(next);
@@ -313,6 +322,17 @@ export default function ChannelList() {
       }
     });
 
+    const unsubscribeClose = onClose(() => {
+      if (!joinedVoiceChannelId()) {
+        return;
+      }
+
+      cleanupMediaTransports();
+      setJoinedVoiceChannel(null);
+      setVoiceActionState("idle");
+      showVoiceRejoinNotice();
+    });
+
     onCleanup(() => {
       pulseTimers.forEach((timer) => clearTimeout(timer));
       pulseTimers.clear();
@@ -323,6 +343,7 @@ export default function ChannelList() {
       window.removeEventListener("focus", handleWindowFocus);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       unsubscribe();
+      unsubscribeClose();
     });
   });
 

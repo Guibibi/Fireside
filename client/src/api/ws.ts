@@ -42,16 +42,26 @@ export type ServerMessage =
   | { type: "media_signal"; channel_id: string; payload: unknown };
 
 type MessageHandler = (msg: ServerMessage) => void;
+type CloseHandler = () => void;
 
 let socket: WebSocket | null = null;
 let handlers: MessageHandler[] = [];
+let closeHandlers: CloseHandler[] = [];
 let pendingSends: string[] = [];
 let latestPresenceUsernames: string[] | null = null;
 let latestVoicePresenceChannels: { channel_id: string; usernames: string[] }[] | null = null;
+let manualDisconnect = false;
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
 export function connect(url = getWsUrl()) {
   if (socket?.readyState === WebSocket.OPEN || socket?.readyState === WebSocket.CONNECTING) {
     return;
+  }
+
+  manualDisconnect = false;
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
   }
 
   const ws = new WebSocket(url);
@@ -124,10 +134,24 @@ export function connect(url = getWsUrl()) {
     if (socket === ws) {
       socket = null;
     }
+
+    closeHandlers.forEach((handler) => handler());
+
+    if (!manualDisconnect && token() && !reconnectTimer) {
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        connect();
+      }, 1000);
+    }
   };
 }
 
 export function disconnect() {
+  manualDisconnect = true;
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
   socket?.close();
   socket = null;
   pendingSends = [];
@@ -175,5 +199,13 @@ export function onMessage(handler: MessageHandler) {
 
   return () => {
     handlers = handlers.filter((h) => h !== handler);
+  };
+}
+
+export function onClose(handler: CloseHandler) {
+  closeHandlers.push(handler);
+
+  return () => {
+    closeHandlers = closeHandlers.filter((h) => h !== handler);
   };
 }

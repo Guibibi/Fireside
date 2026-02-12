@@ -72,6 +72,28 @@ export function applyVoiceLeft(channelId: string, leftUsername: string) {
   });
 }
 
+export function removeVoiceChannelState(channelId: string) {
+  setParticipantsByChannel((current) => {
+    if (!current[channelId]) {
+      return current;
+    }
+
+    const next = { ...current };
+    delete next[channelId];
+    return next;
+  });
+
+  setSpeakingByChannel((current) => {
+    if (!current[channelId]) {
+      return current;
+    }
+
+    const next = { ...current };
+    delete next[channelId];
+    return next;
+  });
+}
+
 export function applyVoiceSpeaking(channelId: string, username: string, speaking: boolean) {
   setSpeakingByChannel((current) => {
     const existing = current[channelId] ?? [];

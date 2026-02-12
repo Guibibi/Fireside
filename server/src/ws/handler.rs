@@ -135,6 +135,10 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
         let mut ws_connections = state.ws_connections.write().await;
         ws_connections.insert(connection_id, out_tx.clone());
     }
+    {
+        let mut connection_usernames = state.connection_usernames.write().await;
+        connection_usernames.insert(connection_id, claims.username.clone());
+    }
 
     send_server_message(
         &out_tx,

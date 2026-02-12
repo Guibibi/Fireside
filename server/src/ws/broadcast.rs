@@ -53,21 +53,8 @@ pub async fn broadcast_channel_message(
     }
 
     if !stale.is_empty() {
-        let stale_connection_ids = stale.clone();
-        let mut connections = state.ws_connections.write().await;
-        let mut subscriptions = state.channel_subscriptions.write().await;
-        let mut voice_members_by_connection = state.voice_members_by_connection.write().await;
         for connection_id in stale {
-            connections.remove(&connection_id);
-            subscriptions.remove(&connection_id);
-            voice_members_by_connection.remove(&connection_id);
-        }
-
-        drop(voice_members_by_connection);
-        drop(subscriptions);
-        drop(connections);
-
-        for connection_id in stale_connection_ids {
+            cleanup_connection(state, None, Some(connection_id)).await;
             let closed_producers = state.media.cleanup_connection_media(connection_id).await;
             broadcast_closed_producers(state, &closed_producers, Some(connection_id)).await;
         }
@@ -114,21 +101,8 @@ pub async fn broadcast_global_message(
     }
 
     if !stale.is_empty() {
-        let stale_connection_ids = stale.clone();
-        let mut connections = state.ws_connections.write().await;
-        let mut subscriptions = state.channel_subscriptions.write().await;
-        let mut voice_members_by_connection = state.voice_members_by_connection.write().await;
         for connection_id in stale {
-            connections.remove(&connection_id);
-            subscriptions.remove(&connection_id);
-            voice_members_by_connection.remove(&connection_id);
-        }
-
-        drop(voice_members_by_connection);
-        drop(subscriptions);
-        drop(connections);
-
-        for connection_id in stale_connection_ids {
+            cleanup_connection(state, None, Some(connection_id)).await;
             let closed_producers = state.media.cleanup_connection_media(connection_id).await;
             broadcast_closed_producers(state, &closed_producers, Some(connection_id)).await;
         }
@@ -142,11 +116,11 @@ async fn broadcast_closed_producers(
 ) {
     for closed in closed_producers {
         let target_connections: Vec<Uuid> = {
-            let subscriptions = state.channel_subscriptions.read().await;
-            subscriptions
+            let voice_members_by_connection = state.voice_members_by_connection.read().await;
+            voice_members_by_connection
                 .iter()
-                .filter_map(|(connection_id, subscribed_channel)| {
-                    if *subscribed_channel == closed.channel_id
+                .filter_map(|(connection_id, voice_channel_id)| {
+                    if *voice_channel_id == closed.channel_id
                         && Some(*connection_id) != exclude_connection_id
                     {
                         Some(*connection_id)
@@ -180,16 +154,20 @@ pub async fn cleanup_connection(
     username: Option<&str>,
     connection_id: Option<Uuid>,
 ) -> Option<Uuid> {
-    if let Some(username) = username {
-        let mut active_usernames = state.active_usernames.write().await;
-        active_usernames.remove(username);
-    }
+    let mut effective_username = username.map(ToOwned::to_owned);
 
     let mut removed_voice_channel = None;
 
     if let Some(connection_id) = connection_id {
         let mut ws_connections = state.ws_connections.write().await;
         ws_connections.remove(&connection_id);
+
+        let mut connection_usernames = state.connection_usernames.write().await;
+        let removed_username = connection_usernames.remove(&connection_id);
+
+        if effective_username.is_none() {
+            effective_username = removed_username;
+        }
 
         let mut subscriptions = state.channel_subscriptions.write().await;
         subscriptions.remove(&connection_id);
@@ -198,7 +176,14 @@ pub async fn cleanup_connection(
         removed_voice_channel = voice_members_by_connection.remove(&connection_id);
     }
 
-    if let (Some(voice_channel_id), Some(username)) = (removed_voice_channel, username) {
+    if let Some(username) = effective_username.as_deref() {
+        let mut active_usernames = state.active_usernames.write().await;
+        active_usernames.remove(username);
+    }
+
+    if let (Some(voice_channel_id), Some(username)) =
+        (removed_voice_channel, effective_username.as_deref())
+    {
         let mut voice_members_by_channel = state.voice_members_by_channel.write().await;
         if let Some(usernames) = voice_members_by_channel.get_mut(&voice_channel_id) {
             usernames.remove(username);

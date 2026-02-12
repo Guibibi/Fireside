@@ -211,6 +211,10 @@ async fn delete_channel(
 
     tx.commit().await?;
 
+    if kind == ChannelKind::Voice {
+        cleanup_deleted_voice_channel(&state, channel_id).await;
+    }
+
     remove_channel_subscribers(&state, channel_id).await;
     broadcast_global_message(
         &state,
@@ -220,6 +224,52 @@ async fn delete_channel(
     .await;
 
     Ok(Json(serde_json::json!({ "deleted": true })))
+}
+
+async fn cleanup_deleted_voice_channel(state: &AppState, channel_id: Uuid) {
+    let removed_usernames: Vec<String> = {
+        let mut voice_members_by_channel = state.voice_members_by_channel.write().await;
+        voice_members_by_channel
+            .remove(&channel_id)
+            .map(|usernames| usernames.into_iter().collect())
+            .unwrap_or_default()
+    };
+
+    let affected_connection_ids: Vec<Uuid> = {
+        let mut voice_members_by_connection = state.voice_members_by_connection.write().await;
+        let ids: Vec<Uuid> = voice_members_by_connection
+            .iter()
+            .filter_map(|(connection_id, voice_channel_id)| {
+                if *voice_channel_id == channel_id {
+                    Some(*connection_id)
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        for connection_id in &ids {
+            voice_members_by_connection.remove(connection_id);
+        }
+
+        ids
+    };
+
+    for connection_id in affected_connection_ids {
+        let _ = state.media.cleanup_connection_media(connection_id).await;
+    }
+
+    for username in removed_usernames {
+        broadcast_global_message(
+            state,
+            ServerMessage::VoiceUserLeft {
+                channel_id,
+                username,
+            },
+            None,
+        )
+        .await;
+    }
 }
 
 async fn get_messages(
