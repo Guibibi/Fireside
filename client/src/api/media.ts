@@ -53,6 +53,8 @@ type MediaSignalAction =
   | "signal_error";
 
 type MediaKind = "audio" | "video";
+type MediaSource = "microphone" | "camera" | "screen";
+export type RoutingMode = "sfu";
 
 interface MediaConsumerDescription {
   id: string;
@@ -77,6 +79,8 @@ interface MediaSignalPayload {
   producer_id?: string;
   username?: string;
   kind?: MediaKind;
+  source?: MediaSource;
+  routing_mode?: RoutingMode;
   consumer?: MediaConsumerDescription;
   consumer_id?: string;
 }
@@ -109,14 +113,25 @@ export interface CameraStateSnapshot {
   stream: MediaStream | null;
 }
 
+export interface ScreenShareStateSnapshot {
+  enabled: boolean;
+  error: string | null;
+  stream: MediaStream | null;
+  routingMode: RoutingMode | null;
+}
+
 export interface RemoteVideoTile {
   producerId: string;
   username: string;
   stream: MediaStream;
+  source: "camera" | "screen";
+  routingMode: RoutingMode;
 }
 
 interface QueuedProducerAnnouncement {
   kind?: MediaKind;
+  source?: MediaSource;
+  routingMode?: RoutingMode;
   username?: string;
 }
 
@@ -135,6 +150,12 @@ let cameraStream: MediaStream | null = null;
 let cameraTrack: MediaStreamTrack | null = null;
 let cameraEnabled = false;
 let cameraError: string | null = null;
+let screenProducer: Producer | null = null;
+let screenStream: MediaStream | null = null;
+let screenTrack: MediaStreamTrack | null = null;
+let screenEnabled = false;
+let screenError: string | null = null;
+let screenRoutingMode: RoutingMode | null = null;
 let initializedForChannelId: string | null = null;
 let initializingForChannelId: string | null = null;
 let initializePromise: Promise<void> | null = null;
@@ -155,9 +176,12 @@ const consumerIdByProducerId = new Map<string, string>();
 const remoteAudioElements = new Map<string, HTMLAudioElement>();
 const queuedProducerAnnouncements = new Map<string, QueuedProducerAnnouncement>();
 const producerUsernameById = new Map<string, string>();
+const producerSourceById = new Map<string, MediaSource>();
+const producerRoutingModeById = new Map<string, RoutingMode>();
 const remoteVideoTilesByProducerId = new Map<string, RemoteVideoTile>();
 const videoTilesSubscribers = new Set<(tiles: RemoteVideoTile[]) => void>();
 const cameraStateSubscribers = new Set<(snapshot: CameraStateSnapshot) => void>();
+const screenStateSubscribers = new Set<(snapshot: ScreenShareStateSnapshot) => void>();
 
 const pendingRequests = new Map<string, PendingRequest>();
 
@@ -194,6 +218,22 @@ function notifyCameraStateSubscribers() {
   }
 }
 
+function screenStateSnapshot(): ScreenShareStateSnapshot {
+  return {
+    enabled: screenEnabled,
+    error: screenError,
+    stream: screenStream,
+    routingMode: screenRoutingMode,
+  };
+}
+
+function notifyScreenStateSubscribers() {
+  const snapshot = screenStateSnapshot();
+  for (const subscriber of screenStateSubscribers) {
+    subscriber(snapshot);
+  }
+}
+
 function clearRemoteVideoTiles() {
   if (remoteVideoTilesByProducerId.size === 0) {
     return;
@@ -222,6 +262,15 @@ export function subscribeCameraState(subscriber: (snapshot: CameraStateSnapshot)
 
   return () => {
     cameraStateSubscribers.delete(subscriber);
+  };
+}
+
+export function subscribeScreenState(subscriber: (snapshot: ScreenShareStateSnapshot) => void): () => void {
+  screenStateSubscribers.add(subscriber);
+  subscriber(screenStateSnapshot());
+
+  return () => {
+    screenStateSubscribers.delete(subscriber);
   };
 }
 
@@ -375,12 +424,27 @@ function ensureSignalListener() {
       if (payload.username) {
         producerUsernameById.set(payload.producer_id, payload.username);
       }
-      queueOrConsumeProducer(msg.channel_id, payload.producer_id, payload.kind, payload.username);
+      if (payload.source) {
+        producerSourceById.set(payload.producer_id, payload.source);
+      }
+      if (payload.routing_mode) {
+        producerRoutingModeById.set(payload.producer_id, payload.routing_mode);
+      }
+      queueOrConsumeProducer(
+        msg.channel_id,
+        payload.producer_id,
+        payload.kind,
+        payload.source,
+        payload.routing_mode,
+        payload.username,
+      );
       return;
     }
 
     if (payload.action === "producer_closed" && payload.producer_id) {
       producerUsernameById.delete(payload.producer_id);
+      producerSourceById.delete(payload.producer_id);
+      producerRoutingModeById.delete(payload.producer_id);
       if (remoteVideoTilesByProducerId.delete(payload.producer_id)) {
         notifyVideoTilesSubscribers();
       }
@@ -453,6 +517,25 @@ function closeTransports() {
   cameraError = null;
   notifyCameraStateSubscribers();
 
+  screenProducer?.close();
+  screenProducer = null;
+
+  if (screenTrack) {
+    screenTrack.stop();
+    screenTrack = null;
+  }
+
+  if (screenStream) {
+    for (const track of screenStream.getTracks()) {
+      track.stop();
+    }
+    screenStream = null;
+  }
+  screenEnabled = false;
+  screenError = null;
+  screenRoutingMode = null;
+  notifyScreenStateSubscribers();
+
   for (const consumerId of remoteConsumers.keys()) {
     disposeRemoteConsumer(consumerId);
   }
@@ -466,6 +549,8 @@ function closeTransports() {
   initializingForChannelId = null;
   queuedProducerAnnouncements.clear();
   producerUsernameById.clear();
+  producerSourceById.clear();
+  producerRoutingModeById.clear();
   clearRemoteVideoTiles();
 }
 
@@ -499,6 +584,36 @@ function normalizeCameraError(error: unknown): string {
   return error instanceof Error ? error.message : "Failed to start camera";
 }
 
+function normalizeScreenShareError(error: unknown): string {
+  if (error instanceof DOMException) {
+    if (
+      error.name === "NotAllowedError"
+      || error.name === "PermissionDeniedError"
+      || error.name === "SecurityError"
+    ) {
+      return "Screen share permission was denied.";
+    }
+
+    if (
+      error.name === "NotFoundError"
+      || error.name === "DevicesNotFoundError"
+      || error.name === "OverconstrainedError"
+    ) {
+      return "No shareable display source was found.";
+    }
+
+    if (
+      error.name === "NotReadableError"
+      || error.name === "TrackStartError"
+      || error.name === "AbortError"
+    ) {
+      return "Screen sharing is unavailable or already in use.";
+    }
+  }
+
+  return error instanceof Error ? error.message : "Failed to start screen sharing";
+}
+
 function stopAndReleaseCameraTracks() {
   cameraProducer?.close();
   cameraProducer = null;
@@ -515,6 +630,25 @@ function stopAndReleaseCameraTracks() {
 
   cameraEnabled = false;
   notifyCameraStateSubscribers();
+}
+
+function stopAndReleaseScreenTracks() {
+  screenProducer?.close();
+  screenProducer = null;
+
+  if (screenTrack) {
+    screenTrack.stop();
+    screenTrack = null;
+  }
+
+  if (screenStream) {
+    screenStream.getTracks().forEach((track) => track.stop());
+    screenStream = null;
+  }
+
+  screenEnabled = false;
+  screenRoutingMode = null;
+  notifyScreenStateSubscribers();
 }
 
 function toTransportOptions(payload: MediaSignalPayload): TransportOptions {
@@ -546,10 +680,19 @@ function wireTransportConnect(channelId: string, transport: Transport) {
 }
 
 function wireSendTransportProduce(channelId: string, transport: Transport) {
-  transport.on("produce", ({ kind, rtpParameters }, callback, errback) => {
+  transport.on("produce", ({ kind, rtpParameters, appData }, callback, errback) => {
+    const appDataSource = isObject(appData) && typeof appData.source === "string"
+      ? appData.source
+      : undefined;
+    const appDataRoutingMode = isObject(appData) && typeof appData.routingMode === "string"
+      ? appData.routingMode
+      : undefined;
+
     requestMediaSignal(channelId, "media_produce", {
       kind,
       rtp_parameters: rtpParameters,
+      source: appDataSource,
+      routing_mode: appDataRoutingMode,
     })
       .then((response) => {
         if (response.action !== "media_produced" || !response.producer_id) {
@@ -599,6 +742,10 @@ async function startLocalAudioProducer(channelId: string) {
   const produced = await sendTransport.produce({
     track: micTrack,
     stopTracks: false,
+    appData: {
+      source: "microphone",
+      routingMode: "sfu",
+    },
   });
 
   produced.on("transportclose", () => {
@@ -661,6 +808,10 @@ export async function startLocalCameraProducer(channelId: string): Promise<Camer
     const produced = await sendTransport.produce({
       track: nextTrack,
       stopTracks: false,
+      appData: {
+        source: "camera",
+        routingMode: "sfu",
+      },
     });
 
     produced.on("transportclose", () => {
@@ -719,6 +870,8 @@ export async function stopLocalCameraProducer(channelId: string): Promise<Camera
   try {
     const response = await requestMediaSignal(channelId, "media_close_producer", {
       producer_id: producerId,
+      source: "camera",
+      routing_mode: "sfu",
     });
 
     if (response.action !== "media_producer_closed") {
@@ -734,6 +887,145 @@ export async function stopLocalCameraProducer(channelId: string): Promise<Camera
   stopAndReleaseCameraTracks();
   cameraError = null;
   notifyCameraStateSubscribers();
+  return { ok: true };
+}
+
+export function localScreenShareStream(): MediaStream | null {
+  return screenStream;
+}
+
+export function localScreenShareEnabled(): boolean {
+  return screenEnabled;
+}
+
+export function localScreenShareError(): string | null {
+  return screenError;
+}
+
+export async function startLocalScreenProducer(channelId: string): Promise<CameraActionResult> {
+  if (initializedForChannelId !== channelId || !sendTransport) {
+    const message = "Join the voice channel before sharing your screen";
+    screenError = message;
+    notifyScreenStateSubscribers();
+    return { ok: false, error: message };
+  }
+
+  if (screenProducer && screenTrack && screenEnabled) {
+    screenError = null;
+    screenRoutingMode = "sfu";
+    notifyScreenStateSubscribers();
+    return { ok: true };
+  }
+
+  let nextStream: MediaStream | null = null;
+  let nextTrack: MediaStreamTrack | null = null;
+
+  try {
+    nextStream = await navigator.mediaDevices.getDisplayMedia({
+      video: true,
+      audio: false,
+    });
+
+    [nextTrack] = nextStream.getVideoTracks();
+
+    if (!nextTrack) {
+      throw new Error("Display track was not available");
+    }
+
+    const produced = await sendTransport.produce({
+      track: nextTrack,
+      stopTracks: false,
+      appData: {
+        source: "screen",
+        routingMode: "sfu",
+      },
+    });
+
+    produced.on("transportclose", () => {
+      stopAndReleaseScreenTracks();
+    });
+
+    produced.on("trackended", () => {
+      if (initializedForChannelId) {
+        void stopLocalScreenProducer(initializedForChannelId);
+      } else {
+        stopAndReleaseScreenTracks();
+      }
+    });
+
+    if (initializedForChannelId !== channelId) {
+      produced.close();
+      nextTrack.stop();
+      nextStream.getTracks().forEach((track) => track.stop());
+      const message = "Voice channel changed while starting screen share";
+      screenError = message;
+      notifyScreenStateSubscribers();
+      return { ok: false, error: message };
+    }
+
+    stopAndReleaseScreenTracks();
+
+    screenProducer = produced;
+    screenStream = nextStream;
+    screenTrack = nextTrack;
+    screenEnabled = true;
+    screenError = null;
+    screenRoutingMode = "sfu";
+    notifyScreenStateSubscribers();
+    return { ok: true };
+  } catch (error) {
+    if (nextTrack) {
+      nextTrack.stop();
+    }
+
+    if (nextStream) {
+      nextStream.getTracks().forEach((track) => track.stop());
+    }
+
+    const message = normalizeScreenShareError(error);
+    screenError = message;
+    notifyScreenStateSubscribers();
+    return { ok: false, error: message };
+  }
+}
+
+export async function stopLocalScreenProducer(channelId: string): Promise<CameraActionResult> {
+  const producerId = screenProducer?.id;
+
+  if (!producerId) {
+    stopAndReleaseScreenTracks();
+    screenError = null;
+    notifyScreenStateSubscribers();
+    return { ok: true };
+  }
+
+  try {
+    const response = await requestMediaSignal(channelId, "media_close_producer", {
+      producer_id: producerId,
+      source: "screen",
+      routing_mode: "sfu",
+    });
+
+    if (response.action !== "media_producer_closed") {
+      throw new Error("Unexpected media_close_producer response from server");
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to stop screen sharing";
+
+    const hasEndedTrack = screenTrack?.readyState === "ended";
+    const streamInactive = screenStream ? !screenStream.active : false;
+    if (hasEndedTrack || streamInactive) {
+      stopAndReleaseScreenTracks();
+    }
+
+    screenError = message;
+    notifyScreenStateSubscribers();
+    return { ok: false, error: message };
+  }
+
+  stopAndReleaseScreenTracks();
+  screenError = null;
+  notifyScreenStateSubscribers();
   return { ok: true };
 }
 
@@ -767,6 +1059,9 @@ function disposeRemoteConsumer(consumerId: string) {
     remoteConsumers.delete(consumerId);
     if (producerId) {
       consumerIdByProducerId.delete(producerId);
+      producerSourceById.delete(producerId);
+      producerRoutingModeById.delete(producerId);
+      producerUsernameById.delete(producerId);
       if (remoteVideoTilesByProducerId.delete(producerId)) {
         notifyVideoTilesSubscribers();
       }
@@ -785,6 +1080,8 @@ async function consumeRemoteProducer(channelId: string, producerId: string) {
   if (!device || !recvTransport || initializedForChannelId !== channelId) {
     queuedProducerAnnouncements.set(producerId, {
       kind: undefined,
+      source: producerSourceById.get(producerId),
+      routingMode: producerRoutingModeById.get(producerId),
       username: producerUsernameById.get(producerId),
     });
     return;
@@ -829,10 +1126,14 @@ async function consumeRemoteProducer(channelId: string, producerId: string) {
     void audio.play().catch(() => undefined);
   } else {
     const username = producerUsernameById.get(description.producer_id) ?? "Unknown";
+    const source = producerSourceById.get(description.producer_id) === "screen" ? "screen" : "camera";
+    const routingMode = producerRoutingModeById.get(description.producer_id) ?? "sfu";
     remoteVideoTilesByProducerId.set(description.producer_id, {
       producerId: description.producer_id,
       username,
       stream: new MediaStream([consumer.track]),
+      source,
+      routingMode,
     });
     notifyVideoTilesSubscribers();
   }
@@ -851,10 +1152,20 @@ function queueOrConsumeProducer(
   channelId: string,
   producerId: string,
   kind: MediaKind | undefined,
+  source: MediaSource | undefined,
+  routingMode: RoutingMode | undefined,
   username?: string,
 ) {
   if (username) {
     producerUsernameById.set(producerId, username);
+  }
+
+  if (source) {
+    producerSourceById.set(producerId, source);
+  }
+
+  if (routingMode) {
+    producerRoutingModeById.set(producerId, routingMode);
   }
 
   if (consumerIdByProducerId.has(producerId)) {
@@ -862,12 +1173,12 @@ function queueOrConsumeProducer(
   }
 
   if (!device || !recvTransport || initializedForChannelId !== channelId) {
-    queuedProducerAnnouncements.set(producerId, { kind, username });
+    queuedProducerAnnouncements.set(producerId, { kind, source, routingMode, username });
     return;
   }
 
   void consumeRemoteProducer(channelId, producerId).catch(() => {
-    queuedProducerAnnouncements.set(producerId, { kind, username });
+    queuedProducerAnnouncements.set(producerId, { kind, source, routingMode, username });
   });
 }
 
@@ -880,9 +1191,19 @@ function flushQueuedProducerAnnouncements(channelId: string) {
       producerUsernameById.set(producerId, queued.username);
     }
 
+    if (queued.source) {
+      producerSourceById.set(producerId, queued.source);
+    }
+
+    if (queued.routingMode) {
+      producerRoutingModeById.set(producerId, queued.routingMode);
+    }
+
     void consumeRemoteProducer(channelId, producerId).catch(() => {
       queuedProducerAnnouncements.set(producerId, {
         kind: queued.kind,
+        source: queued.source,
+        routingMode: queued.routingMode,
         username: queued.username,
       });
     });
@@ -1081,6 +1402,10 @@ export async function setPreferredMicrophoneDevice(deviceId: string | null) {
       micProducer = await sendTransport.produce({
         track: nextTrack,
         stopTracks: false,
+        appData: {
+          source: "microphone",
+          routingMode: "sfu",
+        },
       });
 
       micProducer.on("transportclose", () => {

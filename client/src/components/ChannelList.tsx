@@ -4,7 +4,9 @@ import {
   cleanupMediaTransports,
   initializeMediaTransports,
   startLocalCameraProducer,
+  startLocalScreenProducer,
   stopLocalCameraProducer,
+  stopLocalScreenProducer,
   setMicrophoneMuted,
   setSpeakersMuted,
 } from "../api/media";
@@ -38,7 +40,11 @@ import {
   setVoiceActionState,
   speakerMuted,
   startCameraStateSubscription,
+  startScreenStateSubscription,
   startVideoTilesSubscription,
+  screenShareEnabled,
+  screenShareError,
+  screenShareRoutingMode,
   showVoiceRejoinNotice,
   toggleMicMuted,
   toggleSpeakerMuted,
@@ -60,6 +66,7 @@ export default function ChannelList() {
   const [loadError, setLoadError] = createSignal("");
   const [toastError, setToastError] = createSignal("");
   const [cameraActionPending, setCameraActionPending] = createSignal(false);
+  const [screenActionPending, setScreenActionPending] = createSignal(false);
   const [pulsingByChannel, setPulsingByChannel] = createSignal<Record<string, boolean>>({});
   const pulseTimers = new Map<string, ReturnType<typeof setTimeout>>();
   let toastTimer: ReturnType<typeof setTimeout> | null = null;
@@ -138,6 +145,27 @@ export default function ChannelList() {
       }
     } finally {
       setCameraActionPending(false);
+    }
+  }
+
+  async function handleToggleScreenShare() {
+    const channelId = joinedVoiceChannelId();
+    if (!channelId || screenActionPending()) {
+      return;
+    }
+
+    setScreenActionPending(true);
+
+    try {
+      const result = screenShareEnabled()
+        ? await stopLocalScreenProducer(channelId)
+        : await startLocalScreenProducer(channelId);
+
+      if (!result.ok && result.error) {
+        showErrorToast(result.error);
+      }
+    } finally {
+      setScreenActionPending(false);
     }
   }
 
@@ -332,6 +360,7 @@ export default function ChannelList() {
       if (msg.type === "voice_joined") {
         setJoinedVoiceChannel(msg.channel_id);
         startCameraStateSubscription();
+        startScreenStateSubscription();
         startVideoTilesSubscription();
         clearVoiceRejoinNotice();
         setVoiceActionState("idle");
@@ -558,10 +587,30 @@ export default function ChannelList() {
                     </Show>
                   </svg>
                 </button>
+                <button
+                  type="button"
+                  class={`voice-dock-icon voice-dock-toggle voice-dock-screen${screenShareEnabled() ? " is-active" : ""}`}
+                  onClick={() => void handleToggleScreenShare()}
+                  disabled={screenActionPending() || voiceActionState() !== "idle"}
+                  title={screenShareEnabled() ? "Stop screen share" : "Start screen share"}
+                  aria-label={screenShareEnabled() ? "Stop screen share" : "Start screen share"}
+                >
+                  <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+                    <path d="M3.5 5A1.5 1.5 0 0 1 5 3.5h14A1.5 1.5 0 0 1 20.5 5v10A1.5 1.5 0 0 1 19 16.5H5A1.5 1.5 0 0 1 3.5 15z" fill="currentColor" />
+                    <path d="M8.5 20h7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none" />
+                    <path d="M12 16.5V20" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none" />
+                  </svg>
+                </button>
               </div>
               <p class="voice-dock-channel">Connected: {connectedVoiceChannelName()}</p>
               <Show when={cameraError()}>
                 <p class="voice-dock-error">{cameraError()}</p>
+              </Show>
+              <Show when={screenShareEnabled() && screenShareRoutingMode()}>
+                <p class="voice-dock-channel">Screen sharing via {screenShareRoutingMode()?.toUpperCase()}</p>
+              </Show>
+              <Show when={screenShareError()}>
+                <p class="voice-dock-error">{screenShareError()}</p>
               </Show>
             </div>
           </Show>

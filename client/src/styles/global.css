@@ -340,6 +340,36 @@ input:focus {
   transform: none;
 }
 
+.voice-dock-screen-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.voice-dock-screen-mode {
+  min-width: 3.9rem;
+  padding: 0.2rem 0.45rem;
+  font-size: 0.68rem;
+  border-radius: 999px;
+  border-color: color-mix(in srgb, var(--surface2) 75%, transparent);
+  background: var(--surface0);
+}
+
+.voice-dock-screen {
+  border: 1px solid color-mix(in srgb, var(--surface2) 65%, transparent);
+}
+
+.voice-dock-screen:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--blue) 22%, var(--surface1));
+  border-color: color-mix(in srgb, var(--blue) 55%, var(--surface2));
+}
+
+.voice-dock-screen.is-active {
+  background: var(--blue);
+  color: var(--crust);
+  border-color: color-mix(in srgb, var(--blue) 80%, black 20%);
+}
+
 .voice-dock-icon {
   width: 2rem;
   height: 2rem;
@@ -624,6 +654,11 @@ input:focus {
 
 .video-stage-tile.is-local {
   border-color: var(--blue);
+}
+
+.video-stage-tile.is-screen-share {
+  border-color: color-mix(in srgb, var(--peach) 68%, var(--surface2));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--peach) 32%, transparent);
 }
 
 .video-stage-stream {
@@ -940,6 +975,10 @@ input:focus {
 
   .video-stage-grid {
     grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+  }
+
+  .voice-dock-actions {
+    flex-wrap: wrap;
   }
 }
 

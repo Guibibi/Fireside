@@ -1,5 +1,11 @@
 import { For, Show, createEffect, onCleanup } from "solid-js";
-import { cameraEnabled, localVideoStream, videoTiles } from "../stores/voice";
+import {
+  cameraEnabled,
+  localScreenShareStream,
+  localVideoStream,
+  screenShareEnabled,
+  videoTiles,
+} from "../stores/voice";
 
 interface StreamVideoProps {
   stream: MediaStream;
@@ -31,7 +37,7 @@ function StreamVideo(props: StreamVideoProps) {
 }
 
 export default function VideoStage() {
-  const hasVideo = () => cameraEnabled() || videoTiles().length > 0;
+  const hasVideo = () => cameraEnabled() || screenShareEnabled() || videoTiles().length > 0;
 
   return (
     <section class="video-stage" aria-label="Video stage">
@@ -41,16 +47,27 @@ export default function VideoStage() {
             {(stream) => (
               <article class="video-stage-tile is-local">
                 <StreamVideo stream={stream()} muted />
-                <p class="video-stage-label">You</p>
+                <p class="video-stage-label">You - Camera</p>
+              </article>
+            )}
+          </Show>
+
+          <Show when={screenShareEnabled() && localScreenShareStream()}>
+            {(stream) => (
+              <article class="video-stage-tile is-local is-screen-share">
+                <StreamVideo stream={stream()} muted />
+                <p class="video-stage-label">You - Screen</p>
               </article>
             )}
           </Show>
 
           <For each={videoTiles()}>
             {(tile) => (
-              <article class="video-stage-tile">
+              <article class={`video-stage-tile${tile.source === "screen" ? " is-screen-share" : ""}`}>
                 <StreamVideo stream={tile.stream} muted={false} />
-                <p class="video-stage-label">{tile.username}</p>
+                <p class="video-stage-label">
+                  {tile.username} - {tile.source === "screen" ? "Screen" : "Camera"}
+                </p>
               </article>
             )}
           </For>

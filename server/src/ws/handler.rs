@@ -16,7 +16,7 @@ use super::broadcast::{
 };
 use super::messages::{ClientMessage, ServerMessage, VoicePresenceChannel};
 use crate::auth::validate_token;
-use crate::media::transport::TransportDirection;
+use crate::media::transport::{ProducerSource, RoutingMode, TransportDirection};
 use crate::AppState;
 
 #[derive(Debug, Deserialize)]
@@ -37,6 +37,8 @@ enum MediaSignalRequest {
     MediaProduce {
         request_id: Option<String>,
         kind: String,
+        source: Option<String>,
+        routing_mode: Option<String>,
         rtp_parameters: RtpParameters,
     },
     MediaConsume {
@@ -710,6 +712,8 @@ async fn handle_media_signal_message(
                                         "action": "new_producer",
                                         "producer_id": producer.producer_id,
                                         "kind": producer.kind,
+                                        "source": producer.source,
+                                        "routing_mode": producer.routing_mode,
                                         "username": username,
                                     }),
                                 },
@@ -758,6 +762,8 @@ async fn handle_media_signal_message(
         MediaSignalRequest::MediaProduce {
             request_id,
             kind,
+            source,
+            routing_mode,
             rtp_parameters,
         } => {
             let kind = match kind.as_str() {
@@ -774,9 +780,32 @@ async fn handle_media_signal_message(
                 }
             };
 
+            let source = match resolve_producer_source(kind, source.as_deref()) {
+                Ok(source) => source,
+                Err(message) => {
+                    send_media_signal_error(out_tx, channel_id, request_id, &message);
+                    return;
+                }
+            };
+
+            let routing_mode = match resolve_routing_mode(routing_mode.as_deref()) {
+                Ok(mode) => mode,
+                Err(message) => {
+                    send_media_signal_error(out_tx, channel_id, request_id, &message);
+                    return;
+                }
+            };
+
             match state
                 .media
-                .create_producer_for_connection(connection_id, channel_id, kind, rtp_parameters)
+                .create_producer_for_connection(
+                    connection_id,
+                    channel_id,
+                    kind,
+                    source,
+                    routing_mode,
+                    rtp_parameters,
+                )
                 .await
             {
                 Ok(producer) => {
@@ -789,6 +818,8 @@ async fn handle_media_signal_message(
                                 "request_id": request_id,
                                 "producer_id": producer.producer_id,
                                 "kind": producer.kind,
+                                "source": producer.source,
+                                "routing_mode": producer.routing_mode,
                             }),
                         },
                     );
@@ -800,6 +831,8 @@ async fn handle_media_signal_message(
                             "action": "new_producer",
                             "producer_id": producer.producer_id,
                             "kind": producer.kind,
+                            "source": producer.source,
+                            "routing_mode": producer.routing_mode,
                             "username": username,
                         }),
                         Some(connection_id),
@@ -889,6 +922,8 @@ async fn handle_media_signal_message(
                                 "action": "media_producer_closed",
                                 "request_id": request_id,
                                 "producer_id": producer_id,
+                                "source": closed_producer.source,
+                                "routing_mode": closed_producer.routing_mode,
                             }),
                         },
                     );
@@ -1000,10 +1035,50 @@ async fn broadcast_closed_producers(
             serde_json::json!({
                 "action": "producer_closed",
                 "producer_id": closed.producer_id,
+                "source": closed.source,
+                "routing_mode": closed.routing_mode,
             }),
             exclude_connection_id,
         )
         .await;
+    }
+}
+
+fn resolve_producer_source(
+    kind: MediaKind,
+    source: Option<&str>,
+) -> Result<ProducerSource, String> {
+    match source {
+        Some("microphone") => {
+            if kind != MediaKind::Audio {
+                return Err("source 'microphone' requires kind 'audio'".into());
+            }
+            Ok(ProducerSource::Microphone)
+        }
+        Some("camera") => {
+            if kind != MediaKind::Video {
+                return Err("source 'camera' requires kind 'video'".into());
+            }
+            Ok(ProducerSource::Camera)
+        }
+        Some("screen") => {
+            if kind != MediaKind::Video {
+                return Err("source 'screen' requires kind 'video'".into());
+            }
+            Ok(ProducerSource::Screen)
+        }
+        Some(_) => Err("source must be 'microphone', 'camera', or 'screen'".into()),
+        None => Ok(match kind {
+            MediaKind::Audio => ProducerSource::Microphone,
+            MediaKind::Video => ProducerSource::Camera,
+        }),
+    }
+}
+
+fn resolve_routing_mode(requested: Option<&str>) -> Result<RoutingMode, String> {
+    match requested {
+        Some("sfu") | None => Ok(RoutingMode::Sfu),
+        _ => Err("routing_mode must be 'sfu'".into()),
     }
 }
 

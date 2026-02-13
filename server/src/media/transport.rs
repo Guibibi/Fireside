@@ -17,6 +17,45 @@ pub enum TransportDirection {
     Recv,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProducerSource {
+    Microphone,
+    Camera,
+    Screen,
+}
+
+impl ProducerSource {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Microphone => "microphone",
+            Self::Camera => "camera",
+            Self::Screen => "screen",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RoutingMode {
+    Sfu,
+}
+
+impl RoutingMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Sfu => "sfu",
+        }
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct ProducerEntry {
+    pub producer: Producer,
+    pub source: ProducerSource,
+    pub routing_mode: RoutingMode,
+}
+
 impl TransportDirection {
     pub fn as_str(self) -> &'static str {
         match self {
@@ -40,7 +79,7 @@ pub(crate) struct ConnectionMediaState {
     pub send_transport_id: Option<String>,
     pub recv_transport_id: Option<String>,
     pub transports: HashMap<String, WebRtcTransport>,
-    pub producers: HashMap<String, Producer>,
+    pub producers: HashMap<String, ProducerEntry>,
     pub consumers: HashMap<String, Consumer>,
 }
 
@@ -61,6 +100,8 @@ impl ConnectionMediaState {
 pub struct PublishedProducer {
     pub producer_id: String,
     pub kind: String,
+    pub source: String,
+    pub routing_mode: String,
     pub owner_connection_id: Uuid,
 }
 
@@ -76,6 +117,8 @@ pub struct CreatedConsumer {
 pub struct ClosedProducer {
     pub channel_id: Uuid,
     pub producer_id: String,
+    pub source: String,
+    pub routing_mode: String,
 }
 
 fn media_kind_as_str(kind: MediaKind) -> &'static str {
@@ -189,6 +232,8 @@ impl MediaService {
         connection_id: Uuid,
         channel_id: Uuid,
         kind: MediaKind,
+        source: ProducerSource,
+        routing_mode: RoutingMode,
         rtp_parameters: RtpParameters,
     ) -> Result<PublishedProducer, String> {
         let send_transport = {
@@ -210,13 +255,22 @@ impl MediaService {
                 return Err("Send transport not found".into());
             };
 
-            if kind == MediaKind::Video
+            if source == ProducerSource::Camera
                 && entry
                     .producers
                     .values()
-                    .any(|producer| producer.kind() == MediaKind::Video)
+                    .any(|producer| producer.source == ProducerSource::Camera)
             {
-                return Err("Only one active video producer is allowed per connection".into());
+                return Err("Only one active camera producer is allowed per connection".into());
+            }
+
+            if source == ProducerSource::Screen
+                && entry
+                    .producers
+                    .values()
+                    .any(|producer| producer.source == ProducerSource::Screen)
+            {
+                return Err("Only one active screen producer is allowed per connection".into());
             }
 
             transport.clone()
@@ -240,21 +294,39 @@ impl MediaService {
                 return Err("Media session moved to a different channel".into());
             }
 
-            if kind == MediaKind::Video
+            if source == ProducerSource::Camera
                 && entry
                     .producers
                     .values()
-                    .any(|existing| existing.kind() == MediaKind::Video)
+                    .any(|existing| existing.source == ProducerSource::Camera)
             {
-                return Err("Only one active video producer is allowed per connection".into());
+                return Err("Only one active camera producer is allowed per connection".into());
             }
 
-            entry.producers.insert(producer_id.clone(), producer);
+            if source == ProducerSource::Screen
+                && entry
+                    .producers
+                    .values()
+                    .any(|existing| existing.source == ProducerSource::Screen)
+            {
+                return Err("Only one active screen producer is allowed per connection".into());
+            }
+
+            entry.producers.insert(
+                producer_id.clone(),
+                ProducerEntry {
+                    producer,
+                    source,
+                    routing_mode,
+                },
+            );
         }
 
         Ok(PublishedProducer {
             producer_id,
             kind: media_kind_as_str(kind).to_string(),
+            source: source.as_str().to_string(),
+            routing_mode: routing_mode.as_str().to_string(),
             owner_connection_id: connection_id,
         })
     }
@@ -279,8 +351,10 @@ impl MediaService {
                         .producers
                         .values()
                         .map(|producer| PublishedProducer {
-                            producer_id: producer.id().to_string(),
-                            kind: media_kind_as_str(producer.kind()).to_string(),
+                            producer_id: producer.producer.id().to_string(),
+                            kind: media_kind_as_str(producer.producer.kind()).to_string(),
+                            source: producer.source.as_str().to_string(),
+                            routing_mode: producer.routing_mode.as_str().to_string(),
                             owner_connection_id: *connection_id,
                         })
                         .collect::<Vec<_>>(),
@@ -423,13 +497,16 @@ impl MediaService {
             return Err("Producer does not belong to this voice channel".into());
         }
 
-        if entry.producers.remove(producer_id).is_none() {
-            return Err("Producer not found for this connection".into());
-        }
+        let closed = entry
+            .producers
+            .remove(producer_id)
+            .ok_or_else(|| "Producer not found for this connection".to_string())?;
 
         Ok(ClosedProducer {
             channel_id,
             producer_id: producer_id.to_string(),
+            source: closed.source.as_str().to_string(),
+            routing_mode: closed.routing_mode.as_str().to_string(),
         })
     }
 
@@ -444,10 +521,12 @@ impl MediaService {
 
         removed
             .producers
-            .keys()
-            .map(|producer_id| ClosedProducer {
+            .iter()
+            .map(|(producer_id, producer)| ClosedProducer {
                 channel_id: removed.channel_id,
                 producer_id: producer_id.clone(),
+                source: producer.source.as_str().to_string(),
+                routing_mode: producer.routing_mode.as_str().to_string(),
             })
             .collect()
     }

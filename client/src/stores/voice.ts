@@ -1,8 +1,10 @@
 import { createSignal } from "solid-js";
 import {
   type CameraStateSnapshot,
+  type ScreenShareStateSnapshot,
   type RemoteVideoTile,
   subscribeCameraState,
+  subscribeScreenState,
   subscribeVideoTiles,
 } from "../api/media";
 
@@ -23,9 +25,14 @@ const [voiceRejoinNotice, setVoiceRejoinNotice] = createSignal(false);
 const [cameraEnabled, setCameraEnabled] = createSignal(false);
 const [cameraError, setCameraError] = createSignal<string | null>(null);
 const [localVideoStream, setLocalVideoStream] = createSignal<MediaStream | null>(null);
+const [screenShareEnabled, setScreenShareEnabled] = createSignal(false);
+const [screenShareError, setScreenShareError] = createSignal<string | null>(null);
+const [localScreenShareStream, setLocalScreenShareStream] = createSignal<MediaStream | null>(null);
+const [screenShareRoutingMode, setScreenShareRoutingMode] = createSignal<"sfu" | null>(null);
 const [videoTiles, setVideoTiles] = createSignal<RemoteVideoTile[]>([]);
 let unsubscribeVideoTiles: (() => void) | null = null;
 let unsubscribeCameraState: (() => void) | null = null;
+let unsubscribeScreenState: (() => void) | null = null;
 
 function sortUnique(usernames: string[]): string[] {
   return [...new Set(usernames)].sort((a, b) => a.localeCompare(b));
@@ -179,6 +186,13 @@ function applyCameraStateSnapshot(snapshot: CameraStateSnapshot) {
   setLocalVideoStream(snapshot.stream);
 }
 
+function applyScreenStateSnapshot(snapshot: ScreenShareStateSnapshot) {
+  setScreenShareEnabled(snapshot.enabled);
+  setScreenShareError(snapshot.error);
+  setLocalScreenShareStream(snapshot.stream);
+  setScreenShareRoutingMode(snapshot.routingMode);
+}
+
 export function startCameraStateSubscription() {
   if (unsubscribeCameraState) {
     return;
@@ -189,10 +203,27 @@ export function startCameraStateSubscription() {
   });
 }
 
+export function startScreenStateSubscription() {
+  if (unsubscribeScreenState) {
+    return;
+  }
+
+  unsubscribeScreenState = subscribeScreenState((snapshot) => {
+    applyScreenStateSnapshot(snapshot);
+  });
+}
+
 export function stopCameraStateSubscription() {
   if (unsubscribeCameraState) {
     unsubscribeCameraState();
     unsubscribeCameraState = null;
+  }
+}
+
+export function stopScreenStateSubscription() {
+  if (unsubscribeScreenState) {
+    unsubscribeScreenState();
+    unsubscribeScreenState = null;
   }
 }
 
@@ -208,9 +239,14 @@ export function stopVideoTilesSubscription() {
 export function resetVoiceMediaState() {
   stopVideoTilesSubscription();
   stopCameraStateSubscription();
+  stopScreenStateSubscription();
   setCameraEnabled(false);
   setCameraError(null);
   setLocalVideoStream(null);
+  setScreenShareEnabled(false);
+  setScreenShareError(null);
+  setLocalScreenShareStream(null);
+  setScreenShareRoutingMode(null);
 }
 
 export function resetVoiceState() {
@@ -245,7 +281,11 @@ export {
   cameraError,
   joinedVoiceChannelId,
   localVideoStream,
+  localScreenShareStream,
   participantsByChannel,
+  screenShareEnabled,
+  screenShareError,
+  screenShareRoutingMode,
   speakingByChannel,
   videoTiles,
   voiceActionState,

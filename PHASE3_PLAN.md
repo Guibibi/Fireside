@@ -11,7 +11,6 @@ Ship practical, end-to-end voice/video for channels using the existing mediasoup
 - Ship server + client slices together for each milestone.
 - Prefer incremental, testable steps over one large media rewrite.
 - Default media routing architecture is mediasoup SFU.
-- Keep transport/session abstractions structured so an optional P2P mode can be added without breaking SFU wire contracts.
 
 ---
 
@@ -188,18 +187,17 @@ Goal: optional camera video works alongside voice using mediasoup SFU routing.
 
 ---
 
-## Milestone 3.5 - Screen Sharing Publish/Subscribe (SFU first, optional P2P mode)
+## Milestone 3.5 - Screen Sharing Publish/Subscribe (SFU)
 
-Goal: users can share their screen independently from camera, with SFU as default and optional P2P mode as a separate transport strategy.
+Goal: users can share their screen independently from camera using SFU routing.
+
+Implementation checklist: see `PHASE3_5_CHECKLIST.md` for PR-by-PR execution details and acceptance criteria.
 
 ### Server
 
 - Add explicit signaling semantics for screen-share producer lifecycle (start/stop/update).
-- Keep screen-share routing channel-scoped through mediasoup SFU by default.
-- Define mode contract for media routing:
-  - `sfu` (default)
-  - `p2p` (optional, guarded/feature-flagged)
-- If/when `p2p` is enabled, keep auth and channel membership checks identical to SFU path.
+- Keep screen-share routing channel-scoped through mediasoup SFU.
+- Keep auth and channel membership checks identical across media requests.
 
 ### Client
 
@@ -213,7 +211,7 @@ Goal: users can share their screen independently from camera, with SFU as defaul
 - One user can start/stop screen share without dropping voice.
 - Other channel members see screen tile lifecycle changes in real time.
 - Same-channel only visibility is preserved (no cross-channel leakage).
-- If P2P mode is enabled, behavior matches SFU feature parity for core share flow.
+- SFU flow meets core share-flow parity for start/stop and tile lifecycle.
 
 ---
 
@@ -269,16 +267,16 @@ Goal: make voice/video usable in day-to-day sessions.
 
 ### Phase 3.4 - Video streaming
 
-- [ ] **Server:** Support video producers/consumers and availability events.
-- [ ] **Client:** Add camera toggle, local preview, and remote video tiles.
-- [ ] **Client:** Handle camera permission/device errors gracefully.
-- [ ] **Verify:** Video toggles live without degrading audio continuity.
+- [x] **Server:** Support video producers/consumers and availability events.
+- [x] **Client:** Add camera toggle, local preview, and remote video tiles.
+- [x] **Client:** Handle camera permission/device errors gracefully.
+- [x] **Verify:** Video toggles live without degrading audio continuity.
+- [ ] **Follow-up:** Re-run manual multi-client QA focused on audio continuity while repeatedly toggling camera.
 
 ### Phase 3.5 - Screen sharing
 
-- [ ] **Server:** Add screen-share signaling and channel-scoped SFU routing.
-- [ ] **Client:** Add start/stop share, presenter tile UI, and share-end handling.
-- [ ] **Client:** Implement/guard optional routing mode toggle (`sfu` default, `p2p` optional).
+- [x] **Server:** Add screen-share signaling and channel-scoped SFU routing.
+- [x] **Client:** Add start/stop share, presenter tile UI, and share-end handling.
 - [ ] **Verify:** Screen share is stable and isolated per channel.
 
 ### Phase 3.6 - Reliability and polish
@@ -294,15 +292,14 @@ Goal: make voice/video usable in day-to-day sessions.
 - [ ] Users can publish and receive channel-scoped audio.
 - [ ] Users can publish and receive optional camera video streams.
 - [ ] Users can publish and receive optional screen-share streams.
-- [ ] SFU remains the default routing mode; optional P2P mode does not break SFU behavior.
 - [ ] Voice/video state recovers from expected disconnect and device-change scenarios.
-- [ ] Server and client complete build/check commands successfully.
+- [x] Server and client complete build/check commands successfully.
 
 ### Verification Commands
 
-- [ ] Server: `cd server && cargo check`
-- [ ] Server: `cd server && cargo test`
-- [ ] Client: `cd client && npm run build`
+- [x] Server: `cd server && cargo check`
+- [x] Server: `cd server && cargo test`
+- [x] Client: `cd client && npm run build`
 
 ### Manual QA Matrix
 

@@ -141,6 +141,8 @@ async fn broadcast_closed_producers(
                         payload: serde_json::json!({
                             "action": "producer_closed",
                             "producer_id": closed.producer_id,
+                            "source": closed.source,
+                            "routing_mode": closed.routing_mode,
                         }),
                     },
                 );
