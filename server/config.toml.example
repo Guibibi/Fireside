@@ -2,6 +2,8 @@
 host = "0.0.0.0"
 port = 3000
 
+# Docker production deployments usually use environment variables instead of this file.
+
 [database]
 url = "postgres://yankcord:password@localhost:5432/yankcord"
 
