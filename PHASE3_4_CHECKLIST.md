@@ -106,7 +106,7 @@ Goal: ship camera video alongside existing voice/audio with SFU routing, live ti
   - [ ] `cargo fmt --all --manifest-path server/Cargo.toml -- --check`
   - [ ] `cargo clippy --manifest-path server/Cargo.toml --all-targets -- -D warnings`
   - [ ] `cargo test --manifest-path server/Cargo.toml`
-  - [x] `npx tsc -p client/tsconfig.json --noEmit`
+  - [x] `npm --prefix client run typecheck`
   - [x] `npm --prefix client run build`
 
 - [ ] Manual QA

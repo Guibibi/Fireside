@@ -66,7 +66,7 @@ Type/lint status for client:
 
 - No dedicated lint script is configured in `client/package.json`.
 - No test script/framework is configured in `client/package.json`.
-- Type-check without emit: `npx tsc -p client/tsconfig.json --noEmit`
+- Type-check without emit: `npm --prefix client run typecheck`
 
 Single-test patterns (client):
 
@@ -147,7 +147,7 @@ Single-test patterns (client):
   - `cargo clippy --manifest-path server/Cargo.toml --all-targets -- -D warnings`
   - `cargo test --manifest-path server/Cargo.toml`
 - For client code changes, run at least:
-  - `npx tsc -p client/tsconfig.json --noEmit`
+  - `npm --prefix client run typecheck`
   - `npm --prefix client run build`
 - If constrained by environment (DB, system deps), report exactly what was not run and why.
 

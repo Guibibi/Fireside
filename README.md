@@ -20,6 +20,14 @@ Communication happens over REST (CRUD operations) and a single WebSocket connect
 - Voice/video via mediasoup SFU (WebRTC)
 - Catppuccin Mocha dark theme
 
+## Screen Share Codecs
+
+- Supported screen-share codecs in the current stack: `VP8`, `H264`, and `VP9`
+- Screen sharing uses default codec negotiation for broad receiver compatibility across mixed clients
+- In SFU mode there is no server-side transcoding, so all viewers must support the negotiated sender codec
+- `H265/HEVC` is intentionally unsupported
+- Hardware encoding (including NVENC) depends on runtime, browser/webview, GPU, and driver support; codec preference alone does not guarantee a specific encoder implementation
+
 ## Prerequisites
 
 - **Rust** (stable toolchain)

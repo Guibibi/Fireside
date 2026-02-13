@@ -379,6 +379,55 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
+function readStringStatField(stat: RTCStats, field: string): string | null {
+  const value = (stat as unknown as Record<string, unknown>)[field];
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+async function logScreenShareProducerStats(producer: Producer) {
+  try {
+    const stats = await producer.getStats();
+    let outboundVideoStat: RTCStats | null = null;
+
+    for (const stat of stats.values()) {
+      if (stat.type !== "outbound-rtp") {
+        continue;
+      }
+
+      const mediaType = readStringStatField(stat, "mediaType");
+      const kind = readStringStatField(stat, "kind");
+      if (mediaType !== "video" && kind !== "video") {
+        continue;
+      }
+
+      outboundVideoStat = stat;
+      break;
+    }
+
+    if (!outboundVideoStat) {
+      console.debug("[media] Screen share sender stats unavailable for outbound video stream");
+      return;
+    }
+
+    const codecId = readStringStatField(outboundVideoStat, "codecId");
+    const encoderImplementation = readStringStatField(outboundVideoStat, "encoderImplementation");
+    const codecStat = codecId ? stats.get(codecId) : undefined;
+    const codecMimeType = codecStat && codecStat.type === "codec"
+      ? readStringStatField(codecStat, "mimeType")
+      : null;
+
+    console.debug(
+      "[media] Screen share sender stats",
+      {
+        codecMimeType,
+        encoderImplementation,
+      },
+    );
+  } catch (error) {
+    console.debug("[media] Failed to inspect screen share sender stats", error);
+  }
+}
+
 function toMediaSignalPayload(value: unknown): MediaSignalPayload | null {
   if (!isObject(value)) {
     return null;
@@ -1054,6 +1103,8 @@ export async function startLocalScreenProducer(channelId: string): Promise<Camer
   let nextTrack: MediaStreamTrack | null = null;
 
   try {
+    console.debug("[media] Screen share codec selection", "default");
+
     nextStream = await navigator.mediaDevices.getDisplayMedia({
       video: true,
       audio: false,
@@ -1073,6 +1124,8 @@ export async function startLocalScreenProducer(channelId: string): Promise<Camer
         routingMode: "sfu",
       },
     });
+
+    void logScreenShareProducerStats(produced);
 
     produced.on("transportclose", () => {
       stopAndReleaseScreenTracks();

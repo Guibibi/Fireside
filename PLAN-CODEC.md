@@ -44,7 +44,7 @@ Server validation:
 
 Client validation:
 
-- `npx tsc -p client/tsconfig.json --noEmit`
+- `npm --prefix client run typecheck`
 - `npm --prefix client run build`
 
 ### Phase 6: Documentation

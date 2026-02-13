@@ -119,7 +119,7 @@ Implementation note: routing mode selection is currently surfaced in the voice d
   - [x] `cargo fmt --all --manifest-path server/Cargo.toml -- --check`
   - [x] `cargo clippy --manifest-path server/Cargo.toml --all-targets -- -D warnings`
   - [x] `cargo test --manifest-path server/Cargo.toml`
-  - [x] `npx tsc -p client/tsconfig.json --noEmit`
+  - [x] `npm --prefix client run typecheck`
   - [x] `npm --prefix client run build`
 
 - [ ] Manual QA
