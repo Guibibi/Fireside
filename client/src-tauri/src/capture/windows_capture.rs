@@ -211,10 +211,18 @@ pub struct NativeCaptureEvent {
 }
 
 #[cfg(target_os = "windows")]
-#[derive(Debug)]
 struct ActiveCapture {
     source_id: String,
     control: CaptureControl<NativeFrameHandler, String>,
+}
+
+#[cfg(target_os = "windows")]
+impl std::fmt::Debug for ActiveCapture {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ActiveCapture")
+            .field("source_id", &self.source_id)
+            .finish()
+    }
 }
 
 #[cfg(target_os = "windows")]
