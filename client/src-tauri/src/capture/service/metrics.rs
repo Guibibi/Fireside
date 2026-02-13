@@ -19,7 +19,10 @@ pub struct NativeSenderSharedMetrics {
     pub rtp_packets_sent: AtomicU64,
     pub rtp_send_errors: AtomicU64,
     pub encode_errors: AtomicU64,
+    pub keyframe_requests: AtomicU64,
     pub dropped_missing_bgra: AtomicU64,
+    pub dropped_before_encode: AtomicU64,
+    pub dropped_during_send: AtomicU64,
     pub sender_started_events: AtomicU64,
     pub sender_stopped_events: AtomicU64,
     pub fallback_triggered_events: AtomicU64,
@@ -48,7 +51,10 @@ pub struct NativeSenderMetrics {
     pub rtp_packets_sent: u64,
     pub rtp_send_errors: u64,
     pub encode_errors: u64,
+    pub keyframe_requests: u64,
     pub dropped_missing_bgra: u64,
+    pub dropped_before_encode: u64,
+    pub dropped_during_send: u64,
     pub rtp_target: Option<String>,
     pub estimated_queue_depth: u64,
     pub last_frame_width: Option<u32>,
@@ -105,7 +111,10 @@ impl NativeSenderSharedMetrics {
         let rtp_packets_sent = self.rtp_packets_sent.load(Ordering::Relaxed);
         let rtp_send_errors = self.rtp_send_errors.load(Ordering::Relaxed);
         let encode_errors = self.encode_errors.load(Ordering::Relaxed);
+        let keyframe_requests = self.keyframe_requests.load(Ordering::Relaxed);
         let dropped_missing_bgra = self.dropped_missing_bgra.load(Ordering::Relaxed);
+        let dropped_before_encode = self.dropped_before_encode.load(Ordering::Relaxed);
+        let dropped_during_send = self.dropped_during_send.load(Ordering::Relaxed);
         let degradation_level = self.degradation_level.load(Ordering::Relaxed);
         let fallback_reason = self
             .recent_fallback_reason
@@ -130,7 +139,10 @@ impl NativeSenderSharedMetrics {
             rtp_packets_sent,
             rtp_send_errors,
             encode_errors,
+            keyframe_requests,
             dropped_missing_bgra,
+            dropped_before_encode,
+            dropped_during_send,
             rtp_target: input.rtp_target,
             estimated_queue_depth: queue_depth,
             last_frame_width: if last_frame_width == 0 {

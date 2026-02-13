@@ -45,7 +45,10 @@ export interface NativeCaptureStatus {
     rtp_packets_sent: number;
     rtp_send_errors: number;
     encode_errors: number;
+    keyframe_requests: number;
     dropped_missing_bgra: number;
+    dropped_before_encode: number;
+    dropped_during_send: number;
     rtp_target: string | null;
     estimated_queue_depth: number;
     last_frame_width: number | null;

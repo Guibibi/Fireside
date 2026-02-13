@@ -1,6 +1,9 @@
+mod encoder_backend;
 mod h264_encoder;
 mod metrics;
 mod native_sender;
+mod nvenc_encoder;
+mod rtp_packetizer;
 mod rtp_sender;
 
 use serde::{Deserialize, Serialize};
@@ -17,7 +20,15 @@ use super::windows_capture::{
 use metrics::{NativeSenderMetrics, NativeSenderSharedMetrics, NativeSenderSnapshotInput};
 use native_sender::{run_native_sender_worker, NativeSenderRuntimeConfig};
 
-const FRAME_QUEUE_CAPACITY: usize = 8;
+const DEFAULT_FRAME_QUEUE_CAPACITY: usize = 6;
+
+fn frame_queue_capacity() -> usize {
+    std::env::var("YANKCORD_NATIVE_FRAME_QUEUE_CAPACITY")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .filter(|value| (2..=64).contains(value))
+        .unwrap_or(DEFAULT_FRAME_QUEUE_CAPACITY)
+}
 
 #[derive(Debug, Clone)]
 struct ActiveCaptureSession {
@@ -162,7 +173,10 @@ impl NativeCaptureService {
                 rtp_packets_sent: 0,
                 rtp_send_errors: 0,
                 encode_errors: 0,
+                keyframe_requests: 0,
                 dropped_missing_bgra: 0,
+                dropped_before_encode: 0,
+                dropped_during_send: 0,
                 rtp_target: None,
                 estimated_queue_depth: dispatch.queued_frames,
                 last_frame_width: None,
@@ -292,7 +306,8 @@ impl NativeCaptureService {
         self.stop_sender_worker()?;
         windows_capture::reset_frame_dispatch_stats();
 
-        let (sender, receiver) = windows_capture::create_frame_channel(FRAME_QUEUE_CAPACITY);
+        let queue_capacity = frame_queue_capacity();
+        let (sender, receiver) = windows_capture::create_frame_channel(queue_capacity);
         windows_capture::install_frame_sink(sender)?;
 
         let stop_signal = Arc::new(AtomicBool::new(false));
@@ -331,7 +346,7 @@ impl NativeCaptureService {
 
         *worker = Some(NativeSenderWorker {
             source_id,
-            queue_capacity: FRAME_QUEUE_CAPACITY,
+            queue_capacity,
             target_fps: fps,
             target_bitrate_kbps: bitrate_kbps,
             rtp_target: target_rtp,

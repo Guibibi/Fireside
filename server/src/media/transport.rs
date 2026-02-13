@@ -1,7 +1,7 @@
 use mediasoup::prelude::{
     Consumer, ConsumerId, ConsumerOptions, DtlsParameters, IceCandidate, IceParameters, MediaKind,
     MimeTypeVideo, PlainTransport, PlainTransportOptions, Producer, ProducerId, ProducerOptions,
-    RtcpParameters, RtpCapabilities, RtpCapabilitiesFinalized, RtpCodecParameters,
+    RtcpFeedback, RtcpParameters, RtpCapabilities, RtpCapabilitiesFinalized, RtpCodecParameters,
     RtpCodecParametersParameters, RtpEncodingParameters, RtpParameters, Transport, WebRtcTransport,
     WebRtcTransportListenInfos, WebRtcTransportOptions, WebRtcTransportRemoteParameters,
 };
@@ -142,7 +142,7 @@ fn native_h264_parameters(ssrc: u32) -> RtpParameters {
             payload_type: NATIVE_H264_PT,
             clock_rate: NATIVE_H264_CLOCK_RATE.try_into().unwrap(),
             parameters,
-            rtcp_feedback: vec![],
+            rtcp_feedback: vec![RtcpFeedback::NackPli, RtcpFeedback::CcmFir],
         }],
         header_extensions: vec![],
         encodings: vec![RtpEncodingParameters {

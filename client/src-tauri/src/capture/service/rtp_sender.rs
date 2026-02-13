@@ -1,20 +1,13 @@
 use std::net::{SocketAddr, UdpSocket};
 
-pub struct CanonicalH264RtpParameters {
-    pub mime_type: &'static str,
-    pub clock_rate: u32,
-    pub packetization_mode: u8,
-    pub profile_level_id: &'static str,
+#[derive(Debug, Default, Clone, Copy)]
+pub struct FeedbackPollResult {
+    pub keyframe_requests: u64,
 }
 
-pub fn canonical_h264_rtp_parameters() -> CanonicalH264RtpParameters {
-    CanonicalH264RtpParameters {
-        mime_type: "video/H264",
-        clock_rate: 90_000,
-        packetization_mode: 1,
-        profile_level_id: "42e01f",
-    }
-}
+const RTCP_PACKET_TYPE_PSFB: u8 = 206;
+const RTCP_FMT_PLI: u8 = 1;
+const RTCP_FMT_FIR: u8 = 4;
 
 #[derive(Debug)]
 pub struct NativeRtpSender {
@@ -38,7 +31,9 @@ impl NativeRtpSender {
             } else {
                 "[::]:0"
             };
-            UdpSocket::bind(bind_address).ok()
+            let socket = UdpSocket::bind(bind_address).ok()?;
+            socket.set_nonblocking(true).ok()?;
+            Some(socket)
         });
 
         Self {
@@ -66,6 +61,37 @@ impl NativeRtpSender {
         }
 
         sent
+    }
+
+    pub fn poll_feedback(&mut self) -> FeedbackPollResult {
+        let Some(socket) = self.socket.as_ref() else {
+            return FeedbackPollResult::default();
+        };
+
+        let mut requests = 0u64;
+        let mut buffer = [0u8; 2048];
+
+        loop {
+            match socket.recv_from(&mut buffer) {
+                Ok((size, _)) => {
+                    requests = requests.saturating_add(parse_keyframe_requests(&buffer[..size]));
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    break;
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {
+                    continue;
+                }
+                Err(_) => {
+                    self.had_send_error = true;
+                    break;
+                }
+            }
+        }
+
+        FeedbackPollResult {
+            keyframe_requests: requests,
+        }
     }
 
     fn send_nal(&mut self, nal: &[u8], rtp_timestamp: u32, marker: bool) -> usize {
@@ -145,8 +171,20 @@ impl NativeRtpSender {
             return;
         };
 
-        if socket.send_to(packet, target).is_err() {
-            self.had_send_error = true;
+        loop {
+            match socket.send_to(packet, target) {
+                Ok(_) => break,
+                Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {
+                    continue;
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    break;
+                }
+                Err(_) => {
+                    self.had_send_error = true;
+                    break;
+                }
+            }
         }
     }
 
@@ -155,4 +193,40 @@ impl NativeRtpSender {
         self.had_send_error = false;
         had_error
     }
+}
+
+fn parse_keyframe_requests(packet: &[u8]) -> u64 {
+    let mut requests = 0u64;
+    let mut offset = 0usize;
+
+    while offset + 4 <= packet.len() {
+        let first = packet[offset];
+        let version = first >> 6;
+        if version != 2 {
+            break;
+        }
+
+        let fmt = first & 0x1F;
+        let packet_type = packet[offset + 1];
+        let words_minus_one = u16::from_be_bytes([packet[offset + 2], packet[offset + 3]]) as usize;
+        let block_len = words_minus_one.saturating_add(1).saturating_mul(4);
+
+        if block_len == 0 || offset + block_len > packet.len() {
+            break;
+        }
+
+        if packet_type == RTCP_PACKET_TYPE_PSFB {
+            if fmt == RTCP_FMT_PLI {
+                requests = requests.saturating_add(1);
+            } else if fmt == RTCP_FMT_FIR {
+                let fir_entries = block_len.saturating_sub(12) / 8;
+                let fir_count = fir_entries.max(1) as u64;
+                requests = requests.saturating_add(fir_count);
+            }
+        }
+
+        offset = offset.saturating_add(block_len);
+    }
+
+    requests
 }

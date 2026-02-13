@@ -1,3 +1,4 @@
+use std::collections::VecDeque;
 use std::sync::atomic::Ordering;
 use std::sync::mpsc::Receiver;
 use std::sync::Arc;
@@ -5,14 +6,24 @@ use std::time::Duration;
 
 use crate::capture::windows_capture::{self, NativeFramePacket};
 
-use super::h264_encoder::{build_h264_encoder, encode_bgra_frame};
+use super::encoder_backend::{create_encoder_backend, VideoEncoderBackend};
 use super::metrics::NativeSenderSharedMetrics;
-use super::rtp_sender::{canonical_h264_rtp_parameters, NativeRtpSender};
+use super::rtp_packetizer::{H264RtpPacketizer, RtpPacketizer};
 
 const FAILURE_WINDOW_MS: u64 = 12_000;
 const ENCODE_FAILURE_THRESHOLD: u64 = 18;
 const RTP_FAILURE_THRESHOLD: u64 = 18;
 const DROPPED_FULL_THRESHOLD: u64 = 220;
+const PRESSURE_SAMPLE_INTERVAL_MS: u64 = 250;
+const PRESSURE_SAMPLE_WINDOW: usize = 20;
+const DEGRADE_TO_LEVEL1_AVG_DEPTH: u64 = 2;
+const DEGRADE_TO_LEVEL2_AVG_DEPTH: u64 = 4;
+const DEGRADE_TO_LEVEL3_AVG_DEPTH: u64 = 6;
+const DEGRADE_TO_LEVEL1_PEAK_DEPTH: u64 = 4;
+const DEGRADE_TO_LEVEL2_PEAK_DEPTH: u64 = 6;
+const DEGRADE_TO_LEVEL3_PEAK_DEPTH: u64 = 7;
+const DEGRADE_RECOVER_AVG_DEPTH: u64 = 1;
+const DEGRADE_RECOVER_PEAK_DEPTH: u64 = 2;
 
 #[derive(Debug, Clone)]
 pub struct NativeSenderRuntimeConfig {
@@ -110,16 +121,101 @@ fn trigger_native_fallback(reason: &str, source_id: &str, shared: &NativeSenderS
     );
 }
 
+#[derive(Debug, Default)]
+struct AdaptiveDegradationState {
+    level: u64,
+    frame_index: u64,
+    pressure_samples: VecDeque<u64>,
+    last_sample_at_ms: u64,
+}
+
+impl AdaptiveDegradationState {
+    fn update_level(&mut self, queue_depth: u64, now_ms: u64, shared: &NativeSenderSharedMetrics) {
+        self.record_sample(queue_depth, now_ms);
+        let (avg_depth, peak_depth) = self.pressure_stats();
+
+        let next_level = if avg_depth >= DEGRADE_TO_LEVEL3_AVG_DEPTH
+            || peak_depth >= DEGRADE_TO_LEVEL3_PEAK_DEPTH
+        {
+            3
+        } else if avg_depth >= DEGRADE_TO_LEVEL2_AVG_DEPTH
+            || peak_depth >= DEGRADE_TO_LEVEL2_PEAK_DEPTH
+        {
+            2
+        } else if avg_depth >= DEGRADE_TO_LEVEL1_AVG_DEPTH
+            || peak_depth >= DEGRADE_TO_LEVEL1_PEAK_DEPTH
+        {
+            1
+        } else if self.level > 0
+            && avg_depth <= DEGRADE_RECOVER_AVG_DEPTH
+            && peak_depth <= DEGRADE_RECOVER_PEAK_DEPTH
+        {
+            self.level.saturating_sub(1)
+        } else {
+            self.level
+        };
+
+        if next_level != self.level {
+            self.level = next_level;
+            shared.set_degradation_level(next_level);
+        }
+    }
+
+    fn record_sample(&mut self, queue_depth: u64, now_ms: u64) {
+        let should_record = self.last_sample_at_ms == 0
+            || now_ms.saturating_sub(self.last_sample_at_ms) >= PRESSURE_SAMPLE_INTERVAL_MS;
+        if !should_record {
+            return;
+        }
+
+        self.last_sample_at_ms = now_ms;
+        self.pressure_samples.push_back(queue_depth);
+        while self.pressure_samples.len() > PRESSURE_SAMPLE_WINDOW {
+            self.pressure_samples.pop_front();
+        }
+    }
+
+    fn pressure_stats(&self) -> (u64, u64) {
+        if self.pressure_samples.is_empty() {
+            return (0, 0);
+        }
+
+        let mut total = 0u64;
+        let mut peak = 0u64;
+        for sample in &self.pressure_samples {
+            total = total.saturating_add(*sample);
+            peak = peak.max(*sample);
+        }
+
+        let avg = total / self.pressure_samples.len() as u64;
+        (avg, peak)
+    }
+
+    fn should_drop_before_encode(&mut self) -> bool {
+        self.frame_index = self.frame_index.saturating_add(1);
+        match self.level {
+            0 => false,
+            1 => self.frame_index % 2 == 0,
+            2 => self.frame_index % 3 != 0,
+            _ => self.frame_index % 4 != 0,
+        }
+    }
+}
+
 pub fn run_native_sender_worker(
     config: NativeSenderRuntimeConfig,
     receiver: Receiver<NativeFramePacket>,
     stop_signal: Arc<std::sync::atomic::AtomicBool>,
     shared: Arc<NativeSenderSharedMetrics>,
 ) {
-    let mut h264_encoder = build_h264_encoder(config.target_fps, config.target_bitrate_kbps);
-    let mut rtp_sender =
-        NativeRtpSender::new(config.target_rtp.clone(), config.payload_type, config.ssrc);
-    let h264 = canonical_h264_rtp_parameters();
+    let mut encoder: Box<dyn VideoEncoderBackend> =
+        create_encoder_backend(config.target_fps, config.target_bitrate_kbps);
+    let codec = encoder.codec_descriptor();
+    let mut packetizer: Box<dyn RtpPacketizer> = Box::new(H264RtpPacketizer::new(
+        config.target_rtp.clone(),
+        config.payload_type,
+        config.ssrc,
+    ));
     let now_ms = unix_timestamp_ms();
 
     shared.worker_started_ms.store(now_ms, Ordering::Relaxed);
@@ -128,29 +224,44 @@ pub fn run_native_sender_worker(
     shared.set_degradation_level(0);
     shared
         .transport_connected
-        .store(rtp_sender.transport_connected(), Ordering::Relaxed);
+        .store(packetizer.transport_connected(), Ordering::Relaxed);
     shared
         .producer_connected
-        .store(rtp_sender.transport_connected(), Ordering::Relaxed);
+        .store(packetizer.transport_connected(), Ordering::Relaxed);
 
     eprintln!(
-        "[native-sender] event=sender_started source={} codec={} pt={} ssrc={} clock={} packetization={} profile={} target={}",
+        "[native-sender] event=sender_started source={} codec={} encoder_backend={} pt={} ssrc={} clock={} packetization={} profile={} target={}",
         config.source_id,
-        h264.mime_type,
+        codec.mime_type,
+        encoder.backend_name(),
         config.payload_type,
         config.ssrc,
-        h264.clock_rate,
-        h264.packetization_mode,
-        h264.profile_level_id,
+        codec.clock_rate,
+        codec.packetization_mode,
+        codec.profile_level_id,
         config.target_rtp.as_deref().unwrap_or("disabled"),
     );
 
     let mut failure_window = FailureWindowState::new(now_ms, &shared);
+    let mut degradation_state = AdaptiveDegradationState::default();
 
     while !stop_signal.load(Ordering::Relaxed) {
         match receiver.recv_timeout(Duration::from_millis(250)) {
             Ok(packet) => {
                 shared.received_packets.fetch_add(1, Ordering::Relaxed);
+
+                let keyframe_feedback = packetizer.poll_feedback();
+                if keyframe_feedback.keyframe_requests > 0 {
+                    shared
+                        .keyframe_requests
+                        .fetch_add(keyframe_feedback.keyframe_requests, Ordering::Relaxed);
+                    if encoder.request_keyframe() {
+                        eprintln!(
+                            "[native-sender] event=keyframe_requested source={} requests={}",
+                            config.source_id, keyframe_feedback.keyframe_requests,
+                        );
+                    }
+                }
 
                 if packet.source_id != config.source_id {
                     continue;
@@ -173,24 +284,31 @@ pub fn run_native_sender_worker(
 
                 if packet.pixel_format != "bgra8" {
                     shared.encode_errors.fetch_add(1, Ordering::Relaxed);
+                    shared.dropped_before_encode.fetch_add(1, Ordering::Relaxed);
                     continue;
                 }
 
                 if let Some(expected_len) = packet.bgra_len {
                     if expected_len != bgra.len() {
                         shared.encode_errors.fetch_add(1, Ordering::Relaxed);
+                        shared.dropped_before_encode.fetch_add(1, Ordering::Relaxed);
                         continue;
                     }
                 }
 
+                let dispatch = windows_capture::read_frame_dispatch_stats();
+                let queue_depth = dispatch
+                    .queued_frames
+                    .saturating_sub(shared.received_packets.load(Ordering::Relaxed));
+                degradation_state.update_level(queue_depth, unix_timestamp_ms(), &shared);
+
+                if degradation_state.should_drop_before_encode() {
+                    shared.dropped_before_encode.fetch_add(1, Ordering::Relaxed);
+                    continue;
+                }
+
                 let encode_start_ms = unix_timestamp_ms();
-                let encoded_nals = encode_bgra_frame(
-                    &mut h264_encoder,
-                    bgra,
-                    packet.width,
-                    packet.height,
-                    &shared,
-                );
+                let encoded_nals = encoder.encode_frame(bgra, packet.width, packet.height, &shared);
                 let Some(nals) = encoded_nals else {
                     continue;
                 };
@@ -201,12 +319,16 @@ pub fn run_native_sender_worker(
                     .encoded_bytes
                     .fetch_add(encoded_bytes as u64, Ordering::Relaxed);
 
-                let rtp_packets = rtp_sender.send_h264_nalus(&nals, packet.timestamp_ms);
+                let rtp_packets = packetizer.send_nalus(&nals, packet.timestamp_ms);
                 shared
                     .rtp_packets_sent
                     .fetch_add(rtp_packets as u64, Ordering::Relaxed);
-                if rtp_sender.take_and_reset_error() {
+                if rtp_packets == 0 {
+                    shared.dropped_during_send.fetch_add(1, Ordering::Relaxed);
+                }
+                if packetizer.take_and_reset_error() {
                     shared.rtp_send_errors.fetch_add(1, Ordering::Relaxed);
+                    shared.dropped_during_send.fetch_add(1, Ordering::Relaxed);
                     eprintln!(
                         "[native-sender] event=transport_error source={} detail=udp_send_failed",
                         config.source_id,

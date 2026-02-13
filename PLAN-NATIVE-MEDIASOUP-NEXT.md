@@ -17,7 +17,7 @@
 - [x] Server native RTP target is configurable for remote deployment (`NATIVE_RTP_LISTEN_IP`, `NATIVE_RTP_ANNOUNCED_IP`).
 - [x] Client emits structured diagnostic events for negotiation/fallback failures (`client_diagnostic`).
 - [ ] Windows E2E validation matrix complete (screen/window/game capture, restart loops, forced fallback cases).
-- [ ] Keyframe request handling complete (PLI/FIR -> force IDR/intra).
+- [x] Keyframe request handling complete (PLI/FIR -> force IDR/intra).
 - [ ] Performance hardening complete (copy minimization, queue tuning, adaptive degradation).
 - [ ] Optional diagnostics-only UDP mirror finalized and explicitly feature/env-guarded.
 - [ ] Codec expansion complete (VP8/VP9/AV1 where desired) with RTP packetizer support per codec.
@@ -27,6 +27,23 @@
 ## Session Handoff (Updated)
 
 ### What Landed This Session
+
+- [x] Keyframe request handling wired end-to-end.
+  - [x] Server native H264 producer advertises PLI/FIR RTCP feedback support
+  - [x] Native RTP sender now polls RTCP feedback and detects PLI/FIR requests
+  - [x] Native OpenH264 encoder forces intra/IDR frame on keyframe request
+- [x] Performance hardening kickoff landed (initial pass).
+  - [x] Reused YUV conversion buffer per frame dimensions to reduce allocation churn
+  - [x] Queue capacity tuned for latency (`YANKCORD_NATIVE_FRAME_QUEUE_CAPACITY`, default 6)
+  - [x] Adaptive degradation now drops frames under sustained queue pressure
+  - [x] Adaptive degradation upgraded to moving-window queue pressure (avg + peak)
+  - [x] Split counters added for dropped-before-encode vs dropped-during-send
+- [x] Codec/packetizer abstraction scaffolding landed for follow-up expansion work.
+  - [x] `VideoEncoderBackend` abstraction with current OpenH264 backend
+  - [x] `RtpPacketizer` abstraction with current H264 RTP packetizer
+  - [x] Encoder backend selector scaffold added (`YANKCORD_NATIVE_ENCODER_BACKEND`)
+  - [x] NVENC module/feature scaffold added (`native-nvenc`, Windows-gated)
+- [x] Codec/encoder expansion path drafted (`docs/native-codec-encoder-expansion.md`).
 
 - [x] Native sender publishes into mediasoup via server-managed native RTP ingest.
   - [x] Additive WS action: `create_native_sender_session`
@@ -56,26 +73,29 @@
 
 ### Validated in CI/Local Linux
 
-- `cargo check --manifest-path server/Cargo.toml`
+- `cargo fmt --all --manifest-path server/Cargo.toml -- --check`
 - `cargo clippy --manifest-path server/Cargo.toml --all-targets -- -D warnings`
 - `cargo test --manifest-path server/Cargo.toml`
-- `cargo check --manifest-path client/src-tauri/Cargo.toml`
+- `cargo test --manifest-path client/src-tauri/Cargo.toml`
 - `npm --prefix client run typecheck`
 - `npm --prefix client run build`
 
 ### Remaining for Next Session
 
 - [ ] Windows manual verification pass (end-to-end native publish + forced-fallback scenarios).
-- [ ] Keyframe request handling path (PLI/FIR -> force intra frame).
 - [ ] Performance workstream items.
-  - [ ] Frame copy minimization / pooling
-  - [ ] Adaptive degradation ladder behavior
-  - [ ] Queue tuning split counters (before-encode vs during-send)
+  - [x] Frame copy minimization / pooling (YUV reuse in OpenH264 path)
+  - [x] Adaptive degradation ladder behavior (moving-window avg/peak pressure)
+  - [x] Queue tuning split counters (before-encode vs during-send)
+  - [ ] Add resolution/bitrate degradation tiers (currently frame dropping only)
+  - [ ] Tune ladder thresholds based on Windows manual runs
 - [ ] Optional diagnostics-only UDP mirror finalized as explicitly feature/env-guarded.
-- [ ] Codec and encoder expansion plan.
-  - [ ] Define backend abstraction for encoder and RTP packetizer by codec
-  - [ ] Add VP8/VP9/AV1 feasibility + rollout decision
-  - [ ] Add NVENC path (plus optional AMF/QSV follow-ups)
+- [ ] Codec and encoder expansion implementation.
+  - [x] Define backend abstraction for encoder and RTP packetizer by codec
+  - [x] Add VP8/VP9/AV1 feasibility + rollout decision
+  - [x] Add encoder backend selector + NVENC scaffold (feature/env-gated)
+  - [ ] Implement real NVENC backend and runtime fallback policy
+  - [ ] Surface selected encoder backend in client diagnostics payload/status
 
 ## Current Baseline (Starting Point)
 
