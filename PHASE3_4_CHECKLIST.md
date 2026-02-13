@@ -93,9 +93,9 @@ Goal: ship camera video alongside existing voice/audio with SFU routing, live ti
 
 ## PR 6 - Styling and responsive pass
 
-- [ ] `client/src/styles/global.css`
-  - [ ] Add styles for camera button states and video stage grid.
-  - [ ] Add responsive rules for narrow widths (single-column tiles or horizontal overflow).
+- [x] `client/src/styles/global.css`
+  - [x] Add styles for camera button states and video stage grid.
+  - [x] Add responsive rules for narrow widths (single-column tiles or horizontal overflow).
   - **Acceptance criteria**
     - Desktop layout keeps tiles readable above composer.
     - Mobile/narrow layout avoids overflow and preserves chat usability.
