@@ -103,6 +103,12 @@ export interface CameraActionResult {
   error?: string;
 }
 
+export interface CameraStateSnapshot {
+  enabled: boolean;
+  error: string | null;
+  stream: MediaStream | null;
+}
+
 export interface RemoteVideoTile {
   producerId: string;
   username: string;
@@ -151,6 +157,7 @@ const queuedProducerAnnouncements = new Map<string, QueuedProducerAnnouncement>(
 const producerUsernameById = new Map<string, string>();
 const remoteVideoTilesByProducerId = new Map<string, RemoteVideoTile>();
 const videoTilesSubscribers = new Set<(tiles: RemoteVideoTile[]) => void>();
+const cameraStateSubscribers = new Set<(snapshot: CameraStateSnapshot) => void>();
 
 const pendingRequests = new Map<string, PendingRequest>();
 
@@ -168,6 +175,21 @@ function videoTilesSnapshot(): RemoteVideoTile[] {
 function notifyVideoTilesSubscribers() {
   const snapshot = videoTilesSnapshot();
   for (const subscriber of videoTilesSubscribers) {
+    subscriber(snapshot);
+  }
+}
+
+function cameraStateSnapshot(): CameraStateSnapshot {
+  return {
+    enabled: cameraEnabled,
+    error: cameraError,
+    stream: cameraStream,
+  };
+}
+
+function notifyCameraStateSubscribers() {
+  const snapshot = cameraStateSnapshot();
+  for (const subscriber of cameraStateSubscribers) {
     subscriber(snapshot);
   }
 }
@@ -191,6 +213,15 @@ export function subscribeVideoTiles(subscriber: (tiles: RemoteVideoTile[]) => vo
 
   return () => {
     videoTilesSubscribers.delete(subscriber);
+  };
+}
+
+export function subscribeCameraState(subscriber: (snapshot: CameraStateSnapshot) => void): () => void {
+  cameraStateSubscribers.add(subscriber);
+  subscriber(cameraStateSnapshot());
+
+  return () => {
+    cameraStateSubscribers.delete(subscriber);
   };
 }
 
@@ -420,6 +451,7 @@ function closeTransports() {
   }
   cameraEnabled = false;
   cameraError = null;
+  notifyCameraStateSubscribers();
 
   for (const consumerId of remoteConsumers.keys()) {
     disposeRemoteConsumer(consumerId);
@@ -482,6 +514,7 @@ function stopAndReleaseCameraTracks() {
   }
 
   cameraEnabled = false;
+  notifyCameraStateSubscribers();
 }
 
 function toTransportOptions(payload: MediaSignalPayload): TransportOptions {
@@ -600,11 +633,13 @@ export async function startLocalCameraProducer(channelId: string): Promise<Camer
   if (initializedForChannelId !== channelId || !sendTransport) {
     const message = "Join the voice channel before enabling camera";
     cameraError = message;
+    notifyCameraStateSubscribers();
     return { ok: false, error: message };
   }
 
   if (cameraProducer && cameraTrack && cameraEnabled) {
     cameraError = null;
+    notifyCameraStateSubscribers();
     return { ok: true };
   }
 
@@ -629,13 +664,11 @@ export async function startLocalCameraProducer(channelId: string): Promise<Camer
     });
 
     produced.on("transportclose", () => {
-      cameraProducer = null;
-      cameraEnabled = false;
+      stopAndReleaseCameraTracks();
     });
 
     produced.on("trackended", () => {
-      cameraProducer = null;
-      cameraEnabled = false;
+      stopAndReleaseCameraTracks();
     });
 
     if (initializedForChannelId !== channelId) {
@@ -644,6 +677,7 @@ export async function startLocalCameraProducer(channelId: string): Promise<Camer
       nextStream.getTracks().forEach((track) => track.stop());
       const message = "Voice channel changed while starting camera";
       cameraError = message;
+      notifyCameraStateSubscribers();
       return { ok: false, error: message };
     }
 
@@ -654,6 +688,7 @@ export async function startLocalCameraProducer(channelId: string): Promise<Camer
     cameraTrack = nextTrack;
     cameraEnabled = true;
     cameraError = null;
+    notifyCameraStateSubscribers();
     return { ok: true };
   } catch (error) {
     if (nextTrack) {
@@ -666,6 +701,7 @@ export async function startLocalCameraProducer(channelId: string): Promise<Camer
 
     const message = normalizeCameraError(error);
     cameraError = message;
+    notifyCameraStateSubscribers();
     return { ok: false, error: message };
   }
 }
@@ -676,6 +712,7 @@ export async function stopLocalCameraProducer(channelId: string): Promise<Camera
   if (!producerId) {
     stopAndReleaseCameraTracks();
     cameraError = null;
+    notifyCameraStateSubscribers();
     return { ok: true };
   }
 
@@ -688,14 +725,15 @@ export async function stopLocalCameraProducer(channelId: string): Promise<Camera
       throw new Error("Unexpected media_close_producer response from server");
     }
   } catch (error) {
-    stopAndReleaseCameraTracks();
     const message = error instanceof Error ? error.message : "Failed to stop camera";
     cameraError = message;
+    notifyCameraStateSubscribers();
     return { ok: false, error: message };
   }
 
   stopAndReleaseCameraTracks();
   cameraError = null;
+  notifyCameraStateSubscribers();
   return { ok: true };
 }
 

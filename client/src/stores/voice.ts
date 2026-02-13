@@ -1,9 +1,8 @@
 import { createSignal } from "solid-js";
 import {
-  localCameraEnabled,
-  localCameraError,
-  localCameraStream,
+  type CameraStateSnapshot,
   type RemoteVideoTile,
+  subscribeCameraState,
   subscribeVideoTiles,
 } from "../api/media";
 
@@ -26,6 +25,7 @@ const [cameraError, setCameraError] = createSignal<string | null>(null);
 const [localVideoStream, setLocalVideoStream] = createSignal<MediaStream | null>(null);
 const [videoTiles, setVideoTiles] = createSignal<RemoteVideoTile[]>([]);
 let unsubscribeVideoTiles: (() => void) | null = null;
+let unsubscribeCameraState: (() => void) | null = null;
 
 function sortUnique(usernames: string[]): string[] {
   return [...new Set(usernames)].sort((a, b) => a.localeCompare(b));
@@ -155,12 +155,6 @@ export function setJoinedVoiceChannel(channelId: string | null) {
   setJoinedVoiceChannelId(channelId);
 }
 
-export function syncCameraStateFromMedia() {
-  setCameraEnabled(localCameraEnabled());
-  setCameraError(localCameraError());
-  setLocalVideoStream(localCameraStream());
-}
-
 export function setVoiceCameraError(error: string | null) {
   setCameraError(error);
 }
@@ -179,6 +173,29 @@ export function startVideoTilesSubscription() {
   });
 }
 
+function applyCameraStateSnapshot(snapshot: CameraStateSnapshot) {
+  setCameraEnabled(snapshot.enabled);
+  setCameraError(snapshot.error);
+  setLocalVideoStream(snapshot.stream);
+}
+
+export function startCameraStateSubscription() {
+  if (unsubscribeCameraState) {
+    return;
+  }
+
+  unsubscribeCameraState = subscribeCameraState((snapshot) => {
+    applyCameraStateSnapshot(snapshot);
+  });
+}
+
+export function stopCameraStateSubscription() {
+  if (unsubscribeCameraState) {
+    unsubscribeCameraState();
+    unsubscribeCameraState = null;
+  }
+}
+
 export function stopVideoTilesSubscription() {
   if (unsubscribeVideoTiles) {
     unsubscribeVideoTiles();
@@ -190,6 +207,7 @@ export function stopVideoTilesSubscription() {
 
 export function resetVoiceMediaState() {
   stopVideoTilesSubscription();
+  stopCameraStateSubscription();
   setCameraEnabled(false);
   setCameraError(null);
   setLocalVideoStream(null);

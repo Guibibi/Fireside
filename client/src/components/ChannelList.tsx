@@ -37,10 +37,9 @@ import {
   setVoiceCameraError,
   setVoiceActionState,
   speakerMuted,
+  startCameraStateSubscription,
   startVideoTilesSubscription,
   showVoiceRejoinNotice,
-  stopVideoTilesSubscription,
-  syncCameraStateFromMedia,
   toggleMicMuted,
   toggleSpeakerMuted,
   voiceRejoinNotice,
@@ -138,7 +137,6 @@ export default function ChannelList() {
         showErrorToast(result.error);
       }
     } finally {
-      syncCameraStateFromMedia();
       setCameraActionPending(false);
     }
   }
@@ -333,13 +331,12 @@ export default function ChannelList() {
 
       if (msg.type === "voice_joined") {
         setJoinedVoiceChannel(msg.channel_id);
+        startCameraStateSubscription();
         startVideoTilesSubscription();
         clearVoiceRejoinNotice();
         setVoiceActionState("idle");
         void initializeMediaTransports(msg.channel_id).catch((error) => {
           showErrorToast(error instanceof Error ? error.message : "Failed to initialize media transports");
-        }).finally(() => {
-          syncCameraStateFromMedia();
         });
         setMicrophoneMuted(micMuted());
         setSpeakersMuted(speakerMuted());
@@ -369,8 +366,7 @@ export default function ChannelList() {
 
       cleanupMediaTransports();
       setJoinedVoiceChannel(null);
-      stopVideoTilesSubscription();
-      syncCameraStateFromMedia();
+      resetVoiceMediaState();
       setVoiceActionState("idle");
       showVoiceRejoinNotice();
     });

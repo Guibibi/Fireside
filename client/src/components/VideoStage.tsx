@@ -4,7 +4,6 @@ import { cameraEnabled, localVideoStream, videoTiles } from "../stores/voice";
 interface StreamVideoProps {
   stream: MediaStream;
   muted: boolean;
-  mirrored?: boolean;
 }
 
 function StreamVideo(props: StreamVideoProps) {
@@ -28,7 +27,7 @@ function StreamVideo(props: StreamVideoProps) {
     }
   });
 
-  return <video ref={videoRef} class={`video-stage-stream${props.mirrored ? " is-mirrored" : ""}`} autoplay playsinline />;
+  return <video ref={videoRef} class="video-stage-stream" autoplay playsinline />;
 }
 
 export default function VideoStage() {
@@ -41,7 +40,7 @@ export default function VideoStage() {
           <Show when={cameraEnabled() && localVideoStream()}>
             {(stream) => (
               <article class="video-stage-tile is-local">
-                <StreamVideo stream={stream()} muted mirrored />
+                <StreamVideo stream={stream()} muted />
                 <p class="video-stage-label">You</p>
               </article>
             )}

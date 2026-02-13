@@ -603,10 +603,6 @@ input:focus {
   background: var(--surface0);
 }
 
-.video-stage-stream.is-mirrored {
-  transform: scaleX(-1);
-}
-
 .video-stage-label {
   position: absolute;
   left: 0.45rem;
