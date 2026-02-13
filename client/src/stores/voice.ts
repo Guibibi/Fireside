@@ -1,4 +1,11 @@
 import { createSignal } from "solid-js";
+import {
+  localCameraEnabled,
+  localCameraError,
+  localCameraStream,
+  type RemoteVideoTile,
+  subscribeVideoTiles,
+} from "../api/media";
 
 export type VoiceActionState = "idle" | "joining" | "leaving";
 
@@ -14,6 +21,11 @@ const [voiceActionState, setVoiceActionState] = createSignal<VoiceActionState>("
 const [micMuted, setMicMuted] = createSignal(false);
 const [speakerMuted, setSpeakerMuted] = createSignal(false);
 const [voiceRejoinNotice, setVoiceRejoinNotice] = createSignal(false);
+const [cameraEnabled, setCameraEnabled] = createSignal(false);
+const [cameraError, setCameraError] = createSignal<string | null>(null);
+const [localVideoStream, setLocalVideoStream] = createSignal<MediaStream | null>(null);
+const [videoTiles, setVideoTiles] = createSignal<RemoteVideoTile[]>([]);
+let unsubscribeVideoTiles: (() => void) | null = null;
 
 function sortUnique(usernames: string[]): string[] {
   return [...new Set(usernames)].sort((a, b) => a.localeCompare(b));
@@ -143,6 +155,46 @@ export function setJoinedVoiceChannel(channelId: string | null) {
   setJoinedVoiceChannelId(channelId);
 }
 
+export function syncCameraStateFromMedia() {
+  setCameraEnabled(localCameraEnabled());
+  setCameraError(localCameraError());
+  setLocalVideoStream(localCameraStream());
+}
+
+export function setVoiceCameraError(error: string | null) {
+  setCameraError(error);
+}
+
+export function clearVoiceCameraError() {
+  setCameraError(null);
+}
+
+export function startVideoTilesSubscription() {
+  if (unsubscribeVideoTiles) {
+    return;
+  }
+
+  unsubscribeVideoTiles = subscribeVideoTiles((tiles) => {
+    setVideoTiles(tiles);
+  });
+}
+
+export function stopVideoTilesSubscription() {
+  if (unsubscribeVideoTiles) {
+    unsubscribeVideoTiles();
+    unsubscribeVideoTiles = null;
+  }
+
+  setVideoTiles([]);
+}
+
+export function resetVoiceMediaState() {
+  stopVideoTilesSubscription();
+  setCameraEnabled(false);
+  setCameraError(null);
+  setLocalVideoStream(null);
+}
+
 export function resetVoiceState() {
   setJoinedVoiceChannelId(null);
   setParticipantsByChannel({});
@@ -151,6 +203,7 @@ export function resetVoiceState() {
   setMicMuted(false);
   setSpeakerMuted(false);
   setVoiceRejoinNotice(false);
+  resetVoiceMediaState();
 }
 
 export function showVoiceRejoinNotice() {
@@ -170,9 +223,13 @@ export function toggleSpeakerMuted() {
 }
 
 export {
+  cameraEnabled,
+  cameraError,
   joinedVoiceChannelId,
+  localVideoStream,
   participantsByChannel,
   speakingByChannel,
+  videoTiles,
   voiceActionState,
   setVoiceActionState,
   micMuted,

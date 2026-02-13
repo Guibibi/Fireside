@@ -3,6 +3,7 @@ import { del, get, patch } from "../api/http";
 import { connect, onMessage, send } from "../api/ws";
 import { username } from "../stores/auth";
 import { activeChannelId } from "../stores/chat";
+import VideoStage from "./VideoStage";
 
 interface ChannelMessage {
   id: string;
@@ -445,6 +446,7 @@ export default function MessageArea() {
           </Show>
         </Show>
       </div>
+      <VideoStage />
       <form class="message-input" onSubmit={handleSubmit}>
         <input
           type="text"

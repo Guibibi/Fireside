@@ -65,31 +65,31 @@ Goal: ship camera video alongside existing voice/audio with SFU routing, live ti
 
 ## PR 5 - UI integration: camera controls + video stage
 
-- [ ] `client/src/stores/voice.ts`
-  - [ ] Add camera UI state (`cameraEnabled`, `cameraError`, and optional `videoTiles` projection if not managed in media.ts).
+- [x] `client/src/stores/voice.ts`
+  - [x] Add camera UI state (`cameraEnabled`, `cameraError`, and optional `videoTiles` projection if not managed in media.ts).
   - **Acceptance criteria**
-    - State resets on `resetVoiceState` and disconnect.
+    - [x] State resets on `resetVoiceState` and disconnect.
 
-- [ ] `client/src/components/ChannelList.tsx`
-  - [ ] Add camera toggle button in connected voice dock.
-  - [ ] Wire button to camera on/off actions and error toast handling.
+- [x] `client/src/components/ChannelList.tsx`
+  - [x] Add camera toggle button in connected voice dock.
+  - [x] Wire button to camera on/off actions and error toast handling.
   - **Acceptance criteria**
-    - Button disabled/loading behavior matches existing voice action style.
-    - Toggle reflects current camera state.
+    - [x] Button disabled/loading behavior matches existing voice action style.
+    - [x] Toggle reflects current camera state.
 
-- [ ] `client/src/components/VideoStage.tsx` (new)
-  - [ ] Render local preview tile when camera enabled.
-  - [ ] Render remote participant tiles with usernames.
-  - [ ] Render stable empty/fallback state when no active video.
+- [x] `client/src/components/VideoStage.tsx` (new)
+  - [x] Render local preview tile when camera enabled.
+  - [x] Render remote participant tiles with usernames.
+  - [x] Render stable empty/fallback state when no active video.
   - **Acceptance criteria**
-    - Local tile appears on camera on and disappears on off.
-    - Remote tiles update in real time with correct usernames.
+    - [x] Local tile appears on camera on and disappears on off.
+    - [x] Remote tiles update in real time with correct usernames.
 
-- [ ] `client/src/components/MessageArea.tsx`
-  - [ ] Mount `VideoStage` above message input (inside main content flow).
+- [x] `client/src/components/MessageArea.tsx`
+  - [x] Mount `VideoStage` above message input (inside main content flow).
   - **Acceptance criteria**
-    - Message list/input behavior remains unchanged.
-    - Video stage does not break typing or message send flows.
+    - [x] Message list/input behavior remains unchanged.
+    - [x] Video stage does not break typing or message send flows.
 
 ## PR 6 - Styling and responsive pass
 

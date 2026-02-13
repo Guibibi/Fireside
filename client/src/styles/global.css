@@ -311,6 +311,11 @@ input:focus {
   color: var(--text);
 }
 
+.voice-dock-camera.is-active {
+  background: var(--green);
+  color: var(--crust);
+}
+
 .voice-dock-icon {
   width: 2rem;
   height: 2rem;
@@ -329,6 +334,12 @@ input:focus {
   margin-top: 0.45rem;
   font-size: 0.78rem;
   color: var(--subtext0);
+}
+
+.voice-dock-error {
+  margin-top: 0.3rem;
+  color: var(--red);
+  font-size: 0.72rem;
 }
 
 .user-dock {
@@ -552,6 +563,59 @@ input:focus {
   min-height: 0;
   overflow-y: auto;
   padding: 1rem;
+}
+
+.video-stage {
+  border-top: 1px solid var(--surface0);
+  padding: 0.75rem 1rem;
+}
+
+.video-stage-empty {
+  color: var(--overlay1);
+  font-size: 0.85rem;
+  font-style: italic;
+}
+
+.video-stage-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: 0.5rem;
+}
+
+.video-stage-tile {
+  position: relative;
+  border: 1px solid var(--surface1);
+  background: var(--mantle);
+  border-radius: 8px;
+  overflow: hidden;
+  min-height: 7rem;
+}
+
+.video-stage-tile.is-local {
+  border-color: var(--blue);
+}
+
+.video-stage-stream {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  display: block;
+  background: var(--surface0);
+}
+
+.video-stage-stream.is-mirrored {
+  transform: scaleX(-1);
+}
+
+.video-stage-label {
+  position: absolute;
+  left: 0.45rem;
+  bottom: 0.35rem;
+  font-size: 0.75rem;
+  color: var(--text);
+  background: rgba(0, 0, 0, 0.48);
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
 }
 
 .message-items {

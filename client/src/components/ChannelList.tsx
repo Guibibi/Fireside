@@ -3,6 +3,8 @@ import { del, get, post } from "../api/http";
 import {
   cleanupMediaTransports,
   initializeMediaTransports,
+  startLocalCameraProducer,
+  stopLocalCameraProducer,
   setMicrophoneMuted,
   setSpeakersMuted,
 } from "../api/media";
@@ -22,15 +24,23 @@ import {
   applyVoiceSpeaking,
   applyVoiceSnapshot,
   clearVoiceRejoinNotice,
+  clearVoiceCameraError,
+  cameraEnabled,
+  cameraError,
   isVoiceMemberSpeaking,
   joinedVoiceChannelId,
   micMuted,
   participantsByChannel,
+  resetVoiceMediaState,
   removeVoiceChannelState,
   setJoinedVoiceChannel,
+  setVoiceCameraError,
   setVoiceActionState,
   speakerMuted,
+  startVideoTilesSubscription,
   showVoiceRejoinNotice,
+  stopVideoTilesSubscription,
+  syncCameraStateFromMedia,
   toggleMicMuted,
   toggleSpeakerMuted,
   voiceRejoinNotice,
@@ -50,6 +60,7 @@ export default function ChannelList() {
   const [isSaving, setIsSaving] = createSignal(false);
   const [loadError, setLoadError] = createSignal("");
   const [toastError, setToastError] = createSignal("");
+  const [cameraActionPending, setCameraActionPending] = createSignal(false);
   const [pulsingByChannel, setPulsingByChannel] = createSignal<Record<string, boolean>>({});
   const pulseTimers = new Map<string, ReturnType<typeof setTimeout>>();
   let toastTimer: ReturnType<typeof setTimeout> | null = null;
@@ -106,6 +117,30 @@ export default function ChannelList() {
     const nextMuted = !speakerMuted();
     toggleSpeakerMuted();
     setSpeakersMuted(nextMuted);
+  }
+
+  async function handleToggleCamera() {
+    const channelId = joinedVoiceChannelId();
+    if (!channelId || cameraActionPending()) {
+      return;
+    }
+
+    setCameraActionPending(true);
+    clearVoiceCameraError();
+
+    try {
+      const result = cameraEnabled()
+        ? await stopLocalCameraProducer(channelId)
+        : await startLocalCameraProducer(channelId);
+
+      if (!result.ok && result.error) {
+        setVoiceCameraError(result.error);
+        showErrorToast(result.error);
+      }
+    } finally {
+      syncCameraStateFromMedia();
+      setCameraActionPending(false);
+    }
   }
 
   function selectChannel(channel: Channel) {
@@ -255,6 +290,7 @@ export default function ChannelList() {
           setJoinedVoiceChannel(null);
           setVoiceActionState("idle");
           cleanupMediaTransports();
+          resetVoiceMediaState();
         }
 
         removeVoiceChannelState(msg.id);
@@ -297,10 +333,13 @@ export default function ChannelList() {
 
       if (msg.type === "voice_joined") {
         setJoinedVoiceChannel(msg.channel_id);
+        startVideoTilesSubscription();
         clearVoiceRejoinNotice();
         setVoiceActionState("idle");
         void initializeMediaTransports(msg.channel_id).catch((error) => {
           showErrorToast(error instanceof Error ? error.message : "Failed to initialize media transports");
+        }).finally(() => {
+          syncCameraStateFromMedia();
         });
         setMicrophoneMuted(micMuted());
         setSpeakersMuted(speakerMuted());
@@ -311,6 +350,7 @@ export default function ChannelList() {
         if (joinedVoiceChannelId() === msg.channel_id) {
           setJoinedVoiceChannel(null);
           cleanupMediaTransports();
+          resetVoiceMediaState();
         }
         setVoiceActionState("idle");
         return;
@@ -329,6 +369,8 @@ export default function ChannelList() {
 
       cleanupMediaTransports();
       setJoinedVoiceChannel(null);
+      stopVideoTilesSubscription();
+      syncCameraStateFromMedia();
       setVoiceActionState("idle");
       showVoiceRejoinNotice();
     });
@@ -505,8 +547,26 @@ export default function ChannelList() {
                     </Show>
                   </svg>
                 </button>
+                <button
+                  type="button"
+                  class={`voice-dock-icon voice-dock-toggle voice-dock-camera${cameraEnabled() ? " is-active" : ""}`}
+                  onClick={() => void handleToggleCamera()}
+                  disabled={cameraActionPending() || voiceActionState() !== "idle"}
+                  title={cameraEnabled() ? "Turn camera off" : "Turn camera on"}
+                  aria-label={cameraEnabled() ? "Turn camera off" : "Turn camera on"}
+                >
+                  <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+                    <path d="M4 7.5A1.5 1.5 0 0 1 5.5 6h9A1.5 1.5 0 0 1 16 7.5v2.1l3.86-2.18A1 1 0 0 1 21.4 8.3v7.4a1 1 0 0 1-1.54.87L16 14.4v2.1a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 4 16.5z" fill="currentColor" />
+                    <Show when={cameraEnabled()}>
+                      <path d="M5 5 19 19" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none" />
+                    </Show>
+                  </svg>
+                </button>
               </div>
               <p class="voice-dock-channel">Connected: {connectedVoiceChannelName()}</p>
+              <Show when={cameraError()}>
+                <p class="voice-dock-error">{cameraError()}</p>
+              </Show>
             </div>
           </Show>
           <UserSettingsDock />
