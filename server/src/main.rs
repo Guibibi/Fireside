@@ -11,9 +11,16 @@ use config::AppConfig;
 use sqlx::postgres::PgPoolOptions;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+use std::time::Instant;
 use tokio::sync::{mpsc, RwLock};
 use tower_http::cors::{Any, CorsLayer};
 use uuid::Uuid;
+
+#[derive(Debug, Clone)]
+pub struct MediaSignalRateState {
+    pub window_started_at: Instant,
+    pub events_in_window: u32,
+}
 
 #[derive(Clone)]
 pub struct AppState {
@@ -26,6 +33,7 @@ pub struct AppState {
     pub channel_subscriptions: Arc<RwLock<HashMap<Uuid, Uuid>>>,
     pub voice_members_by_connection: Arc<RwLock<HashMap<Uuid, Uuid>>>,
     pub voice_members_by_channel: Arc<RwLock<HashMap<Uuid, HashSet<String>>>>,
+    pub media_signal_rate_by_connection: Arc<RwLock<HashMap<Uuid, MediaSignalRateState>>>,
 }
 
 #[tokio::main]
@@ -74,6 +82,7 @@ async fn main() {
         channel_subscriptions: Arc::new(RwLock::new(HashMap::new())),
         voice_members_by_connection: Arc::new(RwLock::new(HashMap::new())),
         voice_members_by_channel: Arc::new(RwLock::new(HashMap::new())),
+        media_signal_rate_by_connection: Arc::new(RwLock::new(HashMap::new())),
     };
 
     let cors = CorsLayer::new()

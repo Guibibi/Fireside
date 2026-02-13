@@ -41,23 +41,87 @@ export type ServerMessage =
   | { type: "voice_user_speaking"; channel_id: string; username: string; speaking: boolean }
   | { type: "media_signal"; channel_id: string; payload: unknown };
 
+export type WsConnectionStatus = "disconnected" | "connecting" | "connected" | "reconnecting" | "failed";
+
+export interface WsConnectionStatusSnapshot {
+  status: WsConnectionStatus;
+  reconnectAttempts: number;
+  reconnectDelayMs: number;
+}
+
 type MessageHandler = (msg: ServerMessage) => void;
 type CloseHandler = () => void;
+type StatusHandler = (snapshot: WsConnectionStatusSnapshot) => void;
+
+const WS_HEARTBEAT_INTERVAL_MS = 15000;
+const WS_RECONNECT_DELAY_MS = 1000;
+const WS_MAX_RECONNECT_ATTEMPTS = 10;
 
 let socket: WebSocket | null = null;
 let handlers: MessageHandler[] = [];
 let closeHandlers: CloseHandler[] = [];
+let statusHandlers: StatusHandler[] = [];
 let pendingSends: string[] = [];
 let latestPresenceUsernames: string[] | null = null;
 let latestVoicePresenceChannels: { channel_id: string; usernames: string[] }[] | null = null;
 let manualDisconnect = false;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+let reconnectAttempts = 0;
+let lastConnectUrl: string | null = null;
+let connectionStatus: WsConnectionStatus = "disconnected";
 
-export function connect(url = getWsUrl()) {
+function notifyStatus() {
+  const snapshot: WsConnectionStatusSnapshot = {
+    status: connectionStatus,
+    reconnectAttempts,
+    reconnectDelayMs: WS_RECONNECT_DELAY_MS,
+  };
+
+  statusHandlers.forEach((handler) => handler(snapshot));
+}
+
+function setConnectionStatus(nextStatus: WsConnectionStatus) {
+  const changed = connectionStatus !== nextStatus;
+  connectionStatus = nextStatus;
+
+  if (changed) {
+    notifyStatus();
+  }
+}
+
+function stopHeartbeat() {
+  if (heartbeatTimer) {
+    clearInterval(heartbeatTimer);
+    heartbeatTimer = null;
+  }
+}
+
+function startHeartbeat(ws: WebSocket) {
+  stopHeartbeat();
+  heartbeatTimer = setInterval(() => {
+    if (socket !== ws || ws.readyState !== WebSocket.OPEN) {
+      stopHeartbeat();
+      return;
+    }
+
+    ws.send(JSON.stringify({ type: "heartbeat" }));
+  }, WS_HEARTBEAT_INTERVAL_MS);
+}
+
+export function connect(url = getWsUrl(), reconnectAttempt = false) {
   if (socket?.readyState === WebSocket.OPEN || socket?.readyState === WebSocket.CONNECTING) {
     return;
   }
 
+  if (!reconnectAttempt) {
+    reconnectAttempts = 0;
+    setConnectionStatus("connecting");
+  } else {
+    setConnectionStatus("reconnecting");
+  }
+
+  lastConnectUrl = url;
   manualDisconnect = false;
   if (reconnectTimer) {
     clearTimeout(reconnectTimer);
@@ -71,6 +135,10 @@ export function connect(url = getWsUrl()) {
     if (socket !== ws) {
       return;
     }
+
+    reconnectAttempts = 0;
+    setConnectionStatus("connected");
+    startHeartbeat(ws);
 
     const t = token();
     if (t) {
@@ -131,6 +199,8 @@ export function connect(url = getWsUrl()) {
   };
 
   ws.onclose = () => {
+    stopHeartbeat();
+
     if (socket === ws) {
       socket = null;
     }
@@ -138,11 +208,21 @@ export function connect(url = getWsUrl()) {
     closeHandlers.forEach((handler) => handler());
 
     if (!manualDisconnect && token() && !reconnectTimer) {
+      reconnectAttempts += 1;
+      if (reconnectAttempts > WS_MAX_RECONNECT_ATTEMPTS) {
+        setConnectionStatus("failed");
+        return;
+      }
+
+      setConnectionStatus("reconnecting");
       reconnectTimer = setTimeout(() => {
         reconnectTimer = null;
-        connect();
-      }, 1000);
+        connect(lastConnectUrl ?? getWsUrl(), true);
+      }, WS_RECONNECT_DELAY_MS);
+      return;
     }
+
+    setConnectionStatus("disconnected");
   };
 }
 
@@ -152,8 +232,11 @@ export function disconnect() {
     clearTimeout(reconnectTimer);
     reconnectTimer = null;
   }
+  stopHeartbeat();
   socket?.close();
   socket = null;
+  reconnectAttempts = 0;
+  setConnectionStatus("disconnected");
   pendingSends = [];
   latestPresenceUsernames = null;
   latestVoicePresenceChannels = null;
@@ -207,5 +290,18 @@ export function onClose(handler: CloseHandler) {
 
   return () => {
     closeHandlers = closeHandlers.filter((h) => h !== handler);
+  };
+}
+
+export function onConnectionStatus(handler: StatusHandler) {
+  statusHandlers.push(handler);
+  handler({
+    status: connectionStatus,
+    reconnectAttempts,
+    reconnectDelayMs: WS_RECONNECT_DELAY_MS,
+  });
+
+  return () => {
+    statusHandlers = statusHandlers.filter((h) => h !== handler);
   };
 }

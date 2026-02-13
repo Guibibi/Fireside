@@ -395,6 +395,10 @@ input:focus {
   color: var(--subtext0);
 }
 
+.voice-dock-channel-alert {
+  color: var(--red);
+}
+
 .voice-dock-error {
   margin-top: 0.3rem;
   color: var(--red);

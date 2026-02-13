@@ -40,14 +40,17 @@ import {
   setVoiceActionState,
   speakerMuted,
   startCameraStateSubscription,
+  startConnectionStatusSubscription,
   startScreenStateSubscription,
   startVideoTilesSubscription,
+  stopConnectionStatusSubscription,
   screenShareEnabled,
   screenShareError,
   screenShareRoutingMode,
   showVoiceRejoinNotice,
   toggleMicMuted,
   toggleSpeakerMuted,
+  voiceConnectionStatus,
   voiceRejoinNotice,
   voiceActionState,
 } from "../stores/voice";
@@ -283,6 +286,7 @@ export default function ChannelList() {
 
   onMount(() => {
     connect();
+    startConnectionStatusSubscription();
     void loadInitialChannels();
 
     const handleWindowFocus = () => {
@@ -411,8 +415,30 @@ export default function ChannelList() {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       unsubscribe();
       unsubscribeClose();
+      stopConnectionStatusSubscription();
     });
   });
+
+  function connectionStatusLabel() {
+    const status = voiceConnectionStatus();
+    if (status === "connected") {
+      return "Connection: Connected";
+    }
+
+    if (status === "connecting") {
+      return "Connection: Connecting...";
+    }
+
+    if (status === "reconnecting") {
+      return "Connection: Reconnecting...";
+    }
+
+    if (status === "failed") {
+      return "Connection: Failed";
+    }
+
+    return "Connection: Disconnected";
+  }
 
   const sortedChannels = () => [...channels()].sort((a, b) => a.position - b.position);
   const connectedVoiceChannelName = () => {
@@ -603,6 +629,14 @@ export default function ChannelList() {
                 </button>
               </div>
               <p class="voice-dock-channel">Connected: {connectedVoiceChannelName()}</p>
+              <p class={`voice-dock-channel${voiceConnectionStatus() === "failed" ? " voice-dock-channel-alert" : ""}`}>
+                {connectionStatusLabel()}
+              </p>
+              <Show when={voiceConnectionStatus() === "failed"}>
+                <button type="button" class="settings-secondary" onClick={() => connect()}>
+                  Retry connection
+                </button>
+              </Show>
               <Show when={cameraError()}>
                 <p class="voice-dock-error">{cameraError()}</p>
               </Show>

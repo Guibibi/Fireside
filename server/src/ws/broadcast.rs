@@ -164,6 +164,10 @@ pub async fn cleanup_connection(
         let mut ws_connections = state.ws_connections.write().await;
         ws_connections.remove(&connection_id);
 
+        let mut media_signal_rate_by_connection =
+            state.media_signal_rate_by_connection.write().await;
+        media_signal_rate_by_connection.remove(&connection_id);
+
         let mut connection_usernames = state.connection_usernames.write().await;
         let removed_username = connection_usernames.remove(&connection_id);
 

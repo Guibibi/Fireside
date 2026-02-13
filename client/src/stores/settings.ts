@@ -2,6 +2,7 @@ import { createSignal } from "solid-js";
 
 const AUDIO_INPUT_KEY = "yankcord_audio_input_device_id";
 const AUDIO_OUTPUT_KEY = "yankcord_audio_output_device_id";
+const CAMERA_INPUT_KEY = "yankcord_camera_input_device_id";
 const AVATAR_NAME_KEY = "yankcord_avatar_name";
 
 const [preferredAudioInputDeviceId, setPreferredAudioInputDeviceId] = createSignal<string | null>(
@@ -12,6 +13,10 @@ const [preferredAudioOutputDeviceId, setPreferredAudioOutputDeviceId] = createSi
   localStorage.getItem(AUDIO_OUTPUT_KEY),
 );
 
+const [preferredCameraDeviceId, setPreferredCameraDeviceId] = createSignal<string | null>(
+  localStorage.getItem(CAMERA_INPUT_KEY),
+);
+
 const [avatarPlaceholderName, setAvatarPlaceholderName] = createSignal<string | null>(
   localStorage.getItem(AVATAR_NAME_KEY),
 );
@@ -19,6 +24,7 @@ const [avatarPlaceholderName, setAvatarPlaceholderName] = createSignal<string | 
 export {
   preferredAudioInputDeviceId,
   preferredAudioOutputDeviceId,
+  preferredCameraDeviceId,
   avatarPlaceholderName,
 };
 
@@ -42,6 +48,16 @@ export function savePreferredAudioOutputDeviceId(deviceId: string | null) {
   setPreferredAudioOutputDeviceId(deviceId);
 }
 
+export function savePreferredCameraDeviceId(deviceId: string | null) {
+  if (deviceId) {
+    localStorage.setItem(CAMERA_INPUT_KEY, deviceId);
+  } else {
+    localStorage.removeItem(CAMERA_INPUT_KEY);
+  }
+
+  setPreferredCameraDeviceId(deviceId);
+}
+
 export function saveAvatarPlaceholderName(name: string | null) {
   if (name) {
     localStorage.setItem(AVATAR_NAME_KEY, name);
@@ -55,4 +71,5 @@ export function saveAvatarPlaceholderName(name: string | null) {
 export function resetAudioPreferences() {
   savePreferredAudioInputDeviceId(null);
   savePreferredAudioOutputDeviceId(null);
+  savePreferredCameraDeviceId(null);
 }

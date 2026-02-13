@@ -3,11 +3,14 @@ import { patch } from "../api/http";
 import {
   isSpeakerSelectionSupported,
   listAudioDevices,
+  listCameraDevices,
   resetPreferredAudioDevices,
   cleanupMediaTransports,
+  setPreferredCameraDevice,
   setPreferredMicrophoneDevice,
   setPreferredSpeakerDevice,
   type AudioDeviceOption,
+  type CameraDeviceOption,
 } from "../api/media";
 import { connect, disconnect } from "../api/ws";
 import {
@@ -26,6 +29,7 @@ import {
   avatarPlaceholderName,
   preferredAudioInputDeviceId,
   preferredAudioOutputDeviceId,
+  preferredCameraDeviceId,
   saveAvatarPlaceholderName,
 } from "../stores/settings";
 
@@ -43,6 +47,7 @@ export default function UserSettingsDock() {
   const [isRefreshingDevices, setIsRefreshingDevices] = createSignal(false);
   const [audioInputs, setAudioInputs] = createSignal<AudioDeviceOption[]>([]);
   const [audioOutputs, setAudioOutputs] = createSignal<AudioDeviceOption[]>([]);
+  const [cameraInputs, setCameraInputs] = createSignal<CameraDeviceOption[]>([]);
   const [avatarPreviewUrl, setAvatarPreviewUrl] = createSignal<string | null>(null);
   const [avatarPreviewBroken, setAvatarPreviewBroken] = createSignal(false);
 
@@ -53,7 +58,7 @@ export default function UserSettingsDock() {
     setProfileError("");
     setAudioError("");
     setIsOpen(true);
-    void refreshAudioDevices();
+    void refreshMediaDevices();
   }
 
   function closeSettings() {
@@ -80,16 +85,20 @@ export default function UserSettingsDock() {
     return !!avatarPreviewUrl() && !avatarPreviewBroken();
   }
 
-  async function refreshAudioDevices() {
+  async function refreshMediaDevices() {
     setIsRefreshingDevices(true);
     setAudioError("");
 
     try {
-      const inventory = await listAudioDevices();
+      const [inventory, cameras] = await Promise.all([
+        listAudioDevices(),
+        listCameraDevices(),
+      ]);
       setAudioInputs(inventory.inputs);
       setAudioOutputs(inventory.outputs);
+      setCameraInputs(cameras);
     } catch (error) {
-      setAudioError(error instanceof Error ? error.message : "Failed to load audio devices");
+      setAudioError(error instanceof Error ? error.message : "Failed to load media devices");
     } finally {
       setIsRefreshingDevices(false);
     }
@@ -150,6 +159,17 @@ export default function UserSettingsDock() {
       await setPreferredSpeakerDevice(value || null);
     } catch (error) {
       setAudioError(error instanceof Error ? error.message : "Failed to switch speaker device");
+    }
+  }
+
+  async function handleCameraInputChange(event: Event) {
+    const value = (event.currentTarget as HTMLSelectElement).value;
+    setAudioError("");
+
+    try {
+      await setPreferredCameraDevice(value || null);
+    } catch (error) {
+      setAudioError(error instanceof Error ? error.message : "Failed to switch camera device");
     }
   }
 
@@ -325,13 +345,28 @@ export default function UserSettingsDock() {
                 </Show>
               </div>
 
-              <div class="settings-actions">
-                <button type="button" class="settings-secondary" onClick={() => void refreshAudioDevices()}>
+                <div class="settings-actions">
+                <button type="button" class="settings-secondary" onClick={() => void refreshMediaDevices()}>
                   Refresh devices
                 </button>
                 <button type="button" class="settings-secondary" onClick={() => void handleResetAudioPreferences()}>
                   Reset audio
                 </button>
+              </div>
+
+              <div class="settings-audio-row">
+                <label class="settings-label" for="settings-camera">Camera</label>
+                <select
+                  id="settings-camera"
+                  value={preferredCameraDeviceId() ?? ""}
+                  onInput={(event) => void handleCameraInputChange(event)}
+                  disabled={isRefreshingDevices()}
+                >
+                  <option value="">System default camera</option>
+                  {cameraInputs().map((device) => (
+                    <option value={device.deviceId}>{device.label}</option>
+                  ))}
+                </select>
               </div>
 
               <Show when={audioError()}>

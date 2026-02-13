@@ -281,9 +281,9 @@ Goal: make voice/video usable in day-to-day sessions.
 
 ### Phase 3.6 - Reliability and polish
 
-- [ ] **Server:** Add media session cleanup guards and stronger signaling validation.
-- [ ] **Client:** Add clear voice/video connection status and actionable failure UI.
-- [ ] **Client:** Persist media device preferences when available.
+- [x] **Server:** Add media session cleanup guards and stronger signaling validation.
+- [x] **Client:** Add clear voice/video connection status and actionable failure UI.
+- [x] **Client:** Persist media device preferences when available.
 - [ ] **Verify:** Reconnect and device-change paths are stable.
 
 ### Phase 3 Exit Criteria

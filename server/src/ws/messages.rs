@@ -36,6 +36,9 @@ pub enum ClientMessage {
     #[serde(rename = "voice_activity")]
     VoiceActivity { channel_id: Uuid, speaking: bool },
 
+    #[serde(rename = "heartbeat")]
+    Heartbeat,
+
     #[serde(rename = "media_signal")]
     MediaSignal {
         channel_id: Uuid,

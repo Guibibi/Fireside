@@ -7,6 +7,7 @@ import {
   subscribeScreenState,
   subscribeVideoTiles,
 } from "../api/media";
+import { onConnectionStatus, type WsConnectionStatus } from "../api/ws";
 
 export type VoiceActionState = "idle" | "joining" | "leaving";
 
@@ -30,9 +31,11 @@ const [screenShareError, setScreenShareError] = createSignal<string | null>(null
 const [localScreenShareStream, setLocalScreenShareStream] = createSignal<MediaStream | null>(null);
 const [screenShareRoutingMode, setScreenShareRoutingMode] = createSignal<"sfu" | null>(null);
 const [videoTiles, setVideoTiles] = createSignal<RemoteVideoTile[]>([]);
+const [voiceConnectionStatus, setVoiceConnectionStatus] = createSignal<WsConnectionStatus>("disconnected");
 let unsubscribeVideoTiles: (() => void) | null = null;
 let unsubscribeCameraState: (() => void) | null = null;
 let unsubscribeScreenState: (() => void) | null = null;
+let unsubscribeConnectionStatus: (() => void) | null = null;
 
 function sortUnique(usernames: string[]): string[] {
   return [...new Set(usernames)].sort((a, b) => a.localeCompare(b));
@@ -180,6 +183,23 @@ export function startVideoTilesSubscription() {
   });
 }
 
+export function startConnectionStatusSubscription() {
+  if (unsubscribeConnectionStatus) {
+    return;
+  }
+
+  unsubscribeConnectionStatus = onConnectionStatus((snapshot) => {
+    setVoiceConnectionStatus(snapshot.status);
+  });
+}
+
+export function stopConnectionStatusSubscription() {
+  if (unsubscribeConnectionStatus) {
+    unsubscribeConnectionStatus();
+    unsubscribeConnectionStatus = null;
+  }
+}
+
 function applyCameraStateSnapshot(snapshot: CameraStateSnapshot) {
   setCameraEnabled(snapshot.enabled);
   setCameraError(snapshot.error);
@@ -257,6 +277,7 @@ export function resetVoiceState() {
   setMicMuted(false);
   setSpeakerMuted(false);
   setVoiceRejoinNotice(false);
+  setVoiceConnectionStatus("disconnected");
   resetVoiceMediaState();
 }
 
@@ -288,6 +309,7 @@ export {
   screenShareRoutingMode,
   speakingByChannel,
   videoTiles,
+  voiceConnectionStatus,
   voiceActionState,
   setVoiceActionState,
   micMuted,
