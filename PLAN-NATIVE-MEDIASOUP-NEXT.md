@@ -6,6 +6,49 @@
 - Keep hard fallback to browser `getDisplayMedia` path at all times.
 - Keep server REST/WS contract stable unless a minimal additive change is strictly required.
 
+## Session Handoff (Updated)
+
+### What Landed This Session
+
+- Native sender now publishes into real mediasoup flow via server-managed native RTP ingest:
+  - additive WS action: `create_native_sender_session`
+  - server creates mediasoup `PlainTransport` + screen `Producer` with canonical H264 RTP params
+  - server returns native `rtp_target` (`ip:port`) for the Tauri sender
+- Tauri native start now accepts dynamic `rtp_target` (instead of debug-env-only routing).
+- Screen-share startup is native-first on Tauri, with automatic fallback to browser capture if native bootstrap fails.
+- Runtime fallback monitor is wired:
+  - native sender instability reason is polled from `native_capture_status`
+  - app closes native producer/capture and auto-switches to browser capture path
+- Native sender internals were modularized:
+  - `native_sender.rs`, `h264_encoder.rs`, `rtp_sender.rs`, `metrics.rs`
+- Diagnostics/dev UX updates landed:
+  - debug panel is dev-gated (`import.meta.env.DEV` or `localStorage["yankcord_debug_native_sender"] === "1"`)
+  - richer status fields include fallback reason, degradation level, producer/transport state, lifecycle counters
+
+### Contract Impact
+
+- Existing REST/WS contract preserved for current web flows.
+- One additive media-signal action introduced: `create_native_sender_session`.
+
+### Validated in CI/Local Linux
+
+- `cargo check --manifest-path server/Cargo.toml`
+- `cargo clippy --manifest-path server/Cargo.toml --all-targets -- -D warnings`
+- `cargo test --manifest-path server/Cargo.toml`
+- `cargo check --manifest-path client/src-tauri/Cargo.toml`
+- `npm --prefix client run typecheck`
+- `npm --prefix client run build`
+
+### Remaining for Next Session
+
+- Windows manual verification pass (end-to-end native publish + forced-fallback scenarios).
+- Keyframe request handling path (PLI/FIR -> force intra frame) is still pending.
+- Performance workstream items remain pending:
+  - frame copy minimization / pooling
+  - adaptive degradation ladder behavior
+  - queue tuning split counters (before-encode vs during-send)
+- Optional diagnostics-only UDP mirror should be finalized as explicitly feature/env-guarded.
+
 ## Current Baseline (Starting Point)
 
 - Native pipeline exists: Windows capture -> BGRA frame queue -> H264 encode -> RTP packetization.

@@ -16,3 +16,7 @@ worker_count = 2
 webrtc_listen_ip = "0.0.0.0"
 # Local LAN testing: use LAN IP. Public VM: use public IP/address.
 announced_ip = "127.0.0.1"
+# Native RTP ingest for Tauri native screen sender.
+native_rtp_listen_ip = "127.0.0.1"
+# For remote desktop clients, set to a publicly reachable IP.
+native_rtp_announced_ip = "127.0.0.1"

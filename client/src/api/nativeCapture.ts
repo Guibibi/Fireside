@@ -16,6 +16,9 @@ export interface StartNativeCaptureRequest {
   resolution?: "720p" | "1080p" | "1440p" | "4k";
   fps?: 30 | 60;
   bitrate_kbps?: number;
+  rtp_target?: string;
+  payload_type?: number;
+  ssrc?: number;
 }
 
 export interface NativeCaptureStatus {
@@ -49,6 +52,14 @@ export interface NativeCaptureStatus {
     last_frame_height: number | null;
     last_frame_timestamp_ms: number | null;
     last_encode_latency_ms: number | null;
+    recent_fallback_reason: string | null;
+    degradation_level: "none" | "fps_reduced" | "resolution_reduced" | "bitrate_reduced";
+    producer_connected: boolean;
+    transport_connected: boolean;
+    sender_started_events: number;
+    sender_stopped_events: number;
+    fallback_triggered_events: number;
+    fallback_completed_events: number;
   };
 }
 

@@ -63,6 +63,14 @@ enum MediaSignalRequest {
         request_id: Option<String>,
         producer_id: String,
     },
+    CreateNativeSenderSession {
+        request_id: Option<String>,
+    },
+    ClientDiagnostic {
+        request_id: Option<String>,
+        event: String,
+        detail: Option<String>,
+    },
 }
 
 pub async fn ws_upgrade(ws: WebSocketUpgrade, State(state): State<AppState>) -> impl IntoResponse {
@@ -1066,6 +1074,83 @@ async fn handle_media_signal_message(
                 }
             }
         }
+        MediaSignalRequest::CreateNativeSenderSession { request_id } => {
+            match state
+                .media
+                .create_native_sender_session_for_connection(connection_id, channel_id)
+                .await
+            {
+                Ok(session) => {
+                    send_server_message(
+                        out_tx,
+                        ServerMessage::MediaSignal {
+                            channel_id,
+                            payload: serde_json::json!({
+                                "action": "native_sender_session_created",
+                                "request_id": request_id,
+                                "producer_id": session.producer_id,
+                                "kind": session.kind,
+                                "source": session.source,
+                                "routing_mode": session.routing_mode,
+                                "rtp_target": session.rtp_target,
+                                "payload_type": session.payload_type,
+                                "ssrc": session.ssrc,
+                                "mime_type": session.mime_type,
+                                "clock_rate": session.clock_rate,
+                                "packetization_mode": session.packetization_mode,
+                                "profile_level_id": session.profile_level_id,
+                            }),
+                        },
+                    );
+
+                    broadcast_media_signal_to_voice_channel(
+                        state,
+                        channel_id,
+                        serde_json::json!({
+                            "action": "new_producer",
+                            "producer_id": session.producer_id,
+                            "kind": session.kind,
+                            "source": session.source,
+                            "routing_mode": session.routing_mode,
+                            "username": username,
+                        }),
+                        Some(connection_id),
+                    )
+                    .await;
+                }
+                Err(error_message) => {
+                    send_media_signal_error(out_tx, channel_id, request_id, &error_message);
+                }
+            }
+        }
+        MediaSignalRequest::ClientDiagnostic {
+            request_id,
+            event,
+            detail,
+        } => {
+            tracing::warn!(
+                connection_id = %connection_id,
+                username = %username,
+                channel_id = %channel_id,
+                event = %event,
+                detail = ?detail,
+                "Client media diagnostic"
+            );
+
+            if request_id.is_some() {
+                send_server_message(
+                    out_tx,
+                    ServerMessage::MediaSignal {
+                        channel_id,
+                        payload: serde_json::json!({
+                            "action": "client_diagnostic_logged",
+                            "request_id": request_id,
+                            "event": event,
+                        }),
+                    },
+                );
+            }
+        }
     }
 }
 
@@ -1077,7 +1162,9 @@ fn request_id_for(request: &MediaSignalRequest) -> Option<String> {
         | MediaSignalRequest::MediaProduce { request_id, .. }
         | MediaSignalRequest::MediaConsume { request_id, .. }
         | MediaSignalRequest::MediaResumeConsumer { request_id, .. }
-        | MediaSignalRequest::MediaCloseProducer { request_id, .. } => request_id.clone(),
+        | MediaSignalRequest::MediaCloseProducer { request_id, .. }
+        | MediaSignalRequest::CreateNativeSenderSession { request_id }
+        | MediaSignalRequest::ClientDiagnostic { request_id, .. } => request_id.clone(),
     }
 }
 
@@ -1186,6 +1273,18 @@ fn validate_media_signal_request_fields(request: &MediaSignalRequest) -> Result<
                 return Err("producer_id is invalid");
             }
         }
+        MediaSignalRequest::ClientDiagnostic { event, detail, .. } => {
+            if event.is_empty() || event.len() > 64 {
+                return Err("event is invalid");
+            }
+
+            if let Some(detail) = detail {
+                if detail.is_empty() || detail.len() > 512 {
+                    return Err("detail is invalid");
+                }
+            }
+        }
+        MediaSignalRequest::CreateNativeSenderSession { .. } => {}
         MediaSignalRequest::GetRouterRtpCapabilities { .. } => {}
     }
 

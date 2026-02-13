@@ -32,6 +32,14 @@ pub struct MediaConfig {
     pub worker_count: usize,
     pub webrtc_listen_ip: String,
     pub announced_ip: Option<String>,
+    #[serde(default = "default_native_rtp_listen_ip")]
+    pub native_rtp_listen_ip: String,
+    #[serde(default)]
+    pub native_rtp_announced_ip: Option<String>,
+}
+
+fn default_native_rtp_listen_ip() -> String {
+    "127.0.0.1".to_string()
 }
 
 impl AppConfig {
@@ -72,6 +80,12 @@ impl AppConfig {
                     webrtc_listen_ip: std::env::var("WEBRTC_LISTEN_IP")
                         .unwrap_or_else(|_| "0.0.0.0".into()),
                     announced_ip: std::env::var("WEBRTC_ANNOUNCED_IP").ok(),
+                    native_rtp_listen_ip: std::env::var("NATIVE_RTP_LISTEN_IP")
+                        .or_else(|_| std::env::var("WEBRTC_LISTEN_IP"))
+                        .unwrap_or_else(|_| default_native_rtp_listen_ip()),
+                    native_rtp_announced_ip: std::env::var("NATIVE_RTP_ANNOUNCED_IP")
+                        .ok()
+                        .or_else(|| std::env::var("WEBRTC_ANNOUNCED_IP").ok()),
                 },
             }
         }

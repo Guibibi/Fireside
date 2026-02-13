@@ -1,18 +1,21 @@
-use openh264::encoder::{BitRate, Encoder, EncoderConfig, FrameRate, Profile, UsageType};
-use openh264::formats::{BgraSliceU8, YUVBuffer};
+mod h264_encoder;
+mod metrics;
+mod native_sender;
+mod rtp_sender;
+
 use serde::{Deserialize, Serialize};
-use std::net::{SocketAddr, UdpSocket};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::Receiver;
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::{State, Window};
 
 use super::windows_capture::{
     self, NativeCaptureSource, NativeCaptureSourceKind, NativeCaptureStartRequest,
     NativeFramePacket,
 };
+use metrics::{NativeSenderMetrics, NativeSenderSharedMetrics, NativeSenderSnapshotInput};
+use native_sender::{run_native_sender_worker, NativeSenderRuntimeConfig};
 
 const FRAME_QUEUE_CAPACITY: usize = 8;
 
@@ -23,24 +26,6 @@ struct ActiveCaptureSession {
     resolution: Option<String>,
     fps: Option<u32>,
     bitrate_kbps: Option<u32>,
-}
-
-#[derive(Debug, Default)]
-struct NativeSenderSharedMetrics {
-    worker_started_ms: AtomicU64,
-    received_packets: AtomicU64,
-    processed_packets: AtomicU64,
-    disconnected_events: AtomicU64,
-    last_frame_width: AtomicU64,
-    last_frame_height: AtomicU64,
-    last_frame_timestamp_ms: AtomicU64,
-    last_encode_latency_ms: AtomicU64,
-    encoded_frames: AtomicU64,
-    encoded_bytes: AtomicU64,
-    rtp_packets_sent: AtomicU64,
-    rtp_send_errors: AtomicU64,
-    encode_errors: AtomicU64,
-    dropped_missing_bgra: AtomicU64,
 }
 
 #[derive(Debug)]
@@ -59,6 +44,7 @@ struct NativeSenderWorker {
 pub struct NativeCaptureService {
     active_session: Mutex<Option<ActiveCaptureSession>>,
     sender_worker: Mutex<Option<NativeSenderWorker>>,
+    last_sender_metrics: Mutex<Option<NativeSenderMetrics>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -67,6 +53,9 @@ pub struct StartNativeCaptureRequest {
     pub resolution: Option<String>,
     pub fps: Option<u32>,
     pub bitrate_kbps: Option<u32>,
+    pub rtp_target: Option<String>,
+    pub payload_type: Option<u8>,
+    pub ssrc: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -80,46 +69,58 @@ pub struct NativeCaptureStatus {
     pub native_sender: NativeSenderMetrics,
 }
 
-#[derive(Debug, Clone, Serialize)]
-pub struct NativeSenderMetrics {
-    pub worker_active: bool,
-    pub source_id: Option<String>,
-    pub queue_capacity: u32,
-    pub target_fps: Option<u32>,
-    pub target_bitrate_kbps: Option<u32>,
-    pub worker_started_at_ms: Option<u64>,
-    pub received_packets: u64,
-    pub processed_packets: u64,
-    pub dropped_full: u64,
-    pub dropped_disconnected: u64,
-    pub worker_disconnect_events: u64,
-    pub encoded_frames: u64,
-    pub encoded_bytes: u64,
-    pub rtp_packets_sent: u64,
-    pub rtp_send_errors: u64,
-    pub encode_errors: u64,
-    pub dropped_missing_bgra: u64,
-    pub rtp_target: Option<String>,
-    pub estimated_queue_depth: u64,
-    pub last_frame_width: Option<u32>,
-    pub last_frame_height: Option<u32>,
-    pub last_frame_timestamp_ms: Option<u64>,
-    pub last_encode_latency_ms: Option<u64>,
-}
-
-#[derive(Debug)]
-struct NativeRtpSender {
-    socket: Option<UdpSocket>,
-    target: Option<SocketAddr>,
-    payload_type: u8,
-    sequence_number: u16,
-    ssrc: u32,
-    mtu: usize,
-    had_send_error: bool,
-}
-
 impl NativeCaptureService {
+    fn remember_last_sender_metrics(&self, metrics: NativeSenderMetrics) {
+        if let Ok(mut last) = self.last_sender_metrics.lock() {
+            *last = Some(metrics);
+        }
+    }
+
+    fn reap_finished_worker_if_needed(&self) -> Result<(), String> {
+        let mut worker = self
+            .sender_worker
+            .lock()
+            .map_err(|_| "Native capture sender-worker lock was poisoned".to_string())?;
+
+        let Some(active_worker) = worker.as_mut() else {
+            return Ok(());
+        };
+
+        let Some(handle) = active_worker.handle.as_ref() else {
+            return Ok(());
+        };
+
+        if !handle.is_finished() {
+            return Ok(());
+        }
+
+        let worker_active = false;
+        let dispatch = windows_capture::read_frame_dispatch_stats();
+        let metrics = active_worker.shared.snapshot(NativeSenderSnapshotInput {
+            worker_active,
+            source_id: Some(active_worker.source_id.clone()),
+            queue_capacity: active_worker.queue_capacity,
+            target_fps: active_worker.target_fps,
+            target_bitrate_kbps: active_worker.target_bitrate_kbps,
+            rtp_target: active_worker.rtp_target.clone(),
+            dispatch,
+        });
+        self.remember_last_sender_metrics(metrics);
+
+        if let Some(done_handle) = active_worker.handle.take() {
+            done_handle
+                .join()
+                .map_err(|_| "Native sender worker thread panicked".to_string())?;
+        }
+
+        *worker = None;
+        windows_capture::clear_frame_sink()?;
+
+        Ok(())
+    }
+
     fn sender_metrics(&self) -> Result<NativeSenderMetrics, String> {
+        self.reap_finished_worker_if_needed()?;
         let dispatch = windows_capture::read_frame_dispatch_stats();
 
         let worker = self
@@ -128,6 +129,22 @@ impl NativeCaptureService {
             .map_err(|_| "Native capture sender-worker lock was poisoned".to_string())?;
 
         let Some(worker) = worker.as_ref() else {
+            let last = self
+                .last_sender_metrics
+                .lock()
+                .map_err(|_| "Native capture sender metrics lock was poisoned".to_string())?
+                .clone();
+
+            if let Some(mut metrics) = last {
+                metrics.worker_active = false;
+                metrics.source_id = None;
+                metrics.rtp_target = None;
+                metrics.estimated_queue_depth = dispatch.queued_frames;
+                metrics.dropped_full = dispatch.dropped_full;
+                metrics.dropped_disconnected = dispatch.dropped_disconnected;
+                return Ok(metrics);
+            }
+
             return Ok(NativeSenderMetrics {
                 worker_active: false,
                 source_id: None,
@@ -147,74 +164,35 @@ impl NativeCaptureService {
                 encode_errors: 0,
                 dropped_missing_bgra: 0,
                 rtp_target: None,
-                estimated_queue_depth: 0,
+                estimated_queue_depth: dispatch.queued_frames,
                 last_frame_width: None,
                 last_frame_height: None,
                 last_frame_timestamp_ms: None,
                 last_encode_latency_ms: None,
+                recent_fallback_reason: None,
+                degradation_level: "none".to_string(),
+                producer_connected: false,
+                transport_connected: false,
+                sender_started_events: 0,
+                sender_stopped_events: 0,
+                fallback_triggered_events: 0,
+                fallback_completed_events: 0,
             });
         };
 
-        let received_packets = worker.shared.received_packets.load(Ordering::Relaxed);
-        let processed_packets = worker.shared.processed_packets.load(Ordering::Relaxed);
-        let queue_depth = dispatch.queued_frames.saturating_sub(received_packets);
-        let started = worker.shared.worker_started_ms.load(Ordering::Relaxed);
-        let last_frame_width = worker.shared.last_frame_width.load(Ordering::Relaxed);
-        let last_frame_height = worker.shared.last_frame_height.load(Ordering::Relaxed);
-        let last_frame_timestamp = worker
-            .shared
-            .last_frame_timestamp_ms
-            .load(Ordering::Relaxed);
-        let last_encode_latency = worker.shared.last_encode_latency_ms.load(Ordering::Relaxed);
-        let worker_disconnect_events = worker.shared.disconnected_events.load(Ordering::Relaxed);
-        let encoded_frames = worker.shared.encoded_frames.load(Ordering::Relaxed);
-        let encoded_bytes = worker.shared.encoded_bytes.load(Ordering::Relaxed);
-        let rtp_packets_sent = worker.shared.rtp_packets_sent.load(Ordering::Relaxed);
-        let rtp_send_errors = worker.shared.rtp_send_errors.load(Ordering::Relaxed);
-        let encode_errors = worker.shared.encode_errors.load(Ordering::Relaxed);
-        let dropped_missing_bgra = worker.shared.dropped_missing_bgra.load(Ordering::Relaxed);
-
-        Ok(NativeSenderMetrics {
-            worker_active: true,
+        Ok(worker.shared.snapshot(NativeSenderSnapshotInput {
+            worker_active: worker
+                .handle
+                .as_ref()
+                .map(|handle| !handle.is_finished())
+                .unwrap_or(false),
             source_id: Some(worker.source_id.clone()),
-            queue_capacity: worker.queue_capacity as u32,
+            queue_capacity: worker.queue_capacity,
             target_fps: worker.target_fps,
             target_bitrate_kbps: worker.target_bitrate_kbps,
-            worker_started_at_ms: if started == 0 { None } else { Some(started) },
-            received_packets,
-            processed_packets,
-            dropped_full: dispatch.dropped_full,
-            dropped_disconnected: dispatch.dropped_disconnected,
-            worker_disconnect_events,
-            encoded_frames,
-            encoded_bytes,
-            rtp_packets_sent,
-            rtp_send_errors,
-            encode_errors,
-            dropped_missing_bgra,
             rtp_target: worker.rtp_target.clone(),
-            estimated_queue_depth: queue_depth,
-            last_frame_width: if last_frame_width == 0 {
-                None
-            } else {
-                Some(last_frame_width as u32)
-            },
-            last_frame_height: if last_frame_height == 0 {
-                None
-            } else {
-                Some(last_frame_height as u32)
-            },
-            last_frame_timestamp_ms: if last_frame_timestamp == 0 {
-                None
-            } else {
-                Some(last_frame_timestamp)
-            },
-            last_encode_latency_ms: if last_encode_latency == 0 {
-                None
-            } else {
-                Some(last_encode_latency)
-            },
-        })
+            dispatch,
+        }))
     }
 
     fn current_status(&self) -> Result<NativeCaptureStatus, String> {
@@ -249,6 +227,7 @@ impl NativeCaptureService {
     }
 
     fn is_worker_active_for(&self, source_id: &str) -> Result<bool, String> {
+        self.reap_finished_worker_if_needed()?;
         let worker = self
             .sender_worker
             .lock()
@@ -256,7 +235,14 @@ impl NativeCaptureService {
 
         Ok(worker
             .as_ref()
-            .map(|active| active.source_id == source_id)
+            .map(|active| {
+                active.source_id == source_id
+                    && active
+                        .handle
+                        .as_ref()
+                        .map(|handle| !handle.is_finished())
+                        .unwrap_or(false)
+            })
             .unwrap_or(false))
     }
 
@@ -274,6 +260,17 @@ impl NativeCaptureService {
         active_worker.stop_signal.store(true, Ordering::Relaxed);
         windows_capture::clear_frame_sink()?;
 
+        let metrics = active_worker.shared.snapshot(NativeSenderSnapshotInput {
+            worker_active: false,
+            source_id: Some(active_worker.source_id.clone()),
+            queue_capacity: active_worker.queue_capacity,
+            target_fps: active_worker.target_fps,
+            target_bitrate_kbps: active_worker.target_bitrate_kbps,
+            rtp_target: active_worker.rtp_target.clone(),
+            dispatch: windows_capture::read_frame_dispatch_stats(),
+        });
+        self.remember_last_sender_metrics(metrics);
+
         if let Some(handle) = active_worker.handle.take() {
             handle
                 .join()
@@ -288,6 +285,9 @@ impl NativeCaptureService {
         source_id: String,
         fps: Option<u32>,
         bitrate_kbps: Option<u32>,
+        rtp_target: Option<String>,
+        payload_type: u8,
+        ssrc: u32,
     ) -> Result<(), String> {
         self.stop_sender_worker()?;
         windows_capture::reset_frame_dispatch_stats();
@@ -297,10 +297,7 @@ impl NativeCaptureService {
 
         let stop_signal = Arc::new(AtomicBool::new(false));
         let shared = Arc::new(NativeSenderSharedMetrics::default());
-        shared
-            .worker_started_ms
-            .store(unix_timestamp_ms(), Ordering::Relaxed);
-        let target_rtp = std::env::var("YANKCORD_NATIVE_RTP_TARGET").ok();
+        let target_rtp = rtp_target.or_else(|| std::env::var("YANKCORD_NATIVE_RTP_TARGET").ok());
 
         let worker_stop_signal = Arc::clone(&stop_signal);
         let worker_shared = Arc::clone(&shared);
@@ -311,11 +308,15 @@ impl NativeCaptureService {
         let handle = thread::Builder::new()
             .name("native-sender-worker".to_string())
             .spawn(move || {
-                run_native_sender_worker(
-                    worker_source_id,
-                    worker_target_fps,
-                    worker_target_bitrate_kbps,
-                    worker_target_rtp,
+                spawn_worker(
+                    NativeSenderRuntimeConfig {
+                        source_id: worker_source_id,
+                        target_fps: worker_target_fps,
+                        target_bitrate_kbps: worker_target_bitrate_kbps,
+                        target_rtp: worker_target_rtp,
+                        payload_type,
+                        ssrc,
+                    },
                     receiver,
                     worker_stop_signal,
                     worker_shared,
@@ -343,330 +344,13 @@ impl NativeCaptureService {
     }
 }
 
-fn unix_timestamp_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_millis() as u64)
-        .unwrap_or(0)
-}
-
-fn run_native_sender_worker(
-    source_id: String,
-    target_fps: Option<u32>,
-    target_bitrate_kbps: Option<u32>,
-    target_rtp: Option<String>,
+fn spawn_worker(
+    config: NativeSenderRuntimeConfig,
     receiver: Receiver<NativeFramePacket>,
     stop_signal: Arc<AtomicBool>,
     shared: Arc<NativeSenderSharedMetrics>,
 ) {
-    let mut h264_encoder = build_h264_encoder(target_fps, target_bitrate_kbps);
-    let mut rtp_sender = NativeRtpSender::new(target_rtp.clone());
-
-    while !stop_signal.load(Ordering::Relaxed) {
-        match receiver.recv_timeout(Duration::from_millis(250)) {
-            Ok(packet) => {
-                shared.received_packets.fetch_add(1, Ordering::Relaxed);
-
-                if packet.source_id != source_id {
-                    continue;
-                }
-                let encode_start_ms = unix_timestamp_ms();
-                shared
-                    .last_frame_timestamp_ms
-                    .store(packet.timestamp_ms, Ordering::Relaxed);
-                shared
-                    .last_frame_width
-                    .store(packet.width as u64, Ordering::Relaxed);
-                shared
-                    .last_frame_height
-                    .store(packet.height as u64, Ordering::Relaxed);
-
-                let Some(bgra) = packet.bgra.as_ref() else {
-                    shared.dropped_missing_bgra.fetch_add(1, Ordering::Relaxed);
-                    continue;
-                };
-
-                if packet.pixel_format != "bgra8" {
-                    shared.encode_errors.fetch_add(1, Ordering::Relaxed);
-                    continue;
-                }
-
-                if let Some(expected_len) = packet.bgra_len {
-                    if expected_len != bgra.len() {
-                        shared.encode_errors.fetch_add(1, Ordering::Relaxed);
-                        continue;
-                    }
-                }
-
-                let encoded_nals = encode_bgra_frame(
-                    &mut h264_encoder,
-                    bgra,
-                    packet.width,
-                    packet.height,
-                    &shared,
-                );
-
-                let Some(nals) = encoded_nals else {
-                    continue;
-                };
-
-                let encoded_bytes: usize = nals.iter().map(|nal| nal.len()).sum();
-                shared.encoded_frames.fetch_add(1, Ordering::Relaxed);
-                shared
-                    .encoded_bytes
-                    .fetch_add(encoded_bytes as u64, Ordering::Relaxed);
-
-                let rtp_packets = rtp_sender.send_h264_nalus(&nals, packet.timestamp_ms);
-                shared
-                    .rtp_packets_sent
-                    .fetch_add(rtp_packets as u64, Ordering::Relaxed);
-                if rtp_sender.take_and_reset_error() {
-                    shared.rtp_send_errors.fetch_add(1, Ordering::Relaxed);
-                }
-
-                let encode_latency_ms = unix_timestamp_ms().saturating_sub(encode_start_ms);
-                shared
-                    .last_encode_latency_ms
-                    .store(encode_latency_ms, Ordering::Relaxed);
-                shared.processed_packets.fetch_add(1, Ordering::Relaxed);
-
-                let processed = shared.processed_packets.load(Ordering::Relaxed);
-                if processed % 120 == 0 {
-                    let encoded_frames = shared.encoded_frames.load(Ordering::Relaxed);
-                    let rtp_packets_sent = shared.rtp_packets_sent.load(Ordering::Relaxed);
-                    eprintln!(
-                        "[native-sender] source={} processed={} encoded={} rtp_packets={} encode_latency_ms={} frame={}x{} target={}",
-                        source_id,
-                        processed,
-                        encoded_frames,
-                        rtp_packets_sent,
-                        encode_latency_ms,
-                        packet.width,
-                        packet.height,
-                        target_rtp.as_deref().unwrap_or("disabled")
-                    );
-                }
-            }
-            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
-            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                shared.disconnected_events.fetch_add(1, Ordering::Relaxed);
-                break;
-            }
-        }
-    }
-}
-
-fn build_h264_encoder(
-    target_fps: Option<u32>,
-    target_bitrate_kbps: Option<u32>,
-) -> Option<Encoder> {
-    let fps = target_fps.unwrap_or(30).max(1);
-    let bitrate_bps = target_bitrate_kbps
-        .unwrap_or(8_000)
-        .saturating_mul(1000)
-        .max(500_000);
-
-    let config = EncoderConfig::new()
-        .usage_type(UsageType::ScreenContentRealTime)
-        .profile(Profile::Baseline)
-        .max_frame_rate(FrameRate::from_hz(fps as f32))
-        .bitrate(BitRate::from_bps(bitrate_bps));
-
-    Encoder::with_api_config(openh264::OpenH264API::from_source(), config).ok()
-}
-
-fn encode_bgra_frame(
-    encoder: &mut Option<Encoder>,
-    bgra: &[u8],
-    width: u32,
-    height: u32,
-    shared: &Arc<NativeSenderSharedMetrics>,
-) -> Option<Vec<Vec<u8>>> {
-    if width == 0 || height == 0 || width % 2 != 0 || height % 2 != 0 {
-        shared.encode_errors.fetch_add(1, Ordering::Relaxed);
-        return None;
-    }
-
-    let Some(active_encoder) = encoder.as_mut() else {
-        shared.encode_errors.fetch_add(1, Ordering::Relaxed);
-        return None;
-    };
-
-    let expected_len = width as usize * height as usize * 4;
-    if bgra.len() != expected_len {
-        shared.encode_errors.fetch_add(1, Ordering::Relaxed);
-        return None;
-    }
-
-    let source = BgraSliceU8::new(bgra, (width as usize, height as usize));
-    let yuv = YUVBuffer::from_rgb_source(source);
-    let bitstream = match active_encoder.encode(&yuv) {
-        Ok(stream) => stream,
-        Err(error) => {
-            shared.encode_errors.fetch_add(1, Ordering::Relaxed);
-            eprintln!("[native-sender] H264 encode failed: {error}");
-            return None;
-        }
-    };
-
-    let mut nals = Vec::new();
-    for layer_index in 0..bitstream.num_layers() {
-        let Some(layer) = bitstream.layer(layer_index) else {
-            continue;
-        };
-        for nal_index in 0..layer.nal_count() {
-            let Some(nal) = layer.nal_unit(nal_index) else {
-                continue;
-            };
-            let clean = strip_annex_b_start_code(nal);
-            if !clean.is_empty() {
-                nals.push(clean.to_vec());
-            }
-        }
-    }
-
-    if nals.is_empty() {
-        shared.encode_errors.fetch_add(1, Ordering::Relaxed);
-        return None;
-    }
-
-    Some(nals)
-}
-
-fn strip_annex_b_start_code(nal: &[u8]) -> &[u8] {
-    if nal.len() >= 4 && nal[0] == 0 && nal[1] == 0 && nal[2] == 0 && nal[3] == 1 {
-        return &nal[4..];
-    }
-    if nal.len() >= 3 && nal[0] == 0 && nal[1] == 0 && nal[2] == 1 {
-        return &nal[3..];
-    }
-    nal
-}
-
-impl NativeRtpSender {
-    fn new(target: Option<String>) -> Self {
-        let parsed_target = target
-            .as_deref()
-            .and_then(|value| value.parse::<SocketAddr>().ok());
-        let socket = parsed_target.and_then(|address| {
-            let bind_address = if address.is_ipv4() {
-                "0.0.0.0:0"
-            } else {
-                "[::]:0"
-            };
-            UdpSocket::bind(bind_address).ok()
-        });
-
-        Self {
-            socket,
-            target: parsed_target,
-            payload_type: 96,
-            sequence_number: 1,
-            ssrc: 0x4E415456,
-            mtu: 1200,
-            had_send_error: false,
-        }
-    }
-
-    fn send_h264_nalus(&mut self, nals: &[Vec<u8>], timestamp_ms: u64) -> usize {
-        let mut sent = 0usize;
-        let rtp_timestamp = timestamp_ms.wrapping_mul(90) as u32;
-
-        for (index, nal) in nals.iter().enumerate() {
-            let is_last_nal = index + 1 == nals.len();
-            sent = sent.saturating_add(self.send_nal(nal, rtp_timestamp, is_last_nal));
-        }
-
-        sent
-    }
-
-    fn send_nal(&mut self, nal: &[u8], rtp_timestamp: u32, marker: bool) -> usize {
-        if nal.is_empty() {
-            return 0;
-        }
-
-        let max_payload = self.mtu.saturating_sub(12);
-        if nal.len() <= max_payload {
-            let mut packet = Vec::with_capacity(12 + nal.len());
-            packet.extend_from_slice(&self.build_rtp_header(rtp_timestamp, marker));
-            packet.extend_from_slice(nal);
-            self.write_packet(&packet);
-            return 1;
-        }
-
-        if nal.len() <= 1 || max_payload <= 2 {
-            return 0;
-        }
-
-        let nal_header = nal[0];
-        let nal_type = nal_header & 0x1F;
-        let fu_indicator = (nal_header & 0xE0) | 28;
-        let chunk_size = max_payload - 2;
-        let mut offset = 1usize;
-        let mut packets = 0usize;
-
-        while offset < nal.len() {
-            let remaining = nal.len() - offset;
-            let payload_len = remaining.min(chunk_size);
-            let is_first = offset == 1;
-            let is_last = offset + payload_len >= nal.len();
-
-            let mut fu_header = nal_type;
-            if is_first {
-                fu_header |= 0x80;
-            }
-            if is_last {
-                fu_header |= 0x40;
-            }
-
-            let mut packet = Vec::with_capacity(14 + payload_len);
-            packet.extend_from_slice(&self.build_rtp_header(rtp_timestamp, marker && is_last));
-            packet.push(fu_indicator);
-            packet.push(fu_header);
-            packet.extend_from_slice(&nal[offset..offset + payload_len]);
-            self.write_packet(&packet);
-
-            offset += payload_len;
-            packets += 1;
-        }
-
-        packets
-    }
-
-    fn build_rtp_header(&mut self, timestamp: u32, marker: bool) -> [u8; 12] {
-        let mut header = [0u8; 12];
-        header[0] = 0x80;
-        header[1] = self.payload_type & 0x7F;
-        if marker {
-            header[1] |= 0x80;
-        }
-
-        let sequence = self.sequence_number;
-        self.sequence_number = self.sequence_number.wrapping_add(1);
-        header[2..4].copy_from_slice(&sequence.to_be_bytes());
-        header[4..8].copy_from_slice(&timestamp.to_be_bytes());
-        header[8..12].copy_from_slice(&self.ssrc.to_be_bytes());
-        header
-    }
-
-    fn write_packet(&mut self, packet: &[u8]) {
-        let Some(socket) = self.socket.as_ref() else {
-            return;
-        };
-        let Some(target) = self.target else {
-            return;
-        };
-
-        if socket.send_to(packet, target).is_err() {
-            self.had_send_error = true;
-        }
-    }
-
-    fn take_and_reset_error(&mut self) -> bool {
-        let had_error = self.had_send_error;
-        self.had_send_error = false;
-        had_error
-    }
+    run_native_sender_worker(config, receiver, stop_signal, shared);
 }
 
 fn normalize_resolution(resolution: Option<String>) -> Result<Option<String>, String> {
@@ -705,6 +389,22 @@ fn normalize_bitrate_kbps(bitrate_kbps: Option<u32>) -> Result<Option<u32>, Stri
     Err("Bitrate out of range. Use a value between 1500 and 50000 kbps.".to_string())
 }
 
+fn normalize_payload_type(payload_type: Option<u8>) -> Result<u8, String> {
+    let value = payload_type.unwrap_or(96);
+    if value > 127 {
+        return Err("Invalid RTP payload type. Expected a value between 0 and 127.".to_string());
+    }
+    Ok(value)
+}
+
+fn normalize_ssrc(ssrc: Option<u32>) -> Result<u32, String> {
+    let value = ssrc.unwrap_or(0x4E41_5456);
+    if value == 0 {
+        return Err("Invalid RTP SSRC. Value must be non-zero.".to_string());
+    }
+    Ok(value)
+}
+
 #[tauri::command]
 pub fn list_native_capture_sources(window: Window) -> Result<Vec<NativeCaptureSource>, String> {
     windows_capture::list_sources(&window)
@@ -726,6 +426,8 @@ pub fn start_native_capture(
     let resolution = normalize_resolution(request.resolution)?;
     let fps = normalize_fps(request.fps)?;
     let bitrate_kbps = normalize_bitrate_kbps(request.bitrate_kbps)?;
+    let payload_type = normalize_payload_type(request.payload_type)?;
+    let ssrc = normalize_ssrc(request.ssrc)?;
 
     let sources = windows_capture::list_sources(&window)?;
     let selected_source = sources
@@ -756,7 +458,26 @@ pub fn start_native_capture(
         }
     }
 
-    service.start_sender_worker(normalized.to_string(), fps, bitrate_kbps)?;
+    let rtp_target = request.rtp_target.map(|target| target.trim().to_string());
+    let rtp_target = match rtp_target {
+        Some(value) if value.is_empty() => None,
+        Some(value) => {
+            value.parse::<std::net::SocketAddr>().map_err(|_| {
+                "Invalid RTP target. Expected host:port socket address.".to_string()
+            })?;
+            Some(value)
+        }
+        None => None,
+    };
+
+    service.start_sender_worker(
+        normalized.to_string(),
+        fps,
+        bitrate_kbps,
+        rtp_target,
+        payload_type,
+        ssrc,
+    )?;
 
     windows_capture::start_capture(
         &window,

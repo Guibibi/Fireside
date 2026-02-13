@@ -69,6 +69,8 @@ async fn main() {
         config.media.worker_count,
         config.media.webrtc_listen_ip.clone(),
         config.media.announced_ip.clone(),
+        config.media.native_rtp_listen_ip.clone(),
+        config.media.native_rtp_announced_ip.clone(),
     )
     .await;
 

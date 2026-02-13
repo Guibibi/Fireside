@@ -102,6 +102,10 @@ export default function ChannelList() {
   const [pulsingByChannel, setPulsingByChannel] = createSignal<Record<string, boolean>>({});
   const pulseTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const tauriRuntime = isTauriRuntime();
+  const nativeDebugEnabled = tauriRuntime && (
+    import.meta.env.DEV
+    || window.localStorage.getItem("yankcord_debug_native_sender") === "1"
+  );
   let toastTimer: ReturnType<typeof setTimeout> | null = null;
 
   function autoBitrateKbps(resolution: ScreenShareResolution, fps: ScreenShareFps): number {
@@ -964,13 +968,15 @@ export default function ChannelList() {
               <Show when={screenShareEnabled() && screenShareRoutingMode()}>
                 <p class="voice-dock-channel">Screen sharing via {screenShareRoutingMode()?.toUpperCase()}</p>
               </Show>
-              <Show when={screenShareEnabled() && tauriRuntime && nativeSenderMetrics()?.worker_active}>
+              <Show when={screenShareEnabled() && nativeDebugEnabled && nativeSenderMetrics()?.worker_active}>
                 <div class="voice-dock-native-debug" role="status" aria-live="polite">
                   <p class="voice-dock-native-debug-title">Native Sender</p>
                   <p class="voice-dock-channel">Frames: {nativeSenderMetrics()?.received_packets ?? 0} dequeued / {nativeSenderMetrics()?.encoded_frames ?? 0} encoded</p>
                   <p class="voice-dock-channel">Output: {formatNativeSenderRate(nativeSenderMetrics()?.encoded_bytes ?? 0)} | RTP: {nativeSenderMetrics()?.rtp_packets_sent ?? 0} packets</p>
                   <p class="voice-dock-channel">Queue backlog: {nativeSenderMetrics()?.estimated_queue_depth ?? 0} | Drop(full): {nativeSenderMetrics()?.dropped_full ?? 0} | Drop(no BGRA): {nativeSenderMetrics()?.dropped_missing_bgra ?? 0}</p>
                   <p class="voice-dock-channel">Latency: {nativeSenderMetrics()?.last_encode_latency_ms ?? 0} ms | Encode errors: {nativeSenderMetrics()?.encode_errors ?? 0} | RTP errors: {nativeSenderMetrics()?.rtp_send_errors ?? 0}</p>
+                  <p class="voice-dock-channel">Transport: {nativeSenderMetrics()?.transport_connected ? "connected" : "disconnected"} | Producer: {nativeSenderMetrics()?.producer_connected ? "connected" : "disconnected"}</p>
+                  <p class="voice-dock-channel">Degradation: {nativeSenderMetrics()?.degradation_level ?? "none"} | Fallback: {nativeSenderMetrics()?.recent_fallback_reason ?? "none"}</p>
                   <Show when={nativeSenderMetrics()?.rtp_target}>
                     <p class="voice-dock-channel">RTP target: {nativeSenderMetrics()?.rtp_target}</p>
                   </Show>

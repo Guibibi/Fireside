@@ -1,12 +1,12 @@
-use std::collections::HashMap;
-
 use mediasoup::prelude::{
     Consumer, ConsumerId, ConsumerOptions, DtlsParameters, IceCandidate, IceParameters, MediaKind,
-    Producer, ProducerId, ProducerOptions, RtpCapabilities, RtpCapabilitiesFinalized,
-    RtpParameters, Transport, WebRtcTransport, WebRtcTransportListenInfos, WebRtcTransportOptions,
-    WebRtcTransportRemoteParameters,
+    MimeTypeVideo, PlainTransport, PlainTransportOptions, Producer, ProducerId, ProducerOptions,
+    RtcpParameters, RtpCapabilities, RtpCapabilitiesFinalized, RtpCodecParameters,
+    RtpCodecParametersParameters, RtpEncodingParameters, RtpParameters, Transport, WebRtcTransport,
+    WebRtcTransportListenInfos, WebRtcTransportOptions, WebRtcTransportRemoteParameters,
 };
 use serde::Serialize;
+use std::collections::HashMap;
 use uuid::Uuid;
 
 use super::MediaService;
@@ -79,6 +79,7 @@ pub(crate) struct ConnectionMediaState {
     pub send_transport_id: Option<String>,
     pub recv_transport_id: Option<String>,
     pub transports: HashMap<String, WebRtcTransport>,
+    pub native_transports_by_producer: HashMap<String, PlainTransport>,
     pub producers: HashMap<String, ProducerEntry>,
     pub consumers: HashMap<String, Consumer>,
 }
@@ -90,9 +91,73 @@ impl ConnectionMediaState {
             send_transport_id: None,
             recv_transport_id: None,
             transports: HashMap::new(),
+            native_transports_by_producer: HashMap::new(),
             producers: HashMap::new(),
             consumers: HashMap::new(),
         }
+    }
+}
+
+const NATIVE_H264_CLOCK_RATE: u32 = 90_000;
+const NATIVE_H264_PT: u8 = 96;
+const NATIVE_H264_PACKETIZATION_MODE: u8 = 1;
+const NATIVE_H264_PROFILE_LEVEL_ID: &str = "42e01f";
+
+#[derive(Debug, Clone, Serialize)]
+pub struct NativeSenderSession {
+    pub producer_id: String,
+    pub kind: String,
+    pub source: String,
+    pub routing_mode: String,
+    pub rtp_target: String,
+    pub payload_type: u8,
+    pub ssrc: u32,
+    pub mime_type: String,
+    pub clock_rate: u32,
+    pub packetization_mode: u8,
+    pub profile_level_id: String,
+    pub owner_connection_id: Uuid,
+}
+
+fn canonical_native_ssrc(connection_id: Uuid) -> u32 {
+    let bytes = connection_id.as_bytes();
+    let mut seed = u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+    if seed == 0 {
+        seed = 0x4E41_5456;
+    }
+    seed
+}
+
+fn native_h264_parameters(ssrc: u32) -> RtpParameters {
+    let mut parameters = RtpCodecParametersParameters::default();
+    parameters
+        .insert("level-asymmetry-allowed", 1_u32)
+        .insert("packetization-mode", NATIVE_H264_PACKETIZATION_MODE as u32)
+        .insert("profile-level-id", NATIVE_H264_PROFILE_LEVEL_ID);
+
+    RtpParameters {
+        mid: Some("native-screen".to_string()),
+        codecs: vec![RtpCodecParameters::Video {
+            mime_type: MimeTypeVideo::H264,
+            payload_type: NATIVE_H264_PT,
+            clock_rate: NATIVE_H264_CLOCK_RATE.try_into().unwrap(),
+            parameters,
+            rtcp_feedback: vec![],
+        }],
+        header_extensions: vec![],
+        encodings: vec![RtpEncodingParameters {
+            ssrc: Some(ssrc),
+            rid: None,
+            codec_payload_type: Some(NATIVE_H264_PT),
+            rtx: None,
+            dtx: None,
+            scalability_mode: Default::default(),
+            max_bitrate: None,
+        }],
+        rtcp: RtcpParameters {
+            cname: Some(format!("native-{ssrc:x}")),
+            reduced_size: true,
+        },
     }
 }
 
@@ -331,6 +396,105 @@ impl MediaService {
         })
     }
 
+    pub async fn create_native_sender_session_for_connection(
+        &self,
+        connection_id: Uuid,
+        channel_id: Uuid,
+    ) -> Result<NativeSenderSession, String> {
+        {
+            let media_state_lock = self.connection_media();
+            let media_state = media_state_lock.lock().await;
+            let Some(entry) = media_state.get(&connection_id) else {
+                return Err("No media session exists for this connection".into());
+            };
+
+            if entry.channel_id != channel_id {
+                return Err("Native sender does not belong to this voice channel".into());
+            }
+
+            if entry
+                .producers
+                .values()
+                .any(|producer| producer.source == ProducerSource::Screen)
+            {
+                return Err("Only one active screen producer is allowed per connection".into());
+            }
+        }
+
+        let router = self.get_or_create_router(channel_id).await;
+        let listen_info = self.native_rtp_listen_info();
+
+        let mut plain_transport_options = PlainTransportOptions::new(listen_info);
+        plain_transport_options.comedia = true;
+        plain_transport_options.rtcp_mux = true;
+
+        let plain_transport = router
+            .create_plain_transport(plain_transport_options)
+            .await
+            .map_err(|error| format!("Failed to create native sender transport: {error}"))?;
+
+        let tuple = plain_transport.tuple();
+        let rtp_target = self.native_rtp_target_for_port(tuple.local_port());
+        let ssrc = canonical_native_ssrc(connection_id);
+
+        let producer = plain_transport
+            .produce(ProducerOptions::new(
+                MediaKind::Video,
+                native_h264_parameters(ssrc),
+            ))
+            .await
+            .map_err(|error| format!("Failed to create native sender producer: {error}"))?;
+
+        let producer_id = producer.id().to_string();
+
+        {
+            let media_state_lock = self.connection_media();
+            let mut media_state = media_state_lock.lock().await;
+            let Some(entry) = media_state.get_mut(&connection_id) else {
+                return Err("Media session was closed while creating native sender".into());
+            };
+
+            if entry.channel_id != channel_id {
+                return Err("Media session moved to a different channel".into());
+            }
+
+            if entry
+                .producers
+                .values()
+                .any(|existing| existing.source == ProducerSource::Screen)
+            {
+                return Err("Only one active screen producer is allowed per connection".into());
+            }
+
+            entry.producers.insert(
+                producer_id.clone(),
+                ProducerEntry {
+                    producer,
+                    source: ProducerSource::Screen,
+                    routing_mode: RoutingMode::Sfu,
+                },
+            );
+            entry
+                .native_transports_by_producer
+                .insert(producer_id.clone(), plain_transport);
+        }
+
+        Ok(NativeSenderSession {
+            producer_id,
+            kind: "video".to_string(),
+            source: ProducerSource::Screen.as_str().to_string(),
+            routing_mode: RoutingMode::Sfu.as_str().to_string(),
+            rtp_target,
+            payload_type: NATIVE_H264_PT,
+            ssrc,
+            mime_type: "video/H264".to_string(),
+            clock_rate: NATIVE_H264_CLOCK_RATE,
+            packetization_mode: NATIVE_H264_PACKETIZATION_MODE,
+            profile_level_id: NATIVE_H264_PROFILE_LEVEL_ID.to_string(),
+            owner_connection_id: connection_id,
+        })
+    }
+
     pub async fn list_channel_producers(
         &self,
         channel_id: Uuid,
@@ -501,6 +665,8 @@ impl MediaService {
             .producers
             .remove(producer_id)
             .ok_or_else(|| "Producer not found for this connection".to_string())?;
+
+        entry.native_transports_by_producer.remove(producer_id);
 
         Ok(ClosedProducer {
             channel_id,

@@ -1,7 +1,7 @@
 import { Device } from "mediasoup-client";
 import type { Consumer, Producer, Transport } from "mediasoup-client/types";
 import { onMessage, send } from "./ws";
-import { startNativeCapture, stopNativeCapture } from "./nativeCapture";
+import { nativeCaptureStatus, startNativeCapture, stopNativeCapture } from "./nativeCapture";
 import {
   preferredAudioInputDeviceId,
   preferredAudioOutputDeviceId,
@@ -56,6 +56,7 @@ type MediaSignalAction =
   | "new_producer"
   | "media_consumer_created"
   | "media_consumer_resumed"
+  | "native_sender_session_created"
   | "producer_closed"
   | "signal_error";
 
@@ -90,6 +91,9 @@ interface MediaSignalPayload {
   routing_mode?: RoutingMode;
   consumer?: MediaConsumerDescription;
   consumer_id?: string;
+  rtp_target?: string;
+  payload_type?: number;
+  ssrc?: number;
 }
 
 interface PendingRequest {
@@ -178,6 +182,9 @@ let screenTrack: MediaStreamTrack | null = null;
 let screenEnabled = false;
 let screenError: string | null = null;
 let screenRoutingMode: RoutingMode | null = null;
+let nativeScreenProducerId: string | null = null;
+let nativeFallbackMonitorTimer: ReturnType<typeof setInterval> | null = null;
+let nativeFallbackMonitorRunning = false;
 let initializedForChannelId: string | null = null;
 let initializingForChannelId: string | null = null;
 let initializePromise: Promise<void> | null = null;
@@ -769,27 +776,49 @@ function normalizeScreenShareError(error: unknown): string {
   return error instanceof Error ? error.message : "Failed to start screen sharing";
 }
 
-async function armNativeCapture(options?: ScreenShareStartOptions): Promise<void> {
-  if (!isTauriRuntime() || !options?.sourceId) {
-    return;
+function clearNativeFallbackMonitor() {
+  if (nativeFallbackMonitorTimer !== null) {
+    window.clearInterval(nativeFallbackMonitorTimer);
+    nativeFallbackMonitorTimer = null;
   }
+  nativeFallbackMonitorRunning = false;
+}
 
-  try {
-    await startNativeCapture({
-      source_id: options.sourceId,
-      resolution: options.resolution,
-      fps: options.fps,
-      bitrate_kbps: options.bitrateKbps,
-    });
-  } catch (error) {
-    console.warn("[media] Native capture startup failed; falling back to browser capture", error);
-  }
+function reportNativeSenderDiagnostic(channelId: string, event: string, detail?: string) {
+  send({
+    type: "media_signal",
+    channel_id: channelId,
+    payload: {
+      action: "client_diagnostic",
+      event,
+      detail,
+    },
+  });
+}
+
+async function armNativeCapture(
+  options: ScreenShareStartOptions,
+  rtpTarget: string,
+  payloadType: number,
+  ssrc: number,
+): Promise<void> {
+  await startNativeCapture({
+    source_id: options.sourceId!,
+    resolution: options.resolution,
+    fps: options.fps,
+    bitrate_kbps: options.bitrateKbps,
+    rtp_target: rtpTarget,
+    payload_type: payloadType,
+    ssrc,
+  });
 }
 
 async function disarmNativeCapture(): Promise<void> {
   if (!isTauriRuntime()) {
     return;
   }
+
+  clearNativeFallbackMonitor();
 
   try {
     await stopNativeCapture();
@@ -819,6 +848,8 @@ function stopAndReleaseCameraTracks() {
 function stopAndReleaseScreenTracks() {
   screenProducer?.close();
   screenProducer = null;
+  nativeScreenProducerId = null;
+  clearNativeFallbackMonitor();
 
   if (screenTrack) {
     screenTrack.stop();
@@ -1178,53 +1209,39 @@ export function localScreenShareError(): string | null {
   return screenError;
 }
 
-export async function startLocalScreenProducer(
+async function closeNativeScreenProducer(channelId: string): Promise<void> {
+  if (!nativeScreenProducerId) {
+    return;
+  }
+
+  const producerId = nativeScreenProducerId;
+  nativeScreenProducerId = null;
+  try {
+    await requestMediaSignal(channelId, "media_close_producer", {
+      producer_id: producerId,
+      source: "screen",
+      routing_mode: "sfu",
+    });
+  } catch {
+    // best effort only
+  }
+}
+
+async function startBrowserScreenProducer(
   channelId: string,
   options?: ScreenShareStartOptions,
 ): Promise<CameraActionResult> {
-  if (initializedForChannelId !== channelId || !sendTransport) {
-    const message = "Join the voice channel before sharing your screen";
-    screenError = message;
-    notifyScreenStateSubscribers();
-    return { ok: false, error: message };
-  }
-
-  if (screenProducer && screenTrack && screenEnabled) {
-    screenError = null;
-    screenRoutingMode = "sfu";
-    notifyScreenStateSubscribers();
-    return { ok: true };
-  }
-
   let nextStream: MediaStream | null = null;
   let nextTrack: MediaStreamTrack | null = null;
-  const shouldArmNativeCapture = isTauriRuntime() && Boolean(options?.sourceId);
-  let nativeCaptureArmed = false;
 
   try {
-    console.debug("[media] Screen share codec selection", "default");
-    if (shouldArmNativeCapture) {
-      await armNativeCapture(options);
-      nativeCaptureArmed = true;
-    }
-
-    if (options?.sourceId) {
-      console.debug("[media] Preferred native capture source", {
-        sourceId: options.sourceId,
-        sourceTitle: options.sourceTitle ?? null,
-        sourceKind: options.sourceKind,
-      });
-    }
-
     const videoConstraint = options ? screenShareVideoConstraints(options) : true;
-
     nextStream = await navigator.mediaDevices.getDisplayMedia({
       video: videoConstraint,
       audio: false,
     });
 
     [nextTrack] = nextStream.getVideoTracks();
-
     if (!nextTrack) {
       throw new Error("Display track was not available");
     }
@@ -1261,8 +1278,7 @@ export async function startLocalScreenProducer(
       };
     }
 
-    const produced = await sendTransport.produce(produceOptions);
-
+    const produced = await sendTransport!.produce(produceOptions);
     void logScreenShareProducerStats(produced);
 
     produced.on("transportclose", () => {
@@ -1281,9 +1297,6 @@ export async function startLocalScreenProducer(
       produced.close();
       nextTrack.stop();
       nextStream.getTracks().forEach((track) => track.stop());
-      if (nativeCaptureArmed) {
-        await disarmNativeCapture();
-      }
       const message = "Voice channel changed while starting screen share";
       screenError = message;
       notifyScreenStateSubscribers();
@@ -1291,7 +1304,6 @@ export async function startLocalScreenProducer(
     }
 
     stopAndReleaseScreenTracks();
-
     screenProducer = produced;
     screenStream = nextStream;
     screenTrack = nextTrack;
@@ -1304,13 +1316,8 @@ export async function startLocalScreenProducer(
     if (nextTrack) {
       nextTrack.stop();
     }
-
     if (nextStream) {
       nextStream.getTracks().forEach((track) => track.stop());
-    }
-
-    if (nativeCaptureArmed) {
-      await disarmNativeCapture();
     }
 
     const message = normalizeScreenShareError(error);
@@ -1320,8 +1327,150 @@ export async function startLocalScreenProducer(
   }
 }
 
+async function startNativeScreenProducer(
+  channelId: string,
+  options: ScreenShareStartOptions,
+): Promise<CameraActionResult> {
+  const response = await requestMediaSignal(channelId, "create_native_sender_session");
+  if (
+    response.action !== "native_sender_session_created"
+    || !response.producer_id
+    || !response.rtp_target
+    || typeof response.payload_type !== "number"
+    || typeof response.ssrc !== "number"
+  ) {
+    throw new Error("Unexpected native sender setup response from server");
+  }
+
+  if (!Number.isInteger(response.payload_type) || response.payload_type < 0 || response.payload_type > 127) {
+    reportNativeSenderDiagnostic(
+      channelId,
+      "native_sender_invalid_payload_type",
+      `payload_type=${String(response.payload_type)}`,
+    );
+    throw new Error(`Native sender negotiation failed: invalid RTP payload type (${response.payload_type}).`);
+  }
+
+  if (!Number.isInteger(response.ssrc) || response.ssrc <= 0 || response.ssrc > 0xFFFF_FFFF) {
+    reportNativeSenderDiagnostic(
+      channelId,
+      "native_sender_invalid_ssrc",
+      `ssrc=${String(response.ssrc)}`,
+    );
+    throw new Error(`Native sender negotiation failed: invalid RTP SSRC (${response.ssrc}).`);
+  }
+
+  try {
+    await armNativeCapture(options, response.rtp_target, response.payload_type, response.ssrc);
+  } catch (error) {
+    await requestMediaSignal(channelId, "media_close_producer", {
+      producer_id: response.producer_id,
+      source: "screen",
+      routing_mode: "sfu",
+    }).catch(() => undefined);
+    throw error;
+  }
+
+  stopAndReleaseScreenTracks();
+  nativeScreenProducerId = response.producer_id;
+  screenEnabled = true;
+  screenError = null;
+  screenRoutingMode = "sfu";
+  notifyScreenStateSubscribers();
+
+  clearNativeFallbackMonitor();
+  nativeFallbackMonitorTimer = window.setInterval(() => {
+    if (nativeFallbackMonitorRunning || !nativeScreenProducerId || !screenEnabled) {
+      return;
+    }
+
+    nativeFallbackMonitorRunning = true;
+    void (async () => {
+      try {
+        const status = await nativeCaptureStatus();
+        const fallbackReason = status.native_sender.recent_fallback_reason;
+        if (status.native_sender.worker_active || !fallbackReason) {
+          return;
+        }
+
+        const browserFallbackOptions: ScreenShareStartOptions = {
+          ...options,
+          sourceId: undefined,
+          sourceTitle: undefined,
+        };
+
+        await closeNativeScreenProducer(channelId);
+        await disarmNativeCapture();
+        stopAndReleaseScreenTracks();
+
+        const browserResult = await startBrowserScreenProducer(channelId, browserFallbackOptions);
+        if (browserResult.ok) {
+          screenError = `Native sender fallback (${fallbackReason}). Switched to browser screen capture.`;
+          notifyScreenStateSubscribers();
+        }
+      } catch {
+        // best effort monitor
+      } finally {
+        nativeFallbackMonitorRunning = false;
+      }
+    })();
+  }, 1000);
+
+  return { ok: true };
+}
+
+export async function startLocalScreenProducer(
+  channelId: string,
+  options?: ScreenShareStartOptions,
+): Promise<CameraActionResult> {
+  if (initializedForChannelId !== channelId || !sendTransport) {
+    const message = "Join the voice channel before sharing your screen";
+    screenError = message;
+    notifyScreenStateSubscribers();
+    return { ok: false, error: message };
+  }
+
+  if ((screenProducer && screenTrack && screenEnabled) || (nativeScreenProducerId && screenEnabled)) {
+    screenError = null;
+    screenRoutingMode = "sfu";
+    notifyScreenStateSubscribers();
+    return { ok: true };
+  }
+
+  if (isTauriRuntime() && options?.sourceId) {
+    let nativeStartErrorMessage: string | null = null;
+    try {
+      return await startNativeScreenProducer(channelId, options);
+    } catch (error) {
+      nativeStartErrorMessage = error instanceof Error
+        ? error.message
+        : "Native sender startup failed.";
+      console.warn("[media] Native sender startup failed; falling back to browser capture", error);
+      await disarmNativeCapture();
+    }
+
+    const browserFallbackResult = await startBrowserScreenProducer(channelId, options);
+    if (!browserFallbackResult.ok && nativeStartErrorMessage) {
+      reportNativeSenderDiagnostic(
+        channelId,
+        "native_sender_and_browser_fallback_failed",
+        nativeStartErrorMessage,
+      );
+      const browserMessage = browserFallbackResult.error ?? "Browser fallback failed.";
+      const combined = `${nativeStartErrorMessage} ${browserMessage}`;
+      screenError = combined;
+      notifyScreenStateSubscribers();
+      return { ok: false, error: combined };
+    }
+
+    return browserFallbackResult;
+  }
+
+  return startBrowserScreenProducer(channelId, options);
+}
+
 export async function stopLocalScreenProducer(channelId: string): Promise<CameraActionResult> {
-  const producerId = screenProducer?.id;
+  const producerId = screenProducer?.id ?? nativeScreenProducerId;
 
   if (!producerId) {
     stopAndReleaseScreenTracks();
@@ -1358,6 +1507,7 @@ export async function stopLocalScreenProducer(channelId: string): Promise<Camera
   }
 
   stopAndReleaseScreenTracks();
+  nativeScreenProducerId = null;
   await disarmNativeCapture();
   screenError = null;
   notifyScreenStateSubscribers();
