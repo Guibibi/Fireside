@@ -3,6 +3,7 @@ import { del, get, post } from "../api/http";
 import {
   cleanupMediaTransports,
   initializeMediaTransports,
+  type ScreenShareStartOptions,
   startLocalCameraProducer,
   startLocalScreenProducer,
   stopLocalCameraProducer,
@@ -10,6 +11,10 @@ import {
   setMicrophoneMuted,
   setSpeakersMuted,
 } from "../api/media";
+import {
+  listNativeCaptureSources,
+  type NativeCaptureSource,
+} from "../api/nativeCapture";
 import { connect, onClose, onMessage, send } from "../api/ws";
 import {
   activeChannelId,
@@ -20,6 +25,22 @@ import {
   setActiveChannelId,
   unreadCount,
 } from "../stores/chat";
+import {
+  preferredScreenShareBitrateMode,
+  preferredScreenShareCustomBitrateKbps,
+  preferredScreenShareFps,
+  preferredScreenShareResolution,
+  preferredScreenShareSourceKind,
+  savePreferredScreenShareBitrateMode,
+  savePreferredScreenShareCustomBitrateKbps,
+  savePreferredScreenShareFps,
+  savePreferredScreenShareResolution,
+  savePreferredScreenShareSourceKind,
+  type ScreenShareBitrateMode,
+  type ScreenShareFps,
+  type ScreenShareResolution,
+} from "../stores/settings";
+import { isTauriRuntime } from "../utils/platform";
 import {
   applyVoiceJoined,
   applyVoiceLeft,
@@ -70,9 +91,156 @@ export default function ChannelList() {
   const [toastError, setToastError] = createSignal("");
   const [cameraActionPending, setCameraActionPending] = createSignal(false);
   const [screenActionPending, setScreenActionPending] = createSignal(false);
+  const [screenShareModalOpen, setScreenShareModalOpen] = createSignal(false);
+  const [nativeSourcesLoading, setNativeSourcesLoading] = createSignal(false);
+  const [nativeSourcesError, setNativeSourcesError] = createSignal("");
+  const [nativeSources, setNativeSources] = createSignal<NativeCaptureSource[]>([]);
+  const [selectedNativeSourceId, setSelectedNativeSourceId] = createSignal<string | null>(null);
   const [pulsingByChannel, setPulsingByChannel] = createSignal<Record<string, boolean>>({});
   const pulseTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  const tauriRuntime = isTauriRuntime();
   let toastTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function autoBitrateKbps(resolution: ScreenShareResolution, fps: ScreenShareFps): number {
+    const at60 = fps >= 60;
+    if (resolution === "720p") {
+      return at60 ? 6000 : 4500;
+    }
+
+    if (resolution === "1080p") {
+      return at60 ? 12000 : 8000;
+    }
+
+    if (resolution === "1440p") {
+      return at60 ? 18000 : 12000;
+    }
+
+    return at60 ? 30000 : 20000;
+  }
+
+  function manualBitrateKbps(mode: ScreenShareBitrateMode, resolution: ScreenShareResolution): number {
+    if (mode === "balanced") {
+      if (resolution === "720p") {
+        return 4000;
+      }
+      if (resolution === "1080p") {
+        return 7000;
+      }
+      if (resolution === "1440p") {
+        return 10000;
+      }
+
+      return 14000;
+    }
+
+    if (mode === "high") {
+      if (resolution === "720p") {
+        return 5500;
+      }
+      if (resolution === "1080p") {
+        return 10000;
+      }
+      if (resolution === "1440p") {
+        return 15000;
+      }
+
+      return 22000;
+    }
+
+    if (mode === "ultra") {
+      if (resolution === "720p") {
+        return 7000;
+      }
+      if (resolution === "1080p") {
+        return 14000;
+      }
+      if (resolution === "1440p") {
+        return 20000;
+      }
+
+      return 30000;
+    }
+
+    return autoBitrateKbps(resolution, preferredScreenShareFps());
+  }
+
+  function selectedScreenShareBitrateKbps(): number {
+    const mode = preferredScreenShareBitrateMode();
+    const resolution = preferredScreenShareResolution();
+    const fps = preferredScreenShareFps();
+    if (mode === "auto") {
+      return autoBitrateKbps(resolution, fps);
+    }
+
+    if (mode === "custom") {
+      return preferredScreenShareCustomBitrateKbps();
+    }
+
+    return manualBitrateKbps(mode, resolution);
+  }
+
+  function buildScreenShareOptions(): ScreenShareStartOptions {
+    const selected = nativeSources().find((source) => source.id === selectedNativeSourceId()) ?? null;
+    const sourceKind = selected
+      ? (selected.kind === "screen" ? "screen" : selected.kind === "application" ? "application" : "window")
+      : preferredScreenShareSourceKind();
+
+    return {
+      resolution: preferredScreenShareResolution(),
+      fps: preferredScreenShareFps(),
+      bitrateKbps: selectedScreenShareBitrateKbps(),
+      sourceKind,
+      sourceId: selected?.id,
+      sourceTitle: selected?.title,
+    };
+  }
+
+  async function loadNativeCaptureSources() {
+    if (!tauriRuntime) {
+      return;
+    }
+
+    setNativeSourcesLoading(true);
+    setNativeSourcesError("");
+
+    try {
+      const sources = await listNativeCaptureSources();
+      setNativeSources(sources);
+
+      const selectedId = selectedNativeSourceId();
+      if (selectedId && sources.some((source) => source.id === selectedId)) {
+        return;
+      }
+
+      const preferredKind = preferredScreenShareSourceKind();
+      const preferredSource = sources.find((source) => source.kind === preferredKind);
+      setSelectedNativeSourceId(preferredSource?.id ?? sources[0]?.id ?? null);
+    } catch (error) {
+      setNativeSources([]);
+      setSelectedNativeSourceId(null);
+      setNativeSourcesError(error instanceof Error ? error.message : "Failed to load native capture sources");
+    } finally {
+      setNativeSourcesLoading(false);
+    }
+  }
+
+  function nativeSourceLabel(source: NativeCaptureSource) {
+    const appName = source.app_name?.trim();
+    const size = source.width && source.height ? `${source.width}x${source.height}` : null;
+    if (appName && size) {
+      return `${source.title} (${appName}, ${size})`;
+    }
+
+    if (appName) {
+      return `${source.title} (${appName})`;
+    }
+
+    if (size) {
+      return `${source.title} (${size})`;
+    }
+
+    return source.title;
+  }
 
   function showErrorToast(message: string) {
     setToastError(message);
@@ -151,22 +319,62 @@ export default function ChannelList() {
     }
   }
 
+  async function startScreenShareWithOptions(channelId: string, options?: ScreenShareStartOptions) {
+    setScreenActionPending(true);
+
+    try {
+      const result = await startLocalScreenProducer(channelId, options);
+      if (!result.ok && result.error) {
+        showErrorToast(result.error);
+      }
+      return result;
+    } finally {
+      setScreenActionPending(false);
+    }
+  }
+
+  async function handleConfirmTauriScreenShare() {
+    const channelId = joinedVoiceChannelId();
+    if (!channelId || screenActionPending()) {
+      return;
+    }
+
+    const selected = nativeSources().find((source) => source.id === selectedNativeSourceId()) ?? null;
+    if (selected) {
+      savePreferredScreenShareSourceKind(
+        selected.kind === "screen" ? "screen" : selected.kind === "application" ? "application" : "window",
+      );
+    }
+
+    const result = await startScreenShareWithOptions(channelId, buildScreenShareOptions());
+    if (result.ok) {
+      setScreenShareModalOpen(false);
+    }
+  }
+
   async function handleToggleScreenShare() {
     const channelId = joinedVoiceChannelId();
     if (!channelId || screenActionPending()) {
       return;
     }
 
-    setScreenActionPending(true);
-
     try {
-      const result = screenShareEnabled()
-        ? await stopLocalScreenProducer(channelId)
-        : await startLocalScreenProducer(channelId);
-
-      if (!result.ok && result.error) {
-        showErrorToast(result.error);
+      if (screenShareEnabled()) {
+        setScreenActionPending(true);
+        const result = await stopLocalScreenProducer(channelId);
+        if (!result.ok && result.error) {
+          showErrorToast(result.error);
+        }
+        return;
       }
+
+      if (tauriRuntime) {
+        await loadNativeCaptureSources();
+        setScreenShareModalOpen(true);
+        return;
+      }
+
+      await startScreenShareWithOptions(channelId);
     } finally {
       setScreenActionPending(false);
     }
@@ -440,6 +648,68 @@ export default function ChannelList() {
     return "Connection: Disconnected";
   }
 
+  function effectiveScreenShareBitrateLabel() {
+    const kbps = selectedScreenShareBitrateKbps();
+    const mbps = kbps / 1000;
+    if (mbps >= 10) {
+      return `${mbps.toFixed(0)} Mbps`;
+    }
+
+    return `${mbps.toFixed(1)} Mbps`;
+  }
+
+  function handleScreenShareSourceKindInput(event: Event) {
+    const value = (event.currentTarget as HTMLSelectElement).value;
+    if (value === "screen" || value === "window" || value === "application") {
+      savePreferredScreenShareSourceKind(value);
+    }
+  }
+
+  function handleNativeCaptureSourceInput(event: Event) {
+    const value = (event.currentTarget as HTMLSelectElement).value;
+    if (!value) {
+      return;
+    }
+
+    setSelectedNativeSourceId(value);
+    const selected = nativeSources().find((source) => source.id === value);
+    if (selected) {
+      savePreferredScreenShareSourceKind(
+        selected.kind === "screen" ? "screen" : selected.kind === "application" ? "application" : "window",
+      );
+    }
+  }
+
+  function handleScreenShareResolutionInput(event: Event) {
+    const value = (event.currentTarget as HTMLSelectElement).value;
+    if (value === "720p" || value === "1080p" || value === "1440p" || value === "4k") {
+      savePreferredScreenShareResolution(value);
+    }
+  }
+
+  function handleScreenShareFpsInput(event: Event) {
+    const value = Number((event.currentTarget as HTMLSelectElement).value);
+    if (value === 30 || value === 60) {
+      savePreferredScreenShareFps(value as ScreenShareFps);
+    }
+  }
+
+  function handleScreenShareBitrateModeInput(event: Event) {
+    const value = (event.currentTarget as HTMLSelectElement).value;
+    if (value === "auto" || value === "balanced" || value === "high" || value === "ultra" || value === "custom") {
+      savePreferredScreenShareBitrateMode(value as ScreenShareBitrateMode);
+    }
+  }
+
+  function handleScreenShareCustomBitrateInput(event: Event) {
+    const value = Number.parseInt((event.currentTarget as HTMLInputElement).value, 10);
+    if (!Number.isFinite(value)) {
+      return;
+    }
+
+    savePreferredScreenShareCustomBitrateKbps(value);
+  }
+
   const sortedChannels = () => [...channels()].sort((a, b) => a.position - b.position);
   const connectedVoiceChannelName = () => {
     const connectedChannelId = joinedVoiceChannelId();
@@ -453,6 +723,12 @@ export default function ChannelList() {
 
   createEffect(() => {
     clearActiveChannelUnread();
+  });
+
+  createEffect(() => {
+    if (!joinedVoiceChannelId()) {
+      setScreenShareModalOpen(false);
+    }
   });
 
   return (
@@ -646,6 +922,148 @@ export default function ChannelList() {
               <Show when={screenShareError()}>
                 <p class="voice-dock-error">{screenShareError()}</p>
               </Show>
+            </div>
+          </Show>
+          <Show when={tauriRuntime && screenShareModalOpen() && !screenShareEnabled()}>
+            <div
+              class="settings-modal-backdrop voice-share-modal-backdrop"
+              role="presentation"
+              onClick={() => setScreenShareModalOpen(false)}
+            >
+              <section
+                class="settings-modal voice-share-modal"
+                role="dialog"
+                aria-modal="true"
+                aria-label="Share screen"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <header class="settings-modal-header">
+                  <h4>Share Screen</h4>
+                  <button
+                    type="button"
+                    class="settings-close"
+                    onClick={() => setScreenShareModalOpen(false)}
+                    aria-label="Close share menu"
+                  >
+                    x
+                  </button>
+                </header>
+
+                <section class="settings-section">
+                  <h5>Capture Source</h5>
+                  <Show when={!nativeSourcesLoading()} fallback={<p class="settings-help">Loading native sources...</p>}>
+                    <Show when={nativeSources().length > 0} fallback={(
+                      <>
+                        <label class="settings-label" for="voice-share-source-kind">Source preference</label>
+                        <select
+                          id="voice-share-source-kind"
+                          value={preferredScreenShareSourceKind()}
+                          onInput={handleScreenShareSourceKindInput}
+                        >
+                          <option value="screen">Entire screen</option>
+                          <option value="window">Window</option>
+                          <option value="application">Application</option>
+                        </select>
+                      </>
+                    )}>
+                      <label class="settings-label" for="voice-share-native-source">Native source</label>
+                      <select
+                        id="voice-share-native-source"
+                        value={selectedNativeSourceId() ?? ""}
+                        onInput={handleNativeCaptureSourceInput}
+                      >
+                        <For each={nativeSources()}>
+                          {(source) => (
+                            <option value={source.id}>{nativeSourceLabel(source)}</option>
+                          )}
+                        </For>
+                      </select>
+                    </Show>
+                  </Show>
+
+                  <Show when={nativeSourcesError()}>
+                    <p class="voice-dock-error">{nativeSourcesError()}</p>
+                  </Show>
+
+                  <div class="settings-actions">
+                    <button type="button" class="settings-secondary" onClick={() => void loadNativeCaptureSources()}>
+                      Refresh sources
+                    </button>
+                  </div>
+
+                  <p class="settings-help">
+                    Source selection is native in Tauri. Confirm the same source in the OS share prompt if shown.
+                  </p>
+
+                  <h5>Quality</h5>
+                  <label class="settings-label" for="voice-share-resolution">Resolution</label>
+                  <select
+                    id="voice-share-resolution"
+                    value={preferredScreenShareResolution()}
+                    onInput={handleScreenShareResolutionInput}
+                  >
+                    <option value="720p">720p</option>
+                    <option value="1080p">1080p</option>
+                    <option value="1440p">1440p</option>
+                    <option value="4k">4k</option>
+                  </select>
+
+                  <label class="settings-label" for="voice-share-fps">FPS</label>
+                  <select
+                    id="voice-share-fps"
+                    value={String(preferredScreenShareFps())}
+                    onInput={handleScreenShareFpsInput}
+                  >
+                    <option value="30">30 FPS</option>
+                    <option value="60">60 FPS</option>
+                  </select>
+
+                  <label class="settings-label" for="voice-share-bitrate">Bitrate</label>
+                  <select
+                    id="voice-share-bitrate"
+                    value={preferredScreenShareBitrateMode()}
+                    onInput={handleScreenShareBitrateModeInput}
+                  >
+                    <option value="auto">Auto</option>
+                    <option value="balanced">Balanced</option>
+                    <option value="high">High</option>
+                    <option value="ultra">Ultra</option>
+                    <option value="custom">Custom</option>
+                  </select>
+
+                  <Show when={preferredScreenShareBitrateMode() === "custom"}>
+                    <label class="settings-label" for="voice-share-custom-bitrate">Custom bitrate (kbps)</label>
+                    <input
+                      id="voice-share-custom-bitrate"
+                      type="number"
+                      min="1500"
+                      max="50000"
+                      step="100"
+                      value={String(preferredScreenShareCustomBitrateKbps())}
+                      onInput={handleScreenShareCustomBitrateInput}
+                    />
+                  </Show>
+
+                  <p class="settings-help">Estimated target bitrate: {effectiveScreenShareBitrateLabel()}</p>
+
+                  <div class="settings-actions">
+                    <button
+                      type="button"
+                      class="settings-secondary"
+                      onClick={() => setScreenShareModalOpen(false)}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleConfirmTauriScreenShare()}
+                      disabled={screenActionPending() || voiceActionState() !== "idle"}
+                    >
+                      {screenActionPending() ? "Starting..." : "Start sharing"}
+                    </button>
+                  </div>
+                </section>
+              </section>
             </div>
           </Show>
           <UserSettingsDock />

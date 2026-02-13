@@ -1,6 +1,7 @@
 import { Device } from "mediasoup-client";
 import type { Consumer, Producer, Transport } from "mediasoup-client/types";
 import { onMessage, send } from "./ws";
+import { startNativeCapture, stopNativeCapture } from "./nativeCapture";
 import {
   preferredAudioInputDeviceId,
   preferredAudioOutputDeviceId,
@@ -8,7 +9,11 @@ import {
   savePreferredCameraDeviceId,
   savePreferredAudioInputDeviceId,
   savePreferredAudioOutputDeviceId,
+  type ScreenShareFps,
+  type ScreenShareResolution,
+  type ScreenShareSourceKind,
 } from "../stores/settings";
+import { isTauriRuntime } from "../utils/platform";
 
 interface IceParameters {
   usernameFragment: string;
@@ -113,6 +118,15 @@ export interface CameraDeviceOption {
 export interface CameraActionResult {
   ok: boolean;
   error?: string;
+}
+
+export interface ScreenShareStartOptions {
+  resolution: ScreenShareResolution;
+  fps: ScreenShareFps;
+  bitrateKbps: number;
+  sourceKind: ScreenShareSourceKind;
+  sourceId?: string;
+  sourceTitle?: string;
 }
 
 export interface CameraStateSnapshot {
@@ -675,6 +689,7 @@ function closeTransports() {
   screenError = null;
   screenRoutingMode = null;
   notifyScreenStateSubscribers();
+  void disarmNativeCapture();
 
   for (const consumerId of remoteConsumers.keys()) {
     disposeRemoteConsumer(consumerId);
@@ -752,6 +767,35 @@ function normalizeScreenShareError(error: unknown): string {
   }
 
   return error instanceof Error ? error.message : "Failed to start screen sharing";
+}
+
+async function armNativeCapture(options?: ScreenShareStartOptions): Promise<void> {
+  if (!isTauriRuntime() || !options?.sourceId) {
+    return;
+  }
+
+  try {
+    await startNativeCapture({
+      source_id: options.sourceId,
+      resolution: options.resolution,
+      fps: options.fps,
+      bitrate_kbps: options.bitrateKbps,
+    });
+  } catch (error) {
+    console.warn("[media] Native capture startup failed; falling back to browser capture", error);
+  }
+}
+
+async function disarmNativeCapture(): Promise<void> {
+  if (!isTauriRuntime()) {
+    return;
+  }
+
+  try {
+    await stopNativeCapture();
+  } catch {
+    // best effort only
+  }
 }
 
 function stopAndReleaseCameraTracks() {
@@ -868,6 +912,56 @@ function cameraInputConstraint(deviceId: string | null = preferredCameraDeviceId
   return {
     deviceId: { exact: selectedDeviceId },
   };
+}
+
+function screenResolutionDimensions(resolution: ScreenShareResolution): { width: number; height: number } {
+  switch (resolution) {
+    case "720p":
+      return { width: 1280, height: 720 };
+    case "1080p":
+      return { width: 1920, height: 1080 };
+    case "1440p":
+      return { width: 2560, height: 1440 };
+    case "4k":
+      return { width: 3840, height: 2160 };
+    default:
+      return { width: 1920, height: 1080 };
+  }
+}
+
+function screenShareVideoConstraints(options: ScreenShareStartOptions): MediaTrackConstraints {
+  const dimensions = screenResolutionDimensions(options.resolution);
+  const constraints: MediaTrackConstraints = {
+    width: { ideal: dimensions.width },
+    height: { ideal: dimensions.height },
+    frameRate: { ideal: options.fps, max: options.fps },
+  };
+
+  const next = constraints as MediaTrackConstraints & {
+    displaySurface?: "monitor" | "window" | "browser";
+  };
+
+  if (options.sourceKind === "screen") {
+    next.displaySurface = "monitor";
+  }
+
+  if (options.sourceKind === "window" || options.sourceKind === "application") {
+    next.displaySurface = "window";
+  }
+
+  return next;
+}
+
+function screenContentHintFor(options: ScreenShareStartOptions): "motion" | "detail" {
+  if (options.fps >= 60) {
+    return "motion";
+  }
+
+  if (options.sourceKind === "application") {
+    return "motion";
+  }
+
+  return "detail";
 }
 
 function isMissingDeviceError(error: unknown): boolean {
@@ -1084,7 +1178,10 @@ export function localScreenShareError(): string | null {
   return screenError;
 }
 
-export async function startLocalScreenProducer(channelId: string): Promise<CameraActionResult> {
+export async function startLocalScreenProducer(
+  channelId: string,
+  options?: ScreenShareStartOptions,
+): Promise<CameraActionResult> {
   if (initializedForChannelId !== channelId || !sendTransport) {
     const message = "Join the voice channel before sharing your screen";
     screenError = message;
@@ -1101,12 +1198,28 @@ export async function startLocalScreenProducer(channelId: string): Promise<Camer
 
   let nextStream: MediaStream | null = null;
   let nextTrack: MediaStreamTrack | null = null;
+  const shouldArmNativeCapture = isTauriRuntime() && Boolean(options?.sourceId);
+  let nativeCaptureArmed = false;
 
   try {
     console.debug("[media] Screen share codec selection", "default");
+    if (shouldArmNativeCapture) {
+      await armNativeCapture(options);
+      nativeCaptureArmed = true;
+    }
+
+    if (options?.sourceId) {
+      console.debug("[media] Preferred native capture source", {
+        sourceId: options.sourceId,
+        sourceTitle: options.sourceTitle ?? null,
+        sourceKind: options.sourceKind,
+      });
+    }
+
+    const videoConstraint = options ? screenShareVideoConstraints(options) : true;
 
     nextStream = await navigator.mediaDevices.getDisplayMedia({
-      video: true,
+      video: videoConstraint,
       audio: false,
     });
 
@@ -1116,14 +1229,39 @@ export async function startLocalScreenProducer(channelId: string): Promise<Camer
       throw new Error("Display track was not available");
     }
 
-    const produced = await sendTransport.produce({
+    if (options) {
+      try {
+        await nextTrack.applyConstraints(screenShareVideoConstraints(options));
+      } catch {
+        // best effort only
+      }
+
+      const hint = screenContentHintFor(options);
+      if ("contentHint" in nextTrack) {
+        nextTrack.contentHint = hint;
+      }
+    }
+
+    const produceOptions: Parameters<Transport["produce"]>[0] = {
       track: nextTrack,
       stopTracks: false,
       appData: {
         source: "screen",
         routingMode: "sfu",
       },
-    });
+    };
+
+    if (options) {
+      produceOptions.encodings = [{
+        maxBitrate: Math.round(options.bitrateKbps * 1000),
+        maxFramerate: options.fps,
+      }];
+      produceOptions.codecOptions = {
+        videoGoogleStartBitrate: Math.max(300, Math.round(options.bitrateKbps * 0.7)),
+      };
+    }
+
+    const produced = await sendTransport.produce(produceOptions);
 
     void logScreenShareProducerStats(produced);
 
@@ -1143,6 +1281,9 @@ export async function startLocalScreenProducer(channelId: string): Promise<Camer
       produced.close();
       nextTrack.stop();
       nextStream.getTracks().forEach((track) => track.stop());
+      if (nativeCaptureArmed) {
+        await disarmNativeCapture();
+      }
       const message = "Voice channel changed while starting screen share";
       screenError = message;
       notifyScreenStateSubscribers();
@@ -1168,6 +1309,10 @@ export async function startLocalScreenProducer(channelId: string): Promise<Camer
       nextStream.getTracks().forEach((track) => track.stop());
     }
 
+    if (nativeCaptureArmed) {
+      await disarmNativeCapture();
+    }
+
     const message = normalizeScreenShareError(error);
     screenError = message;
     notifyScreenStateSubscribers();
@@ -1180,6 +1325,7 @@ export async function stopLocalScreenProducer(channelId: string): Promise<Camera
 
   if (!producerId) {
     stopAndReleaseScreenTracks();
+    await disarmNativeCapture();
     screenError = null;
     notifyScreenStateSubscribers();
     return { ok: true };
@@ -1196,6 +1342,8 @@ export async function stopLocalScreenProducer(channelId: string): Promise<Camera
       throw new Error("Unexpected media_close_producer response from server");
     }
   } catch (error) {
+    await disarmNativeCapture();
+
     const message = error instanceof Error ? error.message : "Failed to stop screen sharing";
 
     const hasEndedTrack = screenTrack?.readyState === "ended";
@@ -1210,6 +1358,7 @@ export async function stopLocalScreenProducer(channelId: string): Promise<Camera
   }
 
   stopAndReleaseScreenTracks();
+  await disarmNativeCapture();
   screenError = null;
   notifyScreenStateSubscribers();
   return { ok: true };

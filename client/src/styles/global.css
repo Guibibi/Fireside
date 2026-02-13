@@ -498,6 +498,14 @@ input:focus {
   gap: 0.85rem;
 }
 
+.voice-share-modal-backdrop {
+  z-index: 1190;
+}
+
+.voice-share-modal {
+  width: min(30rem, calc(100vw - 2rem));
+}
+
 .settings-modal-header {
   display: flex;
   align-items: center;
