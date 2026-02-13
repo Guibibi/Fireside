@@ -6,24 +6,48 @@
 - Keep hard fallback to browser `getDisplayMedia` path at all times.
 - Keep server REST/WS contract stable unless a minimal additive change is strictly required.
 
+## Master Checklist (Current Status)
+
+- [x] Native Windows capture path publishes to mediasoup through server-managed native RTP ingest.
+- [x] Native bootstrap uses additive WS signaling (`create_native_sender_session`) without breaking existing web flows.
+- [x] Native sender uses server-negotiated RTP params (`rtp_target`, `payload_type`, `ssrc`) end-to-end.
+- [x] Native-first startup falls back to browser capture on startup/runtime instability.
+- [x] Native sender internals are modularized (`native_sender.rs`, `h264_encoder.rs`, `rtp_sender.rs`, `metrics.rs`).
+- [x] Debug and diagnostics are production-safe (dev-gated panel + structured fallback/health fields).
+- [x] Server native RTP target is configurable for remote deployment (`NATIVE_RTP_LISTEN_IP`, `NATIVE_RTP_ANNOUNCED_IP`).
+- [x] Client emits structured diagnostic events for negotiation/fallback failures (`client_diagnostic`).
+- [ ] Windows E2E validation matrix complete (screen/window/game capture, restart loops, forced fallback cases).
+- [ ] Keyframe request handling complete (PLI/FIR -> force IDR/intra).
+- [ ] Performance hardening complete (copy minimization, queue tuning, adaptive degradation).
+- [ ] Optional diagnostics-only UDP mirror finalized and explicitly feature/env-guarded.
+- [ ] Codec expansion complete (VP8/VP9/AV1 where desired) with RTP packetizer support per codec.
+- [ ] Hardware encoder support complete (NVENC first; optional AMF/QSV backends).
+- [ ] Server/client codec negotiation for native sender generalized beyond fixed H264 profile.
+
 ## Session Handoff (Updated)
 
 ### What Landed This Session
 
-- Native sender now publishes into real mediasoup flow via server-managed native RTP ingest:
-  - additive WS action: `create_native_sender_session`
-  - server creates mediasoup `PlainTransport` + screen `Producer` with canonical H264 RTP params
-  - server returns native `rtp_target` (`ip:port`) for the Tauri sender
-- Tauri native start now accepts dynamic `rtp_target` (instead of debug-env-only routing).
-- Screen-share startup is native-first on Tauri, with automatic fallback to browser capture if native bootstrap fails.
-- Runtime fallback monitor is wired:
-  - native sender instability reason is polled from `native_capture_status`
-  - app closes native producer/capture and auto-switches to browser capture path
-- Native sender internals were modularized:
-  - `native_sender.rs`, `h264_encoder.rs`, `rtp_sender.rs`, `metrics.rs`
-- Diagnostics/dev UX updates landed:
-  - debug panel is dev-gated (`import.meta.env.DEV` or `localStorage["yankcord_debug_native_sender"] === "1"`)
-  - richer status fields include fallback reason, degradation level, producer/transport state, lifecycle counters
+- [x] Native sender publishes into mediasoup via server-managed native RTP ingest.
+  - [x] Additive WS action: `create_native_sender_session`
+  - [x] Server creates mediasoup `PlainTransport` + screen `Producer` with canonical H264 RTP params
+  - [x] Server returns native `rtp_target` (`ip:port`) for the Tauri sender
+- [x] Tauri native start accepts dynamic `rtp_target` (no debug-env-only route).
+- [x] Screen-share startup is native-first on Tauri, with browser fallback on native bootstrap failure.
+- [x] Runtime fallback monitor is wired.
+  - [x] Native sender instability reason polled from `native_capture_status`
+  - [x] App closes native producer/capture and auto-switches to browser capture path
+- [x] Native sender internals modularized (`native_sender.rs`, `h264_encoder.rs`, `rtp_sender.rs`, `metrics.rs`).
+- [x] Diagnostics/dev UX updates landed.
+  - [x] Debug panel is dev-gated (`import.meta.env.DEV` or `localStorage["yankcord_debug_native_sender"] === "1"`)
+  - [x] Status includes fallback reason, degradation level, producer/transport state, lifecycle counters
+- [x] RTP parameter alignment fixes landed.
+  - [x] Native sender now uses server-negotiated `payload_type` + `ssrc`
+  - [x] Client validates negotiated RTP params before native start
+- [x] Remote deployment path fixes landed.
+  - [x] Server native RTP bind/announce configuration added
+  - [x] Docs/examples updated for native RTP deploy settings
+- [x] Client-to-server diagnostic reporting landed for native failure classes.
 
 ### Contract Impact
 
@@ -41,13 +65,17 @@
 
 ### Remaining for Next Session
 
-- Windows manual verification pass (end-to-end native publish + forced-fallback scenarios).
-- Keyframe request handling path (PLI/FIR -> force intra frame) is still pending.
-- Performance workstream items remain pending:
-  - frame copy minimization / pooling
-  - adaptive degradation ladder behavior
-  - queue tuning split counters (before-encode vs during-send)
-- Optional diagnostics-only UDP mirror should be finalized as explicitly feature/env-guarded.
+- [ ] Windows manual verification pass (end-to-end native publish + forced-fallback scenarios).
+- [ ] Keyframe request handling path (PLI/FIR -> force intra frame).
+- [ ] Performance workstream items.
+  - [ ] Frame copy minimization / pooling
+  - [ ] Adaptive degradation ladder behavior
+  - [ ] Queue tuning split counters (before-encode vs during-send)
+- [ ] Optional diagnostics-only UDP mirror finalized as explicitly feature/env-guarded.
+- [ ] Codec and encoder expansion plan.
+  - [ ] Define backend abstraction for encoder and RTP packetizer by codec
+  - [ ] Add VP8/VP9/AV1 feasibility + rollout decision
+  - [ ] Add NVENC path (plus optional AMF/QSV follow-ups)
 
 ## Current Baseline (Starting Point)
 
