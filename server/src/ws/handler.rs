@@ -8,7 +8,9 @@ use axum::{
 use futures_util::{SinkExt, StreamExt};
 use mediasoup::prelude::{DtlsParameters, MediaKind, RtpCapabilities, RtpParameters};
 use serde::Deserialize;
+use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
+use tokio::time::timeout;
 use uuid::Uuid;
 
 use super::broadcast::{
@@ -18,6 +20,13 @@ use super::messages::{ClientMessage, ServerMessage, VoicePresenceChannel};
 use crate::auth::validate_token;
 use crate::media::transport::{ProducerSource, RoutingMode, TransportDirection};
 use crate::AppState;
+
+const WS_IDLE_TIMEOUT: Duration = Duration::from_secs(45);
+const MAX_MEDIA_SIGNAL_PAYLOAD_BYTES: usize = 32 * 1024;
+const MAX_REQUEST_ID_CHARS: usize = 128;
+const MAX_ENTITY_ID_CHARS: usize = 128;
+const MEDIA_SIGNAL_RATE_WINDOW: Duration = Duration::from_secs(5);
+const MAX_MEDIA_SIGNAL_EVENTS_PER_WINDOW: u32 = 80;
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "action", rename_all = "snake_case")]
@@ -201,24 +210,78 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
     )
     .await;
 
-    while let Some(Ok(msg)) = stream.next().await {
+    let mut last_client_activity_at = Instant::now();
+
+    loop {
+        let next_message = timeout(WS_IDLE_TIMEOUT, stream.next()).await;
+        let Some(result) = (match next_message {
+            Ok(result) => result,
+            Err(_) => {
+                tracing::warn!(
+                    connection_id = %connection_id,
+                    username = %claims.username,
+                    idle_for_ms = WS_IDLE_TIMEOUT.as_millis(),
+                    "Closing idle websocket connection"
+                );
+                break;
+            }
+        }) else {
+            break;
+        };
+
+        let msg = match result {
+            Ok(msg) => msg,
+            Err(error) => {
+                tracing::warn!(
+                    connection_id = %connection_id,
+                    username = %claims.username,
+                    error = %error,
+                    "Websocket stream error"
+                );
+                break;
+            }
+        };
+
         match msg {
-            Message::Text(text) => match serde_json::from_str::<ClientMessage>(&text) {
-                Ok(client_msg) => {
-                    handle_client_message(&state, &claims, connection_id, client_msg, &out_tx)
-                        .await;
+            Message::Text(text) => {
+                last_client_activity_at = Instant::now();
+                match serde_json::from_str::<ClientMessage>(&text) {
+                    Ok(client_msg) => {
+                        handle_client_message(&state, &claims, connection_id, client_msg, &out_tx)
+                            .await;
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            connection_id = %connection_id,
+                            username = %claims.username,
+                            payload_len = text.len(),
+                            error = %e,
+                            "Rejected invalid websocket message"
+                        );
+                        send_server_message(
+                            &out_tx,
+                            ServerMessage::Error {
+                                message: format!("Invalid message: {e}"),
+                            },
+                        );
+                    }
                 }
-                Err(e) => {
-                    send_server_message(
-                        &out_tx,
-                        ServerMessage::Error {
-                            message: format!("Invalid message: {e}"),
-                        },
-                    );
-                }
-            },
+            }
+            Message::Ping(_) | Message::Pong(_) => {
+                last_client_activity_at = Instant::now();
+            }
             Message::Close(_) => break,
             _ => {}
+        }
+
+        if last_client_activity_at.elapsed() > WS_IDLE_TIMEOUT {
+            tracing::warn!(
+                connection_id = %connection_id,
+                username = %claims.username,
+                idle_for_ms = last_client_activity_at.elapsed().as_millis(),
+                "Closing websocket connection due to inactivity"
+            );
+            break;
         }
     }
 
@@ -246,6 +309,11 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
     }
     let closed_producers = state.media.cleanup_connection_media(connection_id).await;
     broadcast_closed_producers(&state, &closed_producers, Some(connection_id)).await;
+    {
+        let mut media_signal_rate_by_connection =
+            state.media_signal_rate_by_connection.write().await;
+        media_signal_rate_by_connection.remove(&connection_id);
+    }
     broadcast_global_message(
         &state,
         ServerMessage::UserDisconnected {
@@ -561,6 +629,42 @@ async fn handle_client_message(
             channel_id,
             payload,
         } => {
+            let request_id = request_id_from_payload(&payload);
+            let payload_size = media_signal_payload_size_bytes(&payload);
+            if payload_size > MAX_MEDIA_SIGNAL_PAYLOAD_BYTES {
+                tracing::warn!(
+                    connection_id = %connection_id,
+                    username = %claims.username,
+                    channel_id = %channel_id,
+                    payload_size,
+                    max_payload_size = MAX_MEDIA_SIGNAL_PAYLOAD_BYTES,
+                    "Rejected oversized media signaling payload"
+                );
+                send_media_signal_error(
+                    out_tx,
+                    channel_id,
+                    request_id.clone(),
+                    "Media signaling payload is too large",
+                );
+                return;
+            }
+
+            if !allow_media_signal_event(state, connection_id).await {
+                tracing::warn!(
+                    connection_id = %connection_id,
+                    username = %claims.username,
+                    channel_id = %channel_id,
+                    "Rate-limited media signaling request"
+                );
+                send_media_signal_error(
+                    out_tx,
+                    channel_id,
+                    request_id,
+                    "Too many media signaling requests, please retry shortly",
+                );
+                return;
+            }
+
             handle_media_signal_message(
                 state,
                 connection_id,
@@ -571,6 +675,7 @@ async fn handle_client_message(
             )
             .await;
         }
+        ClientMessage::Heartbeat => {}
         ClientMessage::Authenticate { .. } => {
             send_server_message(
                 out_tx,
@@ -606,6 +711,31 @@ async fn handle_media_signal_message(
             return;
         }
     };
+
+    let request_id = request_id_for(&request);
+    if let Err(message) = validate_request_id(request_id.as_deref()) {
+        tracing::warn!(
+            connection_id = %connection_id,
+            username = %username,
+            channel_id = %channel_id,
+            request_id = ?request_id,
+            "Rejected media signaling request due to invalid request_id"
+        );
+        send_media_signal_error(out_tx, channel_id, request_id, message);
+        return;
+    }
+
+    if let Err(message) = validate_media_signal_request_fields(&request) {
+        tracing::warn!(
+            connection_id = %connection_id,
+            username = %username,
+            channel_id = %channel_id,
+            request_id = ?request_id,
+            "Rejected media signaling request due to invalid field constraints"
+        );
+        send_media_signal_error(out_tx, channel_id, request_id, message);
+        return;
+    }
 
     let joined_channel = {
         let voice_members_by_connection = state.voice_members_by_connection.read().await;
@@ -949,6 +1079,117 @@ fn request_id_for(request: &MediaSignalRequest) -> Option<String> {
         | MediaSignalRequest::MediaResumeConsumer { request_id, .. }
         | MediaSignalRequest::MediaCloseProducer { request_id, .. } => request_id.clone(),
     }
+}
+
+fn request_id_from_payload(payload: &serde_json::Value) -> Option<String> {
+    let request_id = payload.get("request_id")?.as_str()?;
+
+    if request_id.is_empty() || request_id.len() > MAX_REQUEST_ID_CHARS {
+        return None;
+    }
+
+    Some(request_id.to_owned())
+}
+
+async fn allow_media_signal_event(state: &AppState, connection_id: Uuid) -> bool {
+    let mut media_signal_rate_by_connection = state.media_signal_rate_by_connection.write().await;
+    let now = Instant::now();
+
+    let entry = media_signal_rate_by_connection
+        .entry(connection_id)
+        .or_insert(crate::MediaSignalRateState {
+            window_started_at: now,
+            events_in_window: 0,
+        });
+
+    if now.duration_since(entry.window_started_at) >= MEDIA_SIGNAL_RATE_WINDOW {
+        entry.window_started_at = now;
+        entry.events_in_window = 0;
+    }
+
+    if entry.events_in_window >= MAX_MEDIA_SIGNAL_EVENTS_PER_WINDOW {
+        return false;
+    }
+
+    entry.events_in_window += 1;
+    true
+}
+
+fn media_signal_payload_size_bytes(payload: &serde_json::Value) -> usize {
+    serde_json::to_vec(payload)
+        .map(|bytes| bytes.len())
+        .unwrap_or(usize::MAX)
+}
+
+fn validate_request_id(request_id: Option<&str>) -> Result<(), &'static str> {
+    let Some(request_id) = request_id else {
+        return Ok(());
+    };
+
+    if request_id.is_empty() {
+        return Err("request_id cannot be empty");
+    }
+
+    if request_id.len() > MAX_REQUEST_ID_CHARS {
+        return Err("request_id is too long");
+    }
+
+    Ok(())
+}
+
+fn validate_media_signal_request_fields(request: &MediaSignalRequest) -> Result<(), &'static str> {
+    match request {
+        MediaSignalRequest::CreateWebrtcTransport { direction, .. } => {
+            if direction.len() > 16 {
+                return Err("direction is too long");
+            }
+        }
+        MediaSignalRequest::ConnectWebrtcTransport { transport_id, .. } => {
+            if transport_id.is_empty() || transport_id.len() > MAX_ENTITY_ID_CHARS {
+                return Err("transport_id is invalid");
+            }
+        }
+        MediaSignalRequest::MediaProduce {
+            kind,
+            source,
+            routing_mode,
+            ..
+        } => {
+            if kind.is_empty() || kind.len() > 16 {
+                return Err("kind is invalid");
+            }
+
+            if let Some(source) = source {
+                if source.is_empty() || source.len() > 32 {
+                    return Err("source is invalid");
+                }
+            }
+
+            if let Some(routing_mode) = routing_mode {
+                if routing_mode.is_empty() || routing_mode.len() > 16 {
+                    return Err("routing_mode is invalid");
+                }
+            }
+        }
+        MediaSignalRequest::MediaConsume { producer_id, .. } => {
+            if producer_id.is_empty() || producer_id.len() > MAX_ENTITY_ID_CHARS {
+                return Err("producer_id is invalid");
+            }
+        }
+        MediaSignalRequest::MediaResumeConsumer { consumer_id, .. } => {
+            if consumer_id.is_empty() || consumer_id.len() > MAX_ENTITY_ID_CHARS {
+                return Err("consumer_id is invalid");
+            }
+        }
+        MediaSignalRequest::MediaCloseProducer { producer_id, .. } => {
+            if producer_id.is_empty() || producer_id.len() > MAX_ENTITY_ID_CHARS {
+                return Err("producer_id is invalid");
+            }
+        }
+        MediaSignalRequest::GetRouterRtpCapabilities { .. } => {}
+    }
+
+    Ok(())
 }
 
 async fn broadcast_media_signal_to_voice_channel(

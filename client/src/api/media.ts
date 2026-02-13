@@ -4,6 +4,8 @@ import { onMessage, send } from "./ws";
 import {
   preferredAudioInputDeviceId,
   preferredAudioOutputDeviceId,
+  preferredCameraDeviceId,
+  savePreferredCameraDeviceId,
   savePreferredAudioInputDeviceId,
   savePreferredAudioOutputDeviceId,
 } from "../stores/settings";
@@ -102,6 +104,12 @@ export interface AudioDeviceInventory {
   outputs: AudioDeviceOption[];
 }
 
+export interface CameraDeviceOption {
+  deviceId: string;
+  kind: MediaDeviceKind;
+  label: string;
+}
+
 export interface CameraActionResult {
   ok: boolean;
   error?: string;
@@ -170,6 +178,8 @@ let micLevelData: Uint8Array | null = null;
 let micLevelMonitorFrame: number | null = null;
 let micSpeakingHoldUntil = 0;
 let micSpeakingLastSent = false;
+let deviceChangeListenerRegistered = false;
+let handlingDeviceChange = false;
 
 const remoteConsumers = new Map<string, Consumer>();
 const consumerIdByProducerId = new Map<string, string>();
@@ -481,7 +491,88 @@ function requestMediaSignal(channelId: string, action: string, extra: Record<str
   });
 }
 
+async function handleMediaDeviceChange() {
+  if (handlingDeviceChange) {
+    return;
+  }
+
+  handlingDeviceChange = true;
+
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const inputIds = new Set(devices.filter((device) => device.kind === "audioinput").map((device) => device.deviceId));
+    const outputIds = new Set(devices.filter((device) => device.kind === "audiooutput").map((device) => device.deviceId));
+    const cameraIds = new Set(devices.filter((device) => device.kind === "videoinput").map((device) => device.deviceId));
+
+    const selectedAudioInput = preferredAudioInputDeviceId();
+    if (selectedAudioInput && !inputIds.has(selectedAudioInput)) {
+      await setPreferredMicrophoneDevice(null).catch(() => undefined);
+    }
+
+    const selectedAudioOutput = preferredAudioOutputDeviceId();
+    if (selectedAudioOutput && !outputIds.has(selectedAudioOutput)) {
+      await setPreferredSpeakerDevice(null).catch(() => undefined);
+    }
+
+    const selectedCamera = preferredCameraDeviceId();
+    if (selectedCamera && !cameraIds.has(selectedCamera)) {
+      savePreferredCameraDeviceId(null);
+
+      if (cameraEnabled && initializedForChannelId) {
+        try {
+          await setPreferredCameraDevice(null);
+          cameraError = "Preferred camera disconnected. Switched to the system default camera.";
+        } catch (error) {
+          cameraError = error instanceof Error
+            ? error.message
+            : "Preferred camera disconnected. Unable to switch camera automatically.";
+          stopAndReleaseCameraTracks();
+        }
+      } else {
+        cameraError = "Preferred camera disconnected. Select another camera to re-enable video.";
+      }
+
+      notifyCameraStateSubscribers();
+    }
+  } finally {
+    handlingDeviceChange = false;
+  }
+}
+
+const onMediaDeviceChange = () => {
+  void handleMediaDeviceChange();
+};
+
+function registerDeviceChangeListener() {
+  if (deviceChangeListenerRegistered || !navigator.mediaDevices) {
+    return;
+  }
+
+  if (typeof navigator.mediaDevices.addEventListener === "function") {
+    navigator.mediaDevices.addEventListener("devicechange", onMediaDeviceChange);
+  } else {
+    navigator.mediaDevices.ondevicechange = onMediaDeviceChange;
+  }
+
+  deviceChangeListenerRegistered = true;
+}
+
+function unregisterDeviceChangeListener() {
+  if (!deviceChangeListenerRegistered || !navigator.mediaDevices) {
+    return;
+  }
+
+  if (typeof navigator.mediaDevices.removeEventListener === "function") {
+    navigator.mediaDevices.removeEventListener("devicechange", onMediaDeviceChange);
+  } else if (navigator.mediaDevices.ondevicechange === onMediaDeviceChange) {
+    navigator.mediaDevices.ondevicechange = null;
+  }
+
+  deviceChangeListenerRegistered = false;
+}
+
 function closeTransports() {
+  unregisterDeviceChangeListener();
   stopMicLevelMonitoring(initializedForChannelId);
 
   micProducer?.close();
@@ -719,6 +810,49 @@ function audioInputConstraint(deviceId: string | null = preferredAudioInputDevic
   };
 }
 
+function cameraInputConstraint(deviceId: string | null = preferredCameraDeviceId()): MediaTrackConstraints | boolean {
+  const selectedDeviceId = deviceId;
+  if (!selectedDeviceId) {
+    return true;
+  }
+
+  return {
+    deviceId: { exact: selectedDeviceId },
+  };
+}
+
+function isMissingDeviceError(error: unknown): boolean {
+  if (!(error instanceof DOMException)) {
+    return false;
+  }
+
+  return (
+    error.name === "NotFoundError"
+    || error.name === "DevicesNotFoundError"
+    || error.name === "OverconstrainedError"
+  );
+}
+
+async function openCameraStreamWithFallback() {
+  const preferredDeviceId = preferredCameraDeviceId();
+
+  try {
+    return await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: cameraInputConstraint(preferredDeviceId),
+    });
+  } catch (error) {
+    if (!preferredDeviceId || !isMissingDeviceError(error)) {
+      throw error;
+    }
+
+    return navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: true,
+    });
+  }
+}
+
 async function startLocalAudioProducer(channelId: string) {
   if (!sendTransport || micProducer) {
     return;
@@ -794,10 +928,7 @@ export async function startLocalCameraProducer(channelId: string): Promise<Camer
   let nextTrack: MediaStreamTrack | null = null;
 
   try {
-    nextStream = await navigator.mediaDevices.getUserMedia({
-      audio: false,
-      video: true,
-    });
+    nextStream = await openCameraStreamWithFallback();
 
     [nextTrack] = nextStream.getVideoTracks();
 
@@ -819,7 +950,9 @@ export async function startLocalCameraProducer(channelId: string): Promise<Camer
     });
 
     produced.on("trackended", () => {
+      cameraError = "Camera stream ended. Check your camera device and re-enable camera.";
       stopAndReleaseCameraTracks();
+      notifyCameraStateSubscribers();
     });
 
     if (initializedForChannelId !== channelId) {
@@ -1287,6 +1420,7 @@ export async function initializeMediaTransports(channelId: string) {
     initializingForChannelId = null;
 
     await startLocalAudioProducer(channelId);
+    registerDeviceChangeListener();
     flushQueuedProducerAnnouncements(channelId);
   })();
 
@@ -1364,6 +1498,19 @@ export async function listAudioDevices(): Promise<AudioDeviceInventory> {
   };
 }
 
+export async function listCameraDevices(): Promise<CameraDeviceOption[]> {
+  const devices = await navigator.mediaDevices.enumerateDevices();
+
+  return devices
+    .filter((device) => device.kind === "videoinput")
+    .map((device, index) => ({
+      deviceId: device.deviceId,
+      kind: device.kind,
+      label: normalizeDeviceLabel(device, "Camera", index + 1),
+    }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+}
+
 async function applySpeakerDeviceToElement(audio: HTMLAudioElement, deviceId: string | null) {
   if (!isSpeakerSelectionSupported()) {
     return;
@@ -1430,6 +1577,43 @@ export async function setPreferredMicrophoneDevice(deviceId: string | null) {
   }
 }
 
+export async function setPreferredCameraDevice(deviceId: string | null) {
+  if (!cameraEnabled || !initializedForChannelId || !sendTransport) {
+    savePreferredCameraDeviceId(deviceId);
+    return;
+  }
+
+  const nextStream = await navigator.mediaDevices.getUserMedia({
+    audio: false,
+    video: cameraInputConstraint(deviceId),
+  });
+
+  const [nextTrack] = nextStream.getVideoTracks();
+  if (!nextTrack) {
+    nextStream.getTracks().forEach((track) => track.stop());
+    throw new Error("Camera track was not available");
+  }
+
+  const previousTrack = cameraTrack;
+  const previousStream = cameraStream;
+
+  try {
+    await cameraProducer?.replaceTrack({ track: nextTrack });
+    cameraTrack = nextTrack;
+    cameraStream = nextStream;
+    cameraEnabled = true;
+    cameraError = null;
+    savePreferredCameraDeviceId(deviceId);
+    notifyCameraStateSubscribers();
+    previousTrack?.stop();
+    previousStream?.getTracks().forEach((track) => track.stop());
+  } catch (error) {
+    nextTrack.stop();
+    nextStream.getTracks().forEach((track) => track.stop());
+    throw error;
+  }
+}
+
 export async function setPreferredSpeakerDevice(deviceId: string | null) {
   savePreferredAudioOutputDeviceId(deviceId);
 
@@ -1445,9 +1629,13 @@ export async function setPreferredSpeakerDevice(deviceId: string | null) {
 export async function resetPreferredAudioDevices() {
   savePreferredAudioInputDeviceId(null);
   savePreferredAudioOutputDeviceId(null);
+  savePreferredCameraDeviceId(null);
 
   if (initializedForChannelId && sendTransport) {
     await setPreferredMicrophoneDevice(null);
+    if (cameraEnabled) {
+      await setPreferredCameraDevice(null);
+    }
   }
 
   if (isSpeakerSelectionSupported()) {
