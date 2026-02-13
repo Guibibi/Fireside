@@ -48,6 +48,10 @@ enum MediaSignalRequest {
         request_id: Option<String>,
         consumer_id: String,
     },
+    MediaCloseProducer {
+        request_id: Option<String>,
+        producer_id: String,
+    },
 }
 
 pub async fn ws_upgrade(ws: WebSocketUpgrade, State(state): State<AppState>) -> impl IntoResponse {
@@ -555,7 +559,15 @@ async fn handle_client_message(
             channel_id,
             payload,
         } => {
-            handle_media_signal_message(state, connection_id, channel_id, payload, out_tx).await;
+            handle_media_signal_message(
+                state,
+                connection_id,
+                &claims.username,
+                channel_id,
+                payload,
+                out_tx,
+            )
+            .await;
         }
         ClientMessage::Authenticate { .. } => {
             send_server_message(
@@ -571,6 +583,7 @@ async fn handle_client_message(
 async fn handle_media_signal_message(
     state: &AppState,
     connection_id: Uuid,
+    username: &str,
     channel_id: Uuid,
     payload: serde_json::Value,
     out_tx: &mpsc::UnboundedSender<String>,
@@ -673,6 +686,22 @@ async fn handle_media_signal_message(
                             .await;
 
                         for producer in existing_producers {
+                            let username = {
+                                let connection_usernames = state.connection_usernames.read().await;
+                                connection_usernames
+                                    .get(&producer.owner_connection_id)
+                                    .cloned()
+                            };
+
+                            let Some(username) = username else {
+                                tracing::warn!(
+                                    producer_id = %producer.producer_id,
+                                    owner_connection_id = %producer.owner_connection_id,
+                                    "Skipping producer snapshot broadcast because owner username was not found"
+                                );
+                                continue;
+                            };
+
                             send_server_message(
                                 out_tx,
                                 ServerMessage::MediaSignal {
@@ -681,6 +710,7 @@ async fn handle_media_signal_message(
                                         "action": "new_producer",
                                         "producer_id": producer.producer_id,
                                         "kind": producer.kind,
+                                        "username": username,
                                     }),
                                 },
                             );
@@ -770,6 +800,7 @@ async fn handle_media_signal_message(
                             "action": "new_producer",
                             "producer_id": producer.producer_id,
                             "kind": producer.kind,
+                            "username": username,
                         }),
                         Some(connection_id),
                     )
@@ -840,6 +871,36 @@ async fn handle_media_signal_message(
                 }
             }
         }
+        MediaSignalRequest::MediaCloseProducer {
+            request_id,
+            producer_id,
+        } => {
+            match state
+                .media
+                .close_producer_for_connection(connection_id, channel_id, &producer_id)
+                .await
+            {
+                Ok(closed_producer) => {
+                    send_server_message(
+                        out_tx,
+                        ServerMessage::MediaSignal {
+                            channel_id,
+                            payload: serde_json::json!({
+                                "action": "media_producer_closed",
+                                "request_id": request_id,
+                                "producer_id": producer_id,
+                            }),
+                        },
+                    );
+
+                    broadcast_closed_producers(state, &[closed_producer], Some(connection_id))
+                        .await;
+                }
+                Err(error_message) => {
+                    send_media_signal_error(out_tx, channel_id, request_id, &error_message);
+                }
+            }
+        }
     }
 }
 
@@ -850,7 +911,8 @@ fn request_id_for(request: &MediaSignalRequest) -> Option<String> {
         | MediaSignalRequest::ConnectWebrtcTransport { request_id, .. }
         | MediaSignalRequest::MediaProduce { request_id, .. }
         | MediaSignalRequest::MediaConsume { request_id, .. }
-        | MediaSignalRequest::MediaResumeConsumer { request_id, .. } => request_id.clone(),
+        | MediaSignalRequest::MediaResumeConsumer { request_id, .. }
+        | MediaSignalRequest::MediaCloseProducer { request_id, .. } => request_id.clone(),
     }
 }
 

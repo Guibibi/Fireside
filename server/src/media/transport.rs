@@ -61,6 +61,7 @@ impl ConnectionMediaState {
 pub struct PublishedProducer {
     pub producer_id: String,
     pub kind: String,
+    pub owner_connection_id: Uuid,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -209,6 +210,15 @@ impl MediaService {
                 return Err("Send transport not found".into());
             };
 
+            if kind == MediaKind::Video
+                && entry
+                    .producers
+                    .values()
+                    .any(|producer| producer.kind() == MediaKind::Video)
+            {
+                return Err("Only one active video producer is allowed per connection".into());
+            }
+
             transport.clone()
         };
 
@@ -230,12 +240,22 @@ impl MediaService {
                 return Err("Media session moved to a different channel".into());
             }
 
+            if kind == MediaKind::Video
+                && entry
+                    .producers
+                    .values()
+                    .any(|existing| existing.kind() == MediaKind::Video)
+            {
+                return Err("Only one active video producer is allowed per connection".into());
+            }
+
             entry.producers.insert(producer_id.clone(), producer);
         }
 
         Ok(PublishedProducer {
             producer_id,
             kind: media_kind_as_str(kind).to_string(),
+            owner_connection_id: connection_id,
         })
     }
 
@@ -261,6 +281,7 @@ impl MediaService {
                         .map(|producer| PublishedProducer {
                             producer_id: producer.id().to_string(),
                             kind: media_kind_as_str(producer.kind()).to_string(),
+                            owner_connection_id: *connection_id,
                         })
                         .collect::<Vec<_>>(),
                 )
@@ -383,6 +404,33 @@ impl MediaService {
             .resume()
             .await
             .map_err(|error| format!("Failed to resume consumer: {error}"))
+    }
+
+    pub async fn close_producer_for_connection(
+        &self,
+        connection_id: Uuid,
+        channel_id: Uuid,
+        producer_id: &str,
+    ) -> Result<ClosedProducer, String> {
+        let media_state_lock = self.connection_media();
+        let mut media_state = media_state_lock.lock().await;
+
+        let Some(entry) = media_state.get_mut(&connection_id) else {
+            return Err("No media session exists for this connection".into());
+        };
+
+        if entry.channel_id != channel_id {
+            return Err("Producer does not belong to this voice channel".into());
+        }
+
+        if entry.producers.remove(producer_id).is_none() {
+            return Err("Producer not found for this connection".into());
+        }
+
+        Ok(ClosedProducer {
+            channel_id,
+            producer_id: producer_id.to_string(),
+        })
     }
 
     pub async fn cleanup_connection_media(&self, connection_id: Uuid) -> Vec<ClosedProducer> {

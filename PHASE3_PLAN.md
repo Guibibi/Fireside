@@ -245,19 +245,19 @@ Goal: make voice/video usable in day-to-day sessions.
 
 ### Phase 3.1 - Voice presence signaling
 
-- [ ] **Server:** Add WS message types for `voice_join`, `voice_leave`, snapshot, join, leave.
-- [ ] **Server:** Track voice members by connection/channel and clean on disconnect.
-- [ ] **Client:** Add voice store for membership and self channel join state.
-- [ ] **Client:** Render participant presence and join/leave controls.
-- [ ] **Verify:** Multi-client voice presence updates in real time.
+- [x] **Server:** Add WS message types for `voice_join`, `voice_leave`, snapshot, join, leave.
+- [x] **Server:** Track voice members by connection/channel and clean on disconnect.
+- [x] **Client:** Add voice store for membership and self channel join state.
+- [x] **Client:** Render participant presence and join/leave controls.
+- [x] **Verify:** Multi-client voice presence updates in real time.
 
 ### Phase 3.2 - Transport handshake
 
-- [ ] **Server:** Expose signaling handlers for RTP capabilities and transport create/connect.
-- [ ] **Server:** Bind transport lifecycle to authenticated connection.
-- [ ] **Client:** Initialize mediasoup `Device` and send/recv transports.
-- [ ] **Client:** Handle transport connect/retry states.
-- [ ] **Verify:** Handshake succeeds repeatedly across join/leave cycles.
+- [x] **Server:** Expose signaling handlers for RTP capabilities and transport create/connect.
+- [x] **Server:** Bind transport lifecycle to authenticated connection.
+- [x] **Client:** Initialize mediasoup `Device` and send/recv transports.
+- [x] **Client:** Handle transport connect/retry states.
+- [x] **Verify:** Handshake succeeds repeatedly across join/leave cycles.
 
 ### Phase 3.3 - Audio streaming
 
@@ -265,7 +265,7 @@ Goal: make voice/video usable in day-to-day sessions.
 - [x] **Server:** Create/close audio producers and consumers safely.
 - [x] **Client:** Produce microphone track and consume remote audio tracks.
 - [x] **Client:** Implement mute/unmute UX and state sync.
-- [ ] **Verify:** Same-channel audio works; cross-channel audio isolation holds.
+- [x] **Verify:** Same-channel audio works; cross-channel audio isolation holds.
 
 ### Phase 3.4 - Video streaming
 
