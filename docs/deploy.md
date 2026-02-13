@@ -1,243 +1,125 @@
-# Deployment Plan (VM)
+# Deployment (Docker-first)
 
-This document outlines a practical path to host Yankcord on a VM for real users.
+This guide is the recommended production path for running Yankcord on a single VM.
 
-## Goals
-
-- Run API/WebSocket + media services on a public VM.
-- Serve the client over HTTPS.
-- Keep text + voice stable across real-world networks.
-- Add observability, backups, and safe rollout practices.
-
-## Recommended Rollout
-
-### Phase 1: Single-VM baseline
-
-- Provision an Ubuntu VM with a static public IP.
-- Create DNS records (example: `chat.example.com`).
-- Install PostgreSQL 15+, Rust stable, Node 18+.
-- Run app processes with systemd (or Docker Compose).
-- Keep app reachable only behind reverse proxy where possible.
-
-### Phase 2: TLS + reverse proxy
-
-- Put Nginx/Caddy in front of backend + static client.
-- Enable HTTPS (Let's Encrypt).
-- Route:
-  - `https://chat.example.com/` -> static client build
-  - `https://chat.example.com/api/*` -> backend HTTP
-  - `wss://chat.example.com/ws` -> backend WebSocket
-
-### Phase 3: WebRTC networking hardening
-
-- Set `WEBRTC_LISTEN_IP=0.0.0.0`.
-- Set `WEBRTC_ANNOUNCED_IP` to a reachable public IP/DNS.
-- Open UDP media ports in cloud + host firewall.
-- Add TURN later for restrictive NAT/mobile/corporate networks.
-
-### Phase 4: Operations
-
-- Centralize logs (journal + shipping optional).
-- Add health checks and restart policies.
-- Add Postgres backups and restore drills.
-- Define staging -> production release flow.
-
-## Current Environment Variables (Implemented)
-
-These are loaded now by `server/src/config.rs`:
-
-- `DATABASE_URL` (required)
-- `JWT_SECRET` (required)
-- `JWT_EXPIRATION_HOURS` (default `24`)
-- `SERVER_PASSWORD` (required)
-- `HOST` (default `0.0.0.0`)
-- `PORT` (default `3000`)
-- `MEDIA_WORKER_COUNT` (default `2`)
-- `WEBRTC_LISTEN_IP` (default `0.0.0.0`)
-- `WEBRTC_ANNOUNCED_IP` (optional)
-- `RUST_LOG` (runtime logging level)
-
-## Environment Schema To Add Before Real Public Usage
-
-These are not implemented yet, but are recommended for production reliability.
-
-### Network and origin control
-
-- `CORS_ALLOWED_ORIGINS` (CSV of allowed origins)
-  - Example: `https://chat.example.com,https://staging-chat.example.com`
-  - Why: replace permissive `Any` CORS in production.
-
-### Media transport controls
-
-- `WEBRTC_UDP_PORT_MIN` (example `40000`)
-- `WEBRTC_UDP_PORT_MAX` (example `40100`)
-- `WEBRTC_ENABLE_TCP` (`true`/`false`, default `true`)
-- `WEBRTC_PREFER_UDP` (`true`/`false`, default `true`)
-  - Why: fixed firewall rules + fallback for UDP-blocked networks.
-
-### TURN integration
-
-- `WEBRTC_ICE_SERVERS_JSON` (JSON array)
-  - Example:
-    ```json
-    [{"urls":["stun:stun.l.google.com:19302"]},{"urls":["turn:turn.example.com:3478?transport=udp"],"username":"user","credential":"pass"}]
-    ```
-  - Why: improve connectivity where direct ICE fails.
-
-## Code Changes Needed For The New Schema
-
-### `server/src/config.rs`
-
-- Add fields for CORS origins, media port range, TCP/UDP toggles, and optional ICE config passthrough.
-- Parse and validate values with clear startup errors.
-
-### `server/src/main.rs`
-
-- Replace `CorsLayer::allow_origin(Any)` with allowlist from config.
-
-### `server/src/media/mod.rs` and `server/src/media/transport.rs`
-
-- Build `WebRtcTransportListenInfos` using configured UDP/TCP settings.
-- Apply explicit media port range.
-
-### `client/src/api/media.ts`
-
-- Accept ICE server config from backend signaling/config endpoint and pass to transport setup where relevant.
-
-### `server/.env.example` and `server/config.toml.example`
-
-- Add and document new production-focused variables.
-
-## VM Firewall/Ports Checklist
-
-- Public ingress:
-  - `80/tcp` (optional redirect)
-  - `443/tcp` (HTTPS + WSS)
-  - media UDP range (example `40000-40100/udp`)
-  - optional media TCP range if TCP media is enabled
-- Internal-only:
-  - `5432/tcp` should not be publicly exposed unless intentionally managed.
-
-## Validation Checklist Before Inviting Users
-
-- HTTPS works for client and API.
-- WebSocket auth succeeds over `wss://`.
-- Two remote users can join same voice room and hear each other.
-- Voice still works when one user is on mobile data/hotspot.
-- Logs show no recurrent media transport errors.
-- Backup and restore of Postgres verified.
-
-## Deployment Helper Script
-
-`scripts/deploy-ovh.sh` automates pull/build/restart on VM.
-
-- Default run:
-  - `bash scripts/deploy-ovh.sh`
-- Expected defaults:
-  - repo at `/opt/yankcord`
-  - backend systemd service `yankcord-server`
-  - reverse proxy systemd service `caddy`
-- Useful overrides:
-  - `REPO_DIR=/srv/yankcord`
-  - `SERVER_SERVICE=yankcord-server`
-  - `CADDY_SERVICE=caddy`
-  - `UPDATE_REPO=false` (skip fetch/pull)
-  - `BUILD_CLIENT=false` (skip npm install/build)
-  - `BUILD_SERVER=false` (skip cargo build)
-  - `RELOAD_CADDY=false` (skip caddy reload)
-  - `START_POSTGRES=true` (run `postgres` from `server/docker-compose.yml`)
-  - `POSTGRES_COMPOSE_FILE=server/docker-compose.yml` (custom compose path)
-
-Example with Docker-managed Postgres:
-
-```bash
-START_POSTGRES=true bash scripts/deploy-ovh.sh
-```
-
-The script aborts if the repo worktree is dirty while `UPDATE_REPO=true` to avoid broken fast-forward pulls during deploy.
-
-## Ubuntu VM Bootstrap Script
-
-`scripts/bootstrap-ubuntu-vm.sh` installs runtime dependencies and writes systemd/Caddy templates.
-
-- Default run:
-  - `bash scripts/bootstrap-ubuntu-vm.sh`
-- What it does:
-  - installs base build tools
-  - installs Node.js 20 (if Node 18+ is not present)
-  - installs Rust toolchain for deploy user (if missing)
-  - installs Caddy and writes a Yankcord `Caddyfile`
-  - writes `/etc/systemd/system/yankcord-server.service`
-- Useful overrides:
-  - `DEPLOY_USER=ubuntu`
-  - `REPO_DIR=/opt/yankcord`
-  - `SITE_ADDRESS=chat.example.com` (required for automatic HTTPS)
-  - `SERVER_PORT=3000`
-  - `INSTALL_CADDY=false`
-  - `WRITE_CADDYFILE=false`
-  - `INSTALL_DOCKER=true` (optional if Docker is not already installed)
-
-Example:
-
-```bash
-DEPLOY_USER=ubuntu REPO_DIR=/opt/yankcord SITE_ADDRESS=chat.example.com bash scripts/bootstrap-ubuntu-vm.sh
-```
-
-After bootstrap, clone/pull the repo into `REPO_DIR`, set `server/.env`, then deploy with `scripts/deploy-ovh.sh`.
-
-## Docker Production Stack
-
-You can run the hosted stack fully in containers using:
+The stack uses Docker Compose and includes:
 
 - `postgres` (`postgres:15-alpine`)
-- `server` (built from `server/Dockerfile`)
-- `web` (Caddy serving `client/dist` + reverse proxy to backend)
+- `server` (Axum/WebSocket/media backend)
+- `web` (Caddy serving `client/dist` and proxying `/api` + `/ws`)
 
-Files:
+## Quickstart
 
-- `docker-compose.prod.yml`
-- `server/.env.docker.example`
-- `scripts/deploy-docker.sh`
+### 1) Prerequisites
 
-### 1) Prepare environment file
+- Linux VM with a public IP (Ubuntu recommended)
+- Docker Engine + Docker Compose plugin
+- Open firewall ports:
+  - `80/tcp` and `443/tcp` for web traffic
+  - UDP media ports required by your voice policy
+
+Optional helper to install Docker on Ubuntu:
+
+```bash
+INSTALL_DOCKER=true INSTALL_NODE=false INSTALL_RUST=false INSTALL_CADDY=false WRITE_CADDYFILE=false bash scripts/bootstrap-ubuntu-vm.sh
+```
+
+This helper installs Docker plus baseline VM tooling and also writes legacy systemd deploy artifacts.
+
+### 2) Prepare environment
 
 ```bash
 cp server/.env.docker.example server/.env.docker
 ```
 
-Required values to edit:
+Edit `server/.env.docker` and set at minimum:
 
 - `POSTGRES_PASSWORD`
+- `DATABASE_URL`
 - `JWT_SECRET`
 - `SERVER_PASSWORD`
-- `WEBRTC_ANNOUNCED_IP` (public IP or DNS)
 - `SITE_ADDRESS`
-  - use `:80` for plain HTTP
-  - use your domain (example `chat.example.com`) for automatic HTTPS in Caddy
+  - `:80` for plain HTTP
+  - `chat.example.com` (or your domain) for automatic HTTPS in Caddy
+- `WEBRTC_ANNOUNCED_IP` only when browser clients connect over the public internet and need voice/media
 
-### 2) Start stack
+Notes:
 
-```bash
-sudo docker compose --env-file server/.env.docker -f docker-compose.prod.yml up -d --build
-```
+- `DATABASE_URL` must be set explicitly. If your DB username or password includes reserved URI characters (for example `@`, `:`, `/`, `?`, `#`), URL-encode those credential parts in the connection string. If you customize `POSTGRES_USER`, `POSTGRES_PASSWORD`, or `POSTGRES_DB`, keep the credentials and database name in `DATABASE_URL` in sync.
+- Leaving `WEBRTC_ANNOUNCED_IP` empty or localhost is fine for local/private setups, but public internet voice traffic typically requires it set to a public IP or DNS name.
+- `HOST` defaults to `127.0.0.1` in the Docker production path to avoid exposing backend port `3000` publicly when using host networking.
+- If you intentionally want the backend reachable directly from outside the VM, set `HOST=0.0.0.0` in `server/.env.docker` and restrict access with firewall rules.
 
-Or use helper script:
+### 3) Deploy
+
+From the repo root:
 
 ```bash
 REPO_DIR=/opt/yankcord bash scripts/deploy-docker.sh
 ```
 
-### 3) Validate
+The script:
+
+- optionally updates the repo (`UPDATE_REPO=true` default)
+- validates required secrets in `server/.env.docker`
+- validates compose config
+- pulls/builds images
+- starts containers and prints status/logs
+
+Useful overrides:
+
+- `UPDATE_REPO=false` - skip `git fetch/pull`
+- `EXPECTED_BRANCH=release` - change the branch allowed for repo updates (default: `main`)
+- `ALLOW_NON_MAIN_DEPLOY=true` - bypass branch guard when `UPDATE_REPO=true`
+- `PULL_IMAGES=false` - skip pulling base images
+- `BUILD_IMAGES=false` - skip local rebuild
+- `ENV_FILE=server/.env.docker` - custom env file path
+- `COMPOSE_FILE=docker-compose.prod.yml` - custom compose path
+
+## Day-2 Operations
+
+If your user is not in the `docker` group, prefix the `docker compose` commands below with `sudo`.
+
+### Check status
 
 ```bash
-sudo docker compose --env-file server/.env.docker -f docker-compose.prod.yml ps
-sudo docker compose --env-file server/.env.docker -f docker-compose.prod.yml logs --tail=100 server
-sudo docker compose --env-file server/.env.docker -f docker-compose.prod.yml logs --tail=100 web
+docker compose --env-file server/.env.docker -f docker-compose.prod.yml ps
+docker compose --env-file server/.env.docker -f docker-compose.prod.yml logs --tail=100 server
+docker compose --env-file server/.env.docker -f docker-compose.prod.yml logs --tail=100 web
 ```
 
-### Notes for voice/media
+### Roll out updates
 
-- The `server` and `web` containers run with `network_mode: host` in `docker-compose.prod.yml`.
-- This is intentional so mediasoup can bind host UDP ports reliably with current server config.
-- Open VM firewall for HTTPS (`443/tcp`) and your media traffic policy.
-- If using plain HTTP (`SITE_ADDRESS=:80`), browser WebRTC/security behavior may be restricted outside local testing.
+```bash
+REPO_DIR=/opt/yankcord bash scripts/deploy-docker.sh
+```
+
+### Stop stack
+
+```bash
+docker compose --env-file server/.env.docker -f docker-compose.prod.yml down
+```
+
+### Backup Postgres
+
+```bash
+docker compose --env-file server/.env.docker -f docker-compose.prod.yml exec -T postgres sh -lc 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' > backup.sql
+```
+
+Run restore drills in a non-production environment before relying on backups.
+
+## Production Notes
+
+- `docker-compose.prod.yml` binds PostgreSQL on `127.0.0.1:5432` to avoid exposing it publicly.
+- `server` and `web` use `network_mode: host` so media and reverse-proxy networking remain predictable on a single VM; backend HTTP bind remains loopback by default unless you override `HOST`.
+- Keep `server/.env.docker` out of version control and rotate secrets regularly.
+- For browser clients, HTTPS (`SITE_ADDRESS=<domain>`) is strongly recommended.
+
+## Non-Docker Path (Legacy)
+
+The repository still includes systemd-based deploy scripts:
+
+- `scripts/bootstrap-ubuntu-vm.sh`
+- `scripts/deploy-ovh.sh`
+
+Use those only if you intentionally want host-level Node/Rust builds instead of the Docker-first workflow above.

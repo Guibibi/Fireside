@@ -1,13 +1,15 @@
+name: yankcord
+
 services:
   postgres:
     image: postgres:15-alpine
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-yankcord}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in server/.env.docker}
       POSTGRES_DB: ${POSTGRES_DB:-yankcord}
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -26,11 +28,11 @@ services:
         condition: service_healthy
     network_mode: host
     environment:
-      DATABASE_URL: ${DATABASE_URL:-postgres://${POSTGRES_USER:-yankcord}:${POSTGRES_PASSWORD:-password}@127.0.0.1:5432/${POSTGRES_DB:-yankcord}}
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL in server/.env.docker}
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in server/.env.docker}
       JWT_EXPIRATION_HOURS: ${JWT_EXPIRATION_HOURS:-24}
       SERVER_PASSWORD: ${SERVER_PASSWORD:?set SERVER_PASSWORD in server/.env.docker}
-      HOST: ${HOST:-0.0.0.0}
+      HOST: ${HOST:-127.0.0.1}
       PORT: ${PORT:-3000}
       MEDIA_WORKER_COUNT: ${MEDIA_WORKER_COUNT:-2}
       WEBRTC_LISTEN_IP: ${WEBRTC_LISTEN_IP:-0.0.0.0}
