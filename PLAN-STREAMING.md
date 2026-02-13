@@ -18,6 +18,14 @@
 - Next implementation target:
   - Phase 9.5: bridge native frame events into a real Rust-side encoder/RTP sender path (current start/stop commands are lifecycle scaffolding only).
 
+### Next Session Focus (Phase 9.5)
+
+- Implement a Windows-only frame pipeline that consumes adapter `frame` events and forwards them into a dedicated native sender worker.
+- Stand up a minimal Rust-side encoder path (H264 baseline first) with explicit resolution/fps/bitrate inputs from existing frontend settings.
+- Connect encoded output to the mediasoup-compatible producer flow (no server protocol changes in this step).
+- Add structured telemetry logs for frame receive rate, encode latency, dropped frames, and current target bitrate.
+- Keep hard fallback behavior: if native sender init/encode fails at any point, tear down native pipeline and continue with existing browser capture path.
+
 ## Goal
 
 - Add a desktop-native source picker in Tauri for screen sharing.
@@ -283,10 +291,10 @@ Goal: implement the Windows-first native pipeline using `windows-capture` as the
 
 - [x] Add native source enumeration/capture support in Tauri backend.
 - [x] Add typed client bridge for native capture APIs.
-- [ ] Add runtime platform split (Tauri vs Web).
-- [ ] Build Tauri source picker modal with quality controls.
-- [ ] Persist resolution/fps/bitrate preferences.
-- [ ] Apply selected encoding constraints to screen-share producer.
-- [ ] Keep web flow on browser picker with no custom quality UI.
-- [ ] Add robust fallback and error handling.
-- [ ] Run client typecheck/build and Tauri cargo check.
+- [x] Add runtime platform split (Tauri vs Web).
+- [x] Build Tauri source picker modal with quality controls.
+- [x] Persist resolution/fps/bitrate preferences.
+- [x] Apply selected encoding constraints to screen-share producer.
+- [x] Keep web flow on browser picker with no custom quality UI.
+- [x] Add robust fallback and error handling (native start failure falls back to browser capture path).
+- [x] Run client typecheck/build and Tauri cargo check.

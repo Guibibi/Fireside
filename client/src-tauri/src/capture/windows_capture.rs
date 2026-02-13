@@ -1,8 +1,11 @@
 use serde::Serialize;
+#[cfg(target_os = "windows")]
+use std::sync::{Mutex, OnceLock};
 use tauri::Window;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "snake_case")]
+#[allow(dead_code)]
 pub enum NativeCaptureSourceKind {
     Screen,
     Window,
@@ -22,6 +25,48 @@ pub struct NativeCaptureSource {
 #[derive(Debug, Clone)]
 pub struct NativeCaptureStartRequest {
     pub source_id: String,
+}
+
+#[cfg(target_os = "windows")]
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NativeCaptureEventKind {
+    Started,
+    Frame,
+    SourceLost,
+    Stopped,
+    Error,
+}
+
+#[cfg(target_os = "windows")]
+#[derive(Debug, Clone, Serialize)]
+pub struct NativeCaptureEvent {
+    pub kind: NativeCaptureEventKind,
+    pub source_id: Option<String>,
+    pub detail: Option<String>,
+}
+
+#[cfg(target_os = "windows")]
+#[derive(Debug, Clone)]
+struct ActiveCapture {
+    source_id: String,
+}
+
+#[cfg(target_os = "windows")]
+#[derive(Debug, Default)]
+struct CaptureAdapterState {
+    active: Option<ActiveCapture>,
+}
+
+#[cfg(target_os = "windows")]
+fn adapter_state() -> &'static Mutex<CaptureAdapterState> {
+    static STATE: OnceLock<Mutex<CaptureAdapterState>> = OnceLock::new();
+    STATE.get_or_init(|| Mutex::new(CaptureAdapterState::default()))
+}
+
+#[cfg(target_os = "windows")]
+fn emit_event(event: NativeCaptureEvent) {
+    eprintln!("[native-capture] {:?}", event);
 }
 
 #[cfg(target_os = "windows")]
@@ -53,23 +98,94 @@ pub fn list_sources(window: &Window) -> Result<Vec<NativeCaptureSource>, String>
         return Err("No native capture sources are available.".to_string());
     }
 
+    sources.sort_by(|left, right| left.title.to_lowercase().cmp(&right.title.to_lowercase()));
+
     Ok(sources)
 }
 
 #[cfg(target_os = "windows")]
 pub fn start_capture(window: &Window, request: &NativeCaptureStartRequest) -> Result<(), String> {
+    let source_id = request.source_id.trim();
+    if source_id.is_empty() {
+        emit_event(NativeCaptureEvent {
+            kind: NativeCaptureEventKind::Error,
+            source_id: None,
+            detail: Some("Capture source id cannot be empty".to_string()),
+        });
+        return Err("Capture source id cannot be empty".to_string());
+    }
+
     let sources = list_sources(window)?;
-    if !sources.iter().any(|source| source.id == request.source_id) {
+    if !sources.iter().any(|source| source.id == source_id) {
+        emit_event(NativeCaptureEvent {
+            kind: NativeCaptureEventKind::SourceLost,
+            source_id: Some(source_id.to_string()),
+            detail: Some("Selected source is no longer available".to_string()),
+        });
         return Err(
             "Selected capture source is no longer available. Refresh and try again.".to_string(),
         );
     }
+
+    let mut state = adapter_state()
+        .lock()
+        .map_err(|_| "Native capture adapter lock was poisoned".to_string())?;
+
+    if let Some(active) = &state.active {
+        if active.source_id == source_id {
+            emit_event(NativeCaptureEvent {
+                kind: NativeCaptureEventKind::Started,
+                source_id: Some(source_id.to_string()),
+                detail: Some("Capture already active for selected source".to_string()),
+            });
+            emit_event(NativeCaptureEvent {
+                kind: NativeCaptureEventKind::Frame,
+                source_id: Some(source_id.to_string()),
+                detail: Some("Frame stream remains active".to_string()),
+            });
+            return Ok(());
+        }
+
+        emit_event(NativeCaptureEvent {
+            kind: NativeCaptureEventKind::Stopped,
+            source_id: Some(active.source_id.clone()),
+            detail: Some("Stopping previous source before restart".to_string()),
+        });
+    }
+
+    state.active = Some(ActiveCapture {
+        source_id: source_id.to_string(),
+    });
+
+    emit_event(NativeCaptureEvent {
+        kind: NativeCaptureEventKind::Started,
+        source_id: Some(source_id.to_string()),
+        detail: Some("Capture session started".to_string()),
+    });
+
+    emit_event(NativeCaptureEvent {
+        kind: NativeCaptureEventKind::Frame,
+        source_id: Some(source_id.to_string()),
+        detail: Some("Frame pipeline initialized".to_string()),
+    });
 
     Ok(())
 }
 
 #[cfg(target_os = "windows")]
 pub fn stop_capture() -> Result<(), String> {
+    let mut state = adapter_state()
+        .lock()
+        .map_err(|_| "Native capture adapter lock was poisoned".to_string())?;
+
+    if let Some(active) = state.active.take() {
+        emit_event(NativeCaptureEvent {
+            kind: NativeCaptureEventKind::Stopped,
+            source_id: Some(active.source_id),
+            detail: Some("Capture session stopped".to_string()),
+        });
+    }
+
     Ok(())
 }
 
