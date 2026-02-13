@@ -405,6 +405,21 @@ input:focus {
   font-size: 0.72rem;
 }
 
+.voice-dock-native-debug {
+  margin-top: 0.55rem;
+  padding: 0.45rem 0.5rem;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--blue) 35%, var(--surface2));
+  background: color-mix(in srgb, var(--surface0) 82%, var(--blue) 18%);
+}
+
+.voice-dock-native-debug-title {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--subtext0);
+}
+
 .user-dock {
   margin-top: 0.6rem;
   display: flex;

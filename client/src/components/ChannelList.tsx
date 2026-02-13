@@ -13,6 +13,8 @@ import {
 } from "../api/media";
 import {
   listNativeCaptureSources,
+  nativeCaptureStatus,
+  type NativeCaptureStatus,
   type NativeCaptureSource,
 } from "../api/nativeCapture";
 import { connect, onClose, onMessage, send } from "../api/ws";
@@ -96,6 +98,7 @@ export default function ChannelList() {
   const [nativeSourcesError, setNativeSourcesError] = createSignal("");
   const [nativeSources, setNativeSources] = createSignal<NativeCaptureSource[]>([]);
   const [selectedNativeSourceId, setSelectedNativeSourceId] = createSignal<string | null>(null);
+  const [nativeSenderMetrics, setNativeSenderMetrics] = createSignal<NativeCaptureStatus["native_sender"] | null>(null);
   const [pulsingByChannel, setPulsingByChannel] = createSignal<Record<string, boolean>>({});
   const pulseTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const tauriRuntime = isTauriRuntime();
@@ -658,6 +661,16 @@ export default function ChannelList() {
     return `${mbps.toFixed(1)} Mbps`;
   }
 
+  function formatNativeSenderRate(value: number) {
+    if (value < 1000) {
+      return `${value} B`;
+    }
+    if (value < 1000 * 1000) {
+      return `${(value / 1000).toFixed(1)} KB`;
+    }
+    return `${(value / (1000 * 1000)).toFixed(2)} MB`;
+  }
+
   function handleScreenShareSourceKindInput(event: Event) {
     const value = (event.currentTarget as HTMLSelectElement).value;
     if (value === "screen" || value === "window" || value === "application") {
@@ -729,6 +742,38 @@ export default function ChannelList() {
     if (!joinedVoiceChannelId()) {
       setScreenShareModalOpen(false);
     }
+  });
+
+  createEffect(() => {
+    if (!tauriRuntime || !screenShareEnabled()) {
+      setNativeSenderMetrics(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    const pollStatus = async () => {
+      try {
+        const status = await nativeCaptureStatus();
+        if (!cancelled) {
+          setNativeSenderMetrics(status.native_sender);
+        }
+      } catch {
+        if (!cancelled) {
+          setNativeSenderMetrics(null);
+        }
+      }
+    };
+
+    void pollStatus();
+    const timer = window.setInterval(() => {
+      void pollStatus();
+    }, 1000);
+
+    onCleanup(() => {
+      cancelled = true;
+      window.clearInterval(timer);
+    });
   });
 
   return (
@@ -918,6 +963,18 @@ export default function ChannelList() {
               </Show>
               <Show when={screenShareEnabled() && screenShareRoutingMode()}>
                 <p class="voice-dock-channel">Screen sharing via {screenShareRoutingMode()?.toUpperCase()}</p>
+              </Show>
+              <Show when={screenShareEnabled() && tauriRuntime && nativeSenderMetrics()?.worker_active}>
+                <div class="voice-dock-native-debug" role="status" aria-live="polite">
+                  <p class="voice-dock-native-debug-title">Native Sender</p>
+                  <p class="voice-dock-channel">Frames: {nativeSenderMetrics()?.received_packets ?? 0} dequeued / {nativeSenderMetrics()?.encoded_frames ?? 0} encoded</p>
+                  <p class="voice-dock-channel">Output: {formatNativeSenderRate(nativeSenderMetrics()?.encoded_bytes ?? 0)} | RTP: {nativeSenderMetrics()?.rtp_packets_sent ?? 0} packets</p>
+                  <p class="voice-dock-channel">Queue backlog: {nativeSenderMetrics()?.estimated_queue_depth ?? 0} | Drop(full): {nativeSenderMetrics()?.dropped_full ?? 0} | Drop(no BGRA): {nativeSenderMetrics()?.dropped_missing_bgra ?? 0}</p>
+                  <p class="voice-dock-channel">Latency: {nativeSenderMetrics()?.last_encode_latency_ms ?? 0} ms | Encode errors: {nativeSenderMetrics()?.encode_errors ?? 0} | RTP errors: {nativeSenderMetrics()?.rtp_send_errors ?? 0}</p>
+                  <Show when={nativeSenderMetrics()?.rtp_target}>
+                    <p class="voice-dock-channel">RTP target: {nativeSenderMetrics()?.rtp_target}</p>
+                  </Show>
+                </div>
               </Show>
               <Show when={screenShareError()}>
                 <p class="voice-dock-error">{screenShareError()}</p>

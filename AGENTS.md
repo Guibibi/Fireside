@@ -2,165 +2,150 @@
 
 Guidance for autonomous coding agents working in `yankcord`.
 
-## Scope And Priorities
+## Scope and Intent
 
-- This repo is a monorepo with two projects:
-  - `server/`: Rust backend (Axum + SQLx + WebSocket + mediasoup)
-  - `client/`: Tauri v2 desktop app (SolidJS + TypeScript + Vite)
-- Prefer minimal, focused changes; preserve existing architecture and naming.
-- Keep API and WebSocket wire formats stable unless explicitly changing protocol.
+- Repo type: monorepo with a Rust backend and a Tauri desktop client.
+- `server/`: Axum + SQLx/Postgres + WebSocket + mediasoup SFU.
+- `client/`: SolidJS + TypeScript + Vite UI, plus `client/src-tauri` Rust host app.
+- Goal for agents: make minimal, targeted changes that preserve existing architecture.
+- Keep REST + WebSocket contracts stable unless protocol changes are explicitly requested.
 
-## External Agent Rules
+## External Agent Rules (Cursor/Copilot)
 
-- Checked for Cursor rules and Copilot instructions:
+- Checked for higher-priority agent instruction files:
   - `.cursorrules`: not present
   - `.cursor/rules/`: not present
   - `.github/copilot-instructions.md`: not present
-- If any of the above files are later added, treat them as higher-priority supplements.
+- If any of these are added later, treat them as supplemental instructions with higher priority than this file.
 
-## Environment And Setup
+## Environment and Setup
 
-- Required runtime:
+- Required tooling:
   - Rust stable toolchain
-  - Node.js 18+
+  - Node.js 18+ and npm
   - PostgreSQL 15+
-  - Tauri v2 Linux deps (`webkit2gtk`, `rsvg2`) for desktop runs
-- First-time server setup:
+  - Linux desktop deps for Tauri v2 (`webkit2gtk`, `rsvg2`)
+  - Python 3 with `invoke`, `meson`, and `ninja` for mediasoup native build
+- Initial server setup:
   - `cp server/.env.example server/.env`
-- Server auto-runs DB migrations from `server/migrations/` on startup.
+  - fill `DATABASE_URL`, `JWT_SECRET`, and `SERVER_PASSWORD`
+- Server applies SQL migrations in `server/migrations/` automatically on startup.
 
-## Build, Lint, And Test Commands
+## Build, Lint, and Test Commands
 
-Run commands from repo root unless noted.
+Run from repo root unless stated otherwise.
 
-### Server (`server/`)
+### Backend (`server/`)
 
 - Dev run: `cargo run --manifest-path server/Cargo.toml`
 - Release build: `cargo build --release --manifest-path server/Cargo.toml`
 - Format check: `cargo fmt --all --manifest-path server/Cargo.toml -- --check`
 - Format write: `cargo fmt --all --manifest-path server/Cargo.toml`
-- Lint (Clippy): `cargo clippy --manifest-path server/Cargo.toml --all-targets -- -D warnings`
-- Full tests: `cargo test --manifest-path server/Cargo.toml`
+- Lint: `cargo clippy --manifest-path server/Cargo.toml --all-targets -- -D warnings`
+- Full test suite: `cargo test --manifest-path server/Cargo.toml`
 
-Single-test patterns (Rust):
+Single-test patterns (backend Rust):
 
-- By test name substring:
-  - `cargo test --manifest-path server/Cargo.toml connect`
-- Exact test path:
-  - `cargo test --manifest-path server/Cargo.toml routes::channel_routes::tests::create_channel -- --exact`
-- Integration test target (if present under `server/tests/`):
-  - `cargo test --manifest-path server/Cargo.toml --test auth_flow`
-- Show logs/stdout while running one test:
-  - `cargo test --manifest-path server/Cargo.toml test_name -- --exact --nocapture`
+- Name filter (substring): `cargo test --manifest-path server/Cargo.toml connect`
+- Exact unit test path: `cargo test --manifest-path server/Cargo.toml module::tests::test_name -- --exact`
+- Integration test target (when files exist in `server/tests/`): `cargo test --manifest-path server/Cargo.toml --test auth_flow`
+- Specific test with logs: `cargo test --manifest-path server/Cargo.toml module::tests::test_name -- --exact --nocapture`
 
-### Client (`client/`)
+### Frontend (`client/`)
 
 - Install deps: `npm --prefix client install`
 - Dev web UI: `npm --prefix client run dev`
-- Production build: `npm --prefix client run build`
+- Build web UI: `npm --prefix client run build`
 - Preview build: `npm --prefix client run serve`
-- Tauri dev app: `npm --prefix client run tauri dev`
-- Tauri production app: `npm --prefix client run tauri build`
+- Type-check: `npm --prefix client run typecheck`
+- Tauri dev: `npm --prefix client run tauri dev`
+- Tauri build: `npm --prefix client run tauri build`
 
-Type/lint status for client:
+Test/lint status (frontend TS):
 
-- No dedicated lint script is configured in `client/package.json`.
-- No test script/framework is configured in `client/package.json`.
-- Type-check without emit: `npm --prefix client run typecheck`
+- There is no dedicated JS/TS test runner script in `client/package.json`.
+- There is no dedicated ESLint script in `client/package.json`.
+- Treat `npm --prefix client run typecheck` + `npm --prefix client run build` as the minimum validation.
 
-Single-test patterns (client):
+### Tauri Rust Host (`client/src-tauri/`)
 
-- There is currently no client test runner configured, so single-test commands do not apply yet.
-- If tests are introduced, add a script and document file-level and test-name filtering here.
+- Build only host crate: `cargo build --manifest-path client/src-tauri/Cargo.toml`
+- Test host crate: `cargo test --manifest-path client/src-tauri/Cargo.toml`
+- Single test by name: `cargo test --manifest-path client/src-tauri/Cargo.toml test_name`
+- Exact test path: `cargo test --manifest-path client/src-tauri/Cargo.toml module::tests::test_name -- --exact`
 
-## Code Style: Cross-Cutting
+## Validation Expectations for Agents
 
-- Match existing file style; do not reformat unrelated sections.
-- Keep imports organized and avoid unused imports.
-- Prefer explicit types at API boundaries.
-- Avoid `any` in TypeScript; use `unknown` and narrow.
-- Avoid broad refactors unless requested; preserve behavior.
-- Use descriptive names over abbreviations.
-
-## Rust Style (`server/`)
-
-- Formatting:
-  - Use `rustfmt` defaults (4-space indentation, trailing commas in multiline).
-- Imports:
-  - Group `std` imports, third-party crates, then `crate::...` imports.
-  - Keep imports minimal and deterministic.
-- Naming:
-  - `snake_case` for functions/variables/modules.
-  - `PascalCase` for structs/enums/traits.
-  - Enum variants are `PascalCase`; serde wire names use `#[serde(rename = "...")]`.
-- Types and data:
-  - Use `Uuid` for entity IDs.
-  - Use `chrono::DateTime<Utc>` for timestamps.
-  - Derive only needed traits (`Clone`, `Debug`, `Serialize`, etc.).
-- Error handling:
-  - Route handlers return `Result<..., AppError>`.
-  - Use `?` for fallible operations and `From` conversions where available.
-  - Return specific `AppError` variants for user-facing failures.
-  - Log internals; avoid leaking sensitive internal details.
-- HTTP/DB patterns:
-  - Extract auth from `Authorization: Bearer ...` as current code does.
-  - Validate and trim user input before DB writes.
-  - Keep SQL in `sqlx::query` / `sqlx::query_as` calls with bound params.
-  - Prefer transactions where multi-step consistency matters.
-- Async/concurrency:
-  - Use `Arc<RwLock<...>>` patterns consistently with existing `AppState`.
-  - Keep lock scopes tight.
-
-## TypeScript/Solid Style (`client/`)
-
-- Formatting:
-  - 2-space indentation, semicolons, trailing commas in multiline literals/calls.
-- Imports:
-  - Keep relative imports consistent (`../...` style in current code).
-  - Separate type imports when useful (`import type { ... }`).
-- Naming:
-  - `camelCase` for vars/functions.
-  - `PascalCase` for components/interfaces/types.
-  - Preserve backend JSON field names (`snake_case`) in transport payloads.
-- Types:
-  - Keep `strict` TypeScript compatibility (`client/tsconfig.json`).
-  - Type API responses and WS messages with explicit interfaces/unions.
-- Solid patterns:
-  - Use signals/resources/effects idiomatically.
-  - Clean up side effects via `onCleanup`.
-  - Keep component state local unless shared via stores.
-- Error handling:
-  - Surface readable UI errors from network failures.
-  - Use defensive parsing and graceful fallbacks for WS/HTTP responses.
-
-## Protocol And State Conventions
-
-- WebSocket protocol uses tagged JSON messages with a `type` field.
-- First WS client message must be authentication.
-- REST and WS should stay consistent for core entities (`Channel`, `Message`, voice presence).
-- Do not silently change message type strings; coordinate both server and client if modified.
-
-## Testing Expectations For Agents
-
-- For server code changes, run at least:
+- If backend code changes, run at minimum:
   - `cargo fmt --all --manifest-path server/Cargo.toml -- --check`
   - `cargo clippy --manifest-path server/Cargo.toml --all-targets -- -D warnings`
   - `cargo test --manifest-path server/Cargo.toml`
-- For client code changes, run at least:
+- If frontend TypeScript/Solid code changes, run at minimum:
   - `npm --prefix client run typecheck`
   - `npm --prefix client run build`
-- If constrained by environment (DB, system deps), report exactly what was not run and why.
+- If only `client/src-tauri` Rust changes, also run:
+  - `cargo test --manifest-path client/src-tauri/Cargo.toml`
+- If environment constraints block validation (DB unavailable, missing Linux libs), report exactly what could not run and why.
 
-## Change Management
+## Code Style: Cross-Cutting
 
-- Do not commit secrets (`.env`, credentials, tokens).
-- Keep commits scoped and descriptive.
-- Document any new scripts, env vars, or protocol changes in this file and project docs.
+- Match local style and existing patterns before introducing new abstractions.
+- Keep changes focused; avoid broad refactors unless asked.
+- Keep imports minimal and remove unused imports.
+- Prefer explicit, boundary-facing types over inferred structural types.
+- Avoid placeholder naming (`tmp`, `data2`, `foo`); use domain terms.
+- Do not silently alter protocol field names or serialized wire values.
 
-## Deployment Notes
+## Rust Style (`server/`)
 
-- VM deployment planning and public-network checklist live in `docs/deploy.md`.
-- If adding production env vars (CORS, media port ranges, TURN/ICE config), update:
+- Formatting: standard `rustfmt` output, 4-space indentation, trailing commas in multiline blocks.
+- Imports: typical grouping is `std`, third-party crates, then `crate::...`.
+- Naming: `snake_case` functions/modules/variables, `PascalCase` structs/enums/traits.
+- Serde contracts: preserve stringly wire names via `#[serde(rename = "...")]`.
+- IDs/timestamps: use `Uuid` IDs and chrono timestamps compatible with existing models.
+- Handlers: return `Result<..., AppError>` and propagate with `?`.
+- Errors: map failures to specific `AppError` variants; log internal detail, return safe messages.
+- SQLx: keep SQL in `sqlx::query` / `query_as` with bound parameters (no string interpolation).
+- Validation: enforce user input constraints before DB writes.
+- Concurrency: use shared state with `Arc<RwLock<...>>`; keep lock scope tight.
+
+## Rust Style (`client/src-tauri/`)
+
+- Follow rustfmt defaults and keep Tauri command signatures explicit.
+- Keep platform-specific logic inside `cfg`-guarded modules (for example Windows capture code).
+- Return user-safe error messages from Tauri commands; keep internal details in logs.
+- Keep command surface stable unless coordinated with TS callers in `client/src/api/nativeCapture.ts`.
+
+## TypeScript/Solid Style (`client/src/`)
+
+- Formatting: 2 spaces, semicolons, trailing commas in multiline literals/calls.
+- TS config is strict; keep compatibility with `client/tsconfig.json` (`strict`, no unused locals/params).
+- Avoid `any`; use `unknown` + narrowing when parsing dynamic payloads.
+- Naming: `camelCase` vars/functions, `PascalCase` components/types/interfaces.
+- Imports: preserve existing relative import style and use `import type` for type-only imports where useful.
+- State patterns: use Solid signals/resources/effects idiomatically and clean side effects on teardown.
+- Transport models: keep backend JSON field names (`snake_case`) in API/WS payload interfaces.
+- Network handling: throw or surface readable errors; use defensive parsing for WS/HTTP responses.
+
+## Protocol and Data Contract Rules
+
+- WebSocket messages are tagged JSON objects with a `type` discriminator.
+- First client WS message must authenticate (`type: "authenticate"`).
+- Keep `server/src/ws/messages.rs` and `client/src/api/ws.ts` in sync for all message variants.
+- Keep REST and WS representations aligned for channels, messages, and voice presence.
+- If protocol changes are required, update both sides in one change and call out migration impact.
+
+## Change Management and Safety
+
+- Never commit secrets (`.env`, tokens, credentials, API keys).
+- Keep commits scoped and descriptive to a single concern.
+- Preserve unrelated user changes in dirty working trees.
+- Update docs and examples when introducing new commands, env vars, or config knobs.
+
+## Deployment-Sensitive Changes
+
+- Deployment and networking checklist lives in `docs/deploy.md`.
+- If adding production config values (CORS/media/TURN/ICE), update all of:
   - `server/src/config.rs`
   - `server/.env.example`
   - `server/config.toml.example`

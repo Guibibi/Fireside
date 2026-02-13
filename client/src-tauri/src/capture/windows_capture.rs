@@ -4,9 +4,14 @@ use std::collections::HashMap;
 #[cfg(target_os = "windows")]
 use std::ffi::c_void;
 #[cfg(target_os = "windows")]
+use std::sync::atomic::{AtomicU64, Ordering};
+#[cfg(target_os = "windows")]
+use std::sync::mpsc::TrySendError;
+use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
+#[cfg(target_os = "windows")]
 use std::sync::{Mutex, OnceLock};
 #[cfg(target_os = "windows")]
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri::Window;
 
 #[cfg(target_os = "windows")]
@@ -47,6 +52,143 @@ pub struct NativeCaptureSource {
 #[derive(Debug, Clone)]
 pub struct NativeCaptureStartRequest {
     pub source_id: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct NativeFramePacket {
+    pub source_id: String,
+    pub width: u32,
+    pub height: u32,
+    pub timestamp_ms: u64,
+    pub pixel_format: String,
+    pub bgra_len: Option<usize>,
+    pub bgra: Option<Vec<u8>>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct NativeFrameDispatchStats {
+    pub queued_frames: u64,
+    pub dropped_full: u64,
+    pub dropped_disconnected: u64,
+}
+
+#[cfg(target_os = "windows")]
+#[derive(Debug, Default)]
+struct NativeFrameDispatchStatsAtomic {
+    queued_frames: AtomicU64,
+    dropped_full: AtomicU64,
+    dropped_disconnected: AtomicU64,
+}
+
+#[cfg(target_os = "windows")]
+fn frame_dispatch_stats() -> &'static NativeFrameDispatchStatsAtomic {
+    static STATS: OnceLock<NativeFrameDispatchStatsAtomic> = OnceLock::new();
+    STATS.get_or_init(NativeFrameDispatchStatsAtomic::default)
+}
+
+#[cfg(target_os = "windows")]
+fn frame_sink() -> &'static Mutex<Option<SyncSender<NativeFramePacket>>> {
+    static SINK: OnceLock<Mutex<Option<SyncSender<NativeFramePacket>>>> = OnceLock::new();
+    SINK.get_or_init(|| Mutex::new(None))
+}
+
+#[cfg(target_os = "windows")]
+fn unix_timestamp_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+#[cfg(target_os = "windows")]
+fn dispatch_frame(packet: NativeFramePacket) {
+    let sender = {
+        let Ok(sink) = frame_sink().lock() else {
+            return;
+        };
+        sink.as_ref().cloned()
+    };
+
+    let Some(sender) = sender else {
+        return;
+    };
+
+    let stats = frame_dispatch_stats();
+    match sender.try_send(packet) {
+        Ok(()) => {
+            stats.queued_frames.fetch_add(1, Ordering::Relaxed);
+        }
+        Err(TrySendError::Full(_)) => {
+            stats.dropped_full.fetch_add(1, Ordering::Relaxed);
+        }
+        Err(TrySendError::Disconnected(_)) => {
+            stats.dropped_disconnected.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+pub fn install_frame_sink(sender: SyncSender<NativeFramePacket>) -> Result<(), String> {
+    let mut sink = frame_sink()
+        .lock()
+        .map_err(|_| "Native capture frame sink lock was poisoned".to_string())?;
+    *sink = Some(sender);
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+pub fn clear_frame_sink() -> Result<(), String> {
+    let mut sink = frame_sink()
+        .lock()
+        .map_err(|_| "Native capture frame sink lock was poisoned".to_string())?;
+    *sink = None;
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+pub fn reset_frame_dispatch_stats() {
+    let stats = frame_dispatch_stats();
+    stats.queued_frames.store(0, Ordering::Relaxed);
+    stats.dropped_full.store(0, Ordering::Relaxed);
+    stats.dropped_disconnected.store(0, Ordering::Relaxed);
+}
+
+#[cfg(target_os = "windows")]
+pub fn read_frame_dispatch_stats() -> NativeFrameDispatchStats {
+    let stats = frame_dispatch_stats();
+    NativeFrameDispatchStats {
+        queued_frames: stats.queued_frames.load(Ordering::Relaxed),
+        dropped_full: stats.dropped_full.load(Ordering::Relaxed),
+        dropped_disconnected: stats.dropped_disconnected.load(Ordering::Relaxed),
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn install_frame_sink(_sender: SyncSender<NativeFramePacket>) -> Result<(), String> {
+    Err("Native capture frame sink is supported on Windows only.".to_string())
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn clear_frame_sink() -> Result<(), String> {
+    Ok(())
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn reset_frame_dispatch_stats() {}
+
+#[cfg(not(target_os = "windows"))]
+pub fn read_frame_dispatch_stats() -> NativeFrameDispatchStats {
+    NativeFrameDispatchStats {
+        queued_frames: 0,
+        dropped_full: 0,
+        dropped_disconnected: 0,
+    }
+}
+
+pub fn create_frame_channel(
+    capacity: usize,
+) -> (SyncSender<NativeFramePacket>, Receiver<NativeFramePacket>) {
+    sync_channel(capacity)
 }
 
 #[cfg(target_os = "windows")]
@@ -148,6 +290,44 @@ impl GraphicsCaptureApiHandler for NativeFrameHandler {
         _capture_control: InternalCaptureControl,
     ) -> Result<(), Self::Error> {
         self.frame_count = self.frame_count.saturating_add(1);
+
+        let (bgra, bgra_len) = match frame.buffer() {
+            Ok(mut buffer) => match buffer.as_nopadding_buffer() {
+                Ok(bytes) => {
+                    let copied = bytes.to_vec();
+                    let len = copied.len();
+                    (Some(copied), Some(len))
+                }
+                Err(error) => {
+                    emit_event(NativeCaptureEvent {
+                        kind: NativeCaptureEventKind::Error,
+                        source_id: Some(self.source_id.clone()),
+                        detail: Some(format!(
+                            "Failed to map native frame buffer without padding: {error}"
+                        )),
+                    });
+                    (None, None)
+                }
+            },
+            Err(error) => {
+                emit_event(NativeCaptureEvent {
+                    kind: NativeCaptureEventKind::Error,
+                    source_id: Some(self.source_id.clone()),
+                    detail: Some(format!("Failed to map native frame buffer: {error}")),
+                });
+                (None, None)
+            }
+        };
+
+        dispatch_frame(NativeFramePacket {
+            source_id: self.source_id.clone(),
+            width: frame.width(),
+            height: frame.height(),
+            timestamp_ms: unix_timestamp_ms(),
+            pixel_format: "bgra8".to_string(),
+            bgra_len,
+            bgra,
+        });
 
         let now = Instant::now();
         let elapsed = now.saturating_duration_since(self.last_report);

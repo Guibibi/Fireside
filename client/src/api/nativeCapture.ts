@@ -25,6 +25,31 @@ export interface NativeCaptureStatus {
   resolution: "720p" | "1080p" | "1440p" | "4k" | null;
   fps: 30 | 60 | null;
   bitrate_kbps: number | null;
+  native_sender: {
+    worker_active: boolean;
+    source_id: string | null;
+    queue_capacity: number;
+    target_fps: 30 | 60 | null;
+    target_bitrate_kbps: number | null;
+    worker_started_at_ms: number | null;
+    received_packets: number;
+    processed_packets: number;
+    dropped_full: number;
+    dropped_disconnected: number;
+    worker_disconnect_events: number;
+    encoded_frames: number;
+    encoded_bytes: number;
+    rtp_packets_sent: number;
+    rtp_send_errors: number;
+    encode_errors: number;
+    dropped_missing_bgra: number;
+    rtp_target: string | null;
+    estimated_queue_depth: number;
+    last_frame_width: number | null;
+    last_frame_height: number | null;
+    last_frame_timestamp_ms: number | null;
+    last_encode_latency_ms: number | null;
+  };
 }
 
 export async function listNativeCaptureSources(): Promise<NativeCaptureSource[]> {
