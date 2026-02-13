@@ -2,7 +2,7 @@
 
 ## Session Handoff (Current Status)
 
-- Current position: inside Phase 9 (Windows-capture crate implementation track).
+- Current position: entering Phase 9.5 (native frame events -> encoder/RTP sender wiring).
 - Completed in this session:
   - Tauri pre-share modal with source + quality controls.
   - Persisted screen-share preferences (resolution/fps/bitrate/source kind).
@@ -12,11 +12,19 @@
   - Tauri native capture service scaffolding (`start_native_capture` / `stop_native_capture` / `native_capture_status`).
   - Windows-gated capture adapter module and typed frontend bridge methods.
   - Screen-share flow now attempts native-capture arm/disarm on Tauri, with automatic fallback to browser capture.
+  - Replaced Windows adapter scaffolding with real `windows-capture` integration:
+    - source enumeration for `screen`, `window`, and `application`
+    - stable source IDs (`screen:*`, `window:*`, `application:*`)
+    - real capture start/stop with single active session ownership
+    - BGRA frame format selection (`ColorFormat::Bgra8`)
+    - structured runtime events (`started`, periodic `frame`, `source_lost`, `stopped`, `error`)
+  - Added Windows-only dependency pin in Tauri crate (`windows-capture = 1.5.0`).
   - Validation passed: `npm --prefix client run typecheck`, `npm --prefix client run build`, `cargo check --manifest-path client/src-tauri/Cargo.toml`.
 - Important limitation right now:
-  - Final capture still goes through `getDisplayMedia` (OS/WebRTC permission/picker still involved).
+  - Native frame events are currently telemetry/log events only and are not yet consumed by a Rust encoder/RTP sender worker.
+  - Final published video still goes through `getDisplayMedia` (OS/WebRTC permission/picker still involved).
 - Next implementation target:
-  - Phase 9.5: bridge native frame events into a real Rust-side encoder/RTP sender path (current start/stop commands are lifecycle scaffolding only).
+  - Phase 9.5: wire native frame events into a Rust-side encoder/RTP sender path (H264 first) and preserve hard fallback to browser capture on failure.
 
 ### Next Session Focus (Phase 9.5)
 
@@ -25,6 +33,14 @@
 - Connect encoded output to the mediasoup-compatible producer flow (no server protocol changes in this step).
 - Add structured telemetry logs for frame receive rate, encode latency, dropped frames, and current target bitrate.
 - Keep hard fallback behavior: if native sender init/encode fails at any point, tear down native pipeline and continue with existing browser capture path.
+
+### Suggested First Tasks For Next Session
+
+- Add an in-process channel from `windows_capture` frame callback -> native sender worker (bounded queue with drop counters).
+- Define a `NativeFramePacket` struct (source_id, width, height, timestamp, BGRA bytes/handle metadata).
+- Extend `NativeCaptureService` state to hold sender worker lifecycle and health metrics.
+- Implement sender worker bootstrap/teardown through `start_native_capture` / `stop_native_capture`.
+- Expose status metrics in `native_capture_status` for UI/debug visibility.
 
 ## Goal
 

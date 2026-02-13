@@ -146,6 +146,7 @@ pub fn start_native_capture(
                 && active.resolution == resolution
                 && active.fps == fps
                 && active.bitrate_kbps == bitrate_kbps
+                && windows_capture::is_capture_active_for(normalized)?
             {
                 drop(active_session);
                 return service.current_status();
