@@ -24,6 +24,33 @@ pub trait VideoEncoderBackend: Send {
     fn request_keyframe(&mut self) -> bool;
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NativeCodecTarget {
+    H264,
+    Vp8,
+    Vp9,
+    Av1,
+}
+
+impl NativeCodecTarget {
+    pub fn from_mime_type(mime_type: &str) -> Option<Self> {
+        if mime_type.eq_ignore_ascii_case("video/h264") {
+            return Some(Self::H264);
+        }
+        if mime_type.eq_ignore_ascii_case("video/vp8") {
+            return Some(Self::Vp8);
+        }
+        if mime_type.eq_ignore_ascii_case("video/vp9") {
+            return Some(Self::Vp9);
+        }
+        if mime_type.eq_ignore_ascii_case("video/av1") {
+            return Some(Self::Av1);
+        }
+
+        None
+    }
+}
+
 pub struct EncoderBackendSelection {
     pub requested_backend: &'static str,
     pub selected_backend: &'static str,
@@ -116,6 +143,28 @@ pub fn create_encoder_backend(
             fallback_reason: None,
         },
     ))
+}
+
+pub fn create_encoder_backend_for_codec(
+    codec: NativeCodecTarget,
+    target_fps: Option<u32>,
+    target_bitrate_kbps: Option<u32>,
+    preference_override: Option<&str>,
+) -> Result<(Box<dyn VideoEncoderBackend>, EncoderBackendSelection), String> {
+    match codec {
+        NativeCodecTarget::H264 => {
+            create_encoder_backend(target_fps, target_bitrate_kbps, preference_override)
+        }
+        NativeCodecTarget::Vp8 => Err(
+            "native_sender_encoder_not_available: VP8 encoder backend not implemented".to_string(),
+        ),
+        NativeCodecTarget::Vp9 => Err(
+            "native_sender_encoder_not_available: VP9 encoder backend not implemented".to_string(),
+        ),
+        NativeCodecTarget::Av1 => Err(
+            "native_sender_encoder_not_available: AV1 encoder backend not implemented".to_string(),
+        ),
+    }
 }
 
 pub struct OpenH264EncoderBackend {

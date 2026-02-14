@@ -102,6 +102,137 @@ const NATIVE_H264_CLOCK_RATE: u32 = 90_000;
 const NATIVE_H264_PT: u8 = 96;
 const NATIVE_H264_PACKETIZATION_MODE: u8 = 1;
 const NATIVE_H264_PROFILE_LEVEL_ID: &str = "42e01f";
+const NATIVE_VP8_CLOCK_RATE: u32 = 90_000;
+const NATIVE_VP8_PT: u8 = 98;
+const NATIVE_VP9_CLOCK_RATE: u32 = 90_000;
+const NATIVE_VP9_PT: u8 = 100;
+const NATIVE_AV1_CLOCK_RATE: u32 = 90_000;
+const NATIVE_AV1_PT: u8 = 102;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NativeCodecReadiness {
+    Ready,
+    Planned,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct NativeCodecDescriptor {
+    pub mime_type: String,
+    pub clock_rate: u32,
+    pub payload_type: u8,
+    pub packetization_mode: Option<u8>,
+    pub profile_level_id: Option<String>,
+    pub readiness: NativeCodecReadiness,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum NativeVideoCodec {
+    H264,
+    Vp8,
+    Vp9,
+    Av1,
+}
+
+impl NativeVideoCodec {
+    fn from_mime_type(value: &str) -> Option<Self> {
+        if value.eq_ignore_ascii_case("video/h264") {
+            return Some(Self::H264);
+        }
+        if value.eq_ignore_ascii_case("video/vp8") {
+            return Some(Self::Vp8);
+        }
+        if value.eq_ignore_ascii_case("video/vp9") {
+            return Some(Self::Vp9);
+        }
+        if value.eq_ignore_ascii_case("video/av1") {
+            return Some(Self::Av1);
+        }
+
+        None
+    }
+
+    fn from_preference_list(preferred_codecs: Option<&[String]>) -> Self {
+        let Some(preferred_codecs) = preferred_codecs else {
+            return Self::H264;
+        };
+
+        preferred_codecs
+            .iter()
+            .find_map(|codec| {
+                let parsed = Self::from_mime_type(codec)?;
+                if parsed.readiness() == NativeCodecReadiness::Ready {
+                    return Some(parsed);
+                }
+
+                None
+            })
+            .unwrap_or(Self::H264)
+    }
+
+    fn all_for_advertisement() -> [Self; 4] {
+        [Self::H264, Self::Vp8, Self::Vp9, Self::Av1]
+    }
+
+    fn mime_type(self) -> &'static str {
+        match self {
+            Self::H264 => "video/H264",
+            Self::Vp8 => "video/VP8",
+            Self::Vp9 => "video/VP9",
+            Self::Av1 => "video/AV1",
+        }
+    }
+
+    fn payload_type(self) -> u8 {
+        match self {
+            Self::H264 => NATIVE_H264_PT,
+            Self::Vp8 => NATIVE_VP8_PT,
+            Self::Vp9 => NATIVE_VP9_PT,
+            Self::Av1 => NATIVE_AV1_PT,
+        }
+    }
+
+    fn clock_rate(self) -> u32 {
+        match self {
+            Self::H264 => NATIVE_H264_CLOCK_RATE,
+            Self::Vp8 => NATIVE_VP8_CLOCK_RATE,
+            Self::Vp9 => NATIVE_VP9_CLOCK_RATE,
+            Self::Av1 => NATIVE_AV1_CLOCK_RATE,
+        }
+    }
+
+    fn packetization_mode(self) -> Option<u8> {
+        match self {
+            Self::H264 => Some(NATIVE_H264_PACKETIZATION_MODE),
+            Self::Vp8 | Self::Vp9 | Self::Av1 => None,
+        }
+    }
+
+    fn profile_level_id(self) -> Option<&'static str> {
+        match self {
+            Self::H264 => Some(NATIVE_H264_PROFILE_LEVEL_ID),
+            Self::Vp8 | Self::Vp9 | Self::Av1 => None,
+        }
+    }
+
+    fn readiness(self) -> NativeCodecReadiness {
+        match self {
+            Self::H264 => NativeCodecReadiness::Ready,
+            Self::Vp8 | Self::Vp9 | Self::Av1 => NativeCodecReadiness::Planned,
+        }
+    }
+
+    fn descriptor(self) -> NativeCodecDescriptor {
+        NativeCodecDescriptor {
+            mime_type: self.mime_type().to_string(),
+            clock_rate: self.clock_rate(),
+            payload_type: self.payload_type(),
+            packetization_mode: self.packetization_mode(),
+            profile_level_id: self.profile_level_id().map(str::to_string),
+            readiness: self.readiness(),
+        }
+    }
+}
 
 #[derive(Debug, Clone, Serialize)]
 pub struct NativeSenderSession {
@@ -116,6 +247,8 @@ pub struct NativeSenderSession {
     pub clock_rate: u32,
     pub packetization_mode: u8,
     pub profile_level_id: String,
+    pub codec: NativeCodecDescriptor,
+    pub available_codecs: Vec<NativeCodecDescriptor>,
     pub owner_connection_id: Uuid,
 }
 
@@ -128,19 +261,32 @@ fn canonical_native_ssrc(connection_id: Uuid) -> u32 {
     seed
 }
 
-fn native_h264_parameters(ssrc: u32) -> RtpParameters {
+fn native_rtp_parameters(codec: NativeVideoCodec, ssrc: u32) -> RtpParameters {
     let mut parameters = RtpCodecParametersParameters::default();
-    parameters
-        .insert("level-asymmetry-allowed", 1_u32)
-        .insert("packetization-mode", NATIVE_H264_PACKETIZATION_MODE as u32)
-        .insert("profile-level-id", NATIVE_H264_PROFILE_LEVEL_ID);
+    if let Some(packetization_mode) = codec.packetization_mode() {
+        parameters.insert("packetization-mode", packetization_mode as u32);
+    }
+    if let Some(profile_level_id) = codec.profile_level_id() {
+        parameters
+            .insert("level-asymmetry-allowed", 1_u32)
+            .insert("profile-level-id", profile_level_id);
+    }
+
+    let mime_type = match codec {
+        NativeVideoCodec::H264 => MimeTypeVideo::H264,
+        NativeVideoCodec::Vp8 => MimeTypeVideo::Vp8,
+        NativeVideoCodec::Vp9 => MimeTypeVideo::Vp9,
+        NativeVideoCodec::Av1 => MimeTypeVideo::AV1,
+    };
+    let payload_type = codec.payload_type();
+    let clock_rate = codec.clock_rate();
 
     RtpParameters {
         mid: Some("native-screen".to_string()),
         codecs: vec![RtpCodecParameters::Video {
-            mime_type: MimeTypeVideo::H264,
-            payload_type: NATIVE_H264_PT,
-            clock_rate: NATIVE_H264_CLOCK_RATE.try_into().unwrap(),
+            mime_type,
+            payload_type,
+            clock_rate: clock_rate.try_into().unwrap(),
             parameters,
             rtcp_feedback: vec![RtcpFeedback::NackPli, RtcpFeedback::CcmFir],
         }],
@@ -148,7 +294,7 @@ fn native_h264_parameters(ssrc: u32) -> RtpParameters {
         encodings: vec![RtpEncodingParameters {
             ssrc: Some(ssrc),
             rid: None,
-            codec_payload_type: Some(NATIVE_H264_PT),
+            codec_payload_type: Some(payload_type),
             rtx: None,
             dtx: None,
             scalability_mode: Default::default(),
@@ -400,6 +546,7 @@ impl MediaService {
         &self,
         connection_id: Uuid,
         channel_id: Uuid,
+        preferred_codecs: Option<Vec<String>>,
     ) -> Result<NativeSenderSession, String> {
         {
             let media_state_lock = self.connection_media();
@@ -436,11 +583,13 @@ impl MediaService {
         let tuple = plain_transport.tuple();
         let rtp_target = self.native_rtp_target_for_port(tuple.local_port());
         let ssrc = canonical_native_ssrc(connection_id);
+        let codec = NativeVideoCodec::from_preference_list(preferred_codecs.as_deref());
+        let codec_descriptor = codec.descriptor();
 
         let producer = plain_transport
             .produce(ProducerOptions::new(
                 MediaKind::Video,
-                native_h264_parameters(ssrc),
+                native_rtp_parameters(codec, ssrc),
             ))
             .await
             .map_err(|error| format!("Failed to create native sender producer: {error}"))?;
@@ -485,12 +634,22 @@ impl MediaService {
             source: ProducerSource::Screen.as_str().to_string(),
             routing_mode: RoutingMode::Sfu.as_str().to_string(),
             rtp_target,
-            payload_type: NATIVE_H264_PT,
+            payload_type: codec_descriptor.payload_type,
             ssrc,
-            mime_type: "video/H264".to_string(),
-            clock_rate: NATIVE_H264_CLOCK_RATE,
-            packetization_mode: NATIVE_H264_PACKETIZATION_MODE,
-            profile_level_id: NATIVE_H264_PROFILE_LEVEL_ID.to_string(),
+            mime_type: codec_descriptor.mime_type.clone(),
+            clock_rate: codec_descriptor.clock_rate,
+            packetization_mode: codec_descriptor
+                .packetization_mode
+                .unwrap_or(NATIVE_H264_PACKETIZATION_MODE),
+            profile_level_id: codec_descriptor
+                .profile_level_id
+                .clone()
+                .unwrap_or_else(|| NATIVE_H264_PROFILE_LEVEL_ID.to_string()),
+            codec: codec_descriptor,
+            available_codecs: NativeVideoCodec::all_for_advertisement()
+                .iter()
+                .map(|codec| codec.descriptor())
+                .collect(),
             owner_connection_id: connection_id,
         })
     }

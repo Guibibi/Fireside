@@ -22,6 +22,9 @@ This file consolidates active execution plans.
 - [x] Windows manual verification pass completed.
 - [x] Performance hardening and threshold tuning completed.
 - [x] NVENC-backed native path wired with fallback policy.
+- [x] Native sender session signaling now carries additive codec negotiation fields (`codec`, `available_codecs`) with backwards-compatible H264 defaults.
+- [x] Native RTP packetizer abstraction now supports codec-specific packetizers (H264 + VP8 wiring), while keeping H264 as the active default path.
+- [x] Codec catalog/negotiation scaffolding now advertises VP9/AV1 as `planned` and keeps selection constrained to runtime-ready codecs.
 - [ ] Codec expansion complete (VP8/VP9/AV1 native packetizer paths as desired).
 - [ ] Native sender codec negotiation generalized beyond fixed H264 profile.
 

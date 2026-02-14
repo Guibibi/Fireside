@@ -95,6 +95,26 @@ interface MediaSignalPayload {
   rtp_target?: string;
   payload_type?: number;
   ssrc?: number;
+  mime_type?: string;
+  clock_rate?: number;
+  packetization_mode?: number;
+  profile_level_id?: string;
+  codec?: {
+    mime_type?: string;
+    clock_rate?: number;
+    payload_type?: number;
+    packetization_mode?: number;
+    profile_level_id?: string;
+    readiness?: "ready" | "planned" | string;
+  };
+  available_codecs?: Array<{
+    mime_type?: string;
+    clock_rate?: number;
+    payload_type?: number;
+    packetization_mode?: number;
+    profile_level_id?: string;
+    readiness?: "ready" | "planned" | string;
+  }>;
 }
 
 interface PendingRequest {
@@ -841,6 +861,7 @@ async function readNativeSenderBackendStatus(): Promise<{
 
 async function armNativeCapture(
   options: ScreenShareStartOptions,
+  codecMimeType: string,
   rtpTarget: string,
   payloadType: number,
   ssrc: number,
@@ -851,6 +872,7 @@ async function armNativeCapture(
     fps: options.fps,
     bitrate_kbps: options.bitrateKbps,
     encoder_backend: options.encoderBackend,
+    codec_mime_type: codecMimeType,
     rtp_target: rtpTarget,
     payload_type: payloadType,
     ssrc,
@@ -1424,7 +1446,9 @@ async function startNativeScreenProducer(
   channelId: string,
   options: ScreenShareStartOptions,
 ): Promise<CameraActionResult> {
-  const response = await requestMediaSignal(channelId, "create_native_sender_session");
+  const response = await requestMediaSignal(channelId, "create_native_sender_session", {
+    preferred_codecs: ["video/AV1", "video/VP9", "video/VP8", "video/H264"],
+  });
   if (
     response.action !== "native_sender_session_created"
     || !response.producer_id
@@ -1453,8 +1477,48 @@ async function startNativeScreenProducer(
     throw new Error(`Native sender negotiation failed: invalid RTP SSRC (${response.ssrc}).`);
   }
 
+  const negotiatedMimeType = response.codec?.mime_type ?? response.mime_type;
+  if (typeof negotiatedMimeType !== "string" || negotiatedMimeType.trim().length === 0) {
+    reportNativeSenderDiagnostic(
+      channelId,
+      "native_sender_codec_missing",
+      "negotiated codec mime type missing",
+    );
+    throw new Error("Native sender negotiation failed: codec metadata missing.");
+  }
+
+  if (negotiatedMimeType.toLowerCase() !== "video/h264") {
+    reportNativeSenderDiagnostic(
+      channelId,
+      "native_sender_unsupported_codec",
+      `mime_type=${negotiatedMimeType}`,
+    );
+    throw new Error(`Native sender negotiation failed: unsupported codec (${negotiatedMimeType}).`);
+  }
+
+  const advertisedCodecSummary = Array.isArray(response.available_codecs)
+    ? response.available_codecs
+      .map((codec) => {
+        const mimeType = typeof codec.mime_type === "string" ? codec.mime_type : "unknown";
+        const readiness = typeof codec.readiness === "string" ? codec.readiness : "unknown";
+        return `${mimeType}:${readiness}`;
+      })
+      .join(",")
+    : "none";
+  reportNativeSenderDiagnostic(
+    channelId,
+    "native_sender_codec_catalog",
+    `selected=${negotiatedMimeType};available=${advertisedCodecSummary}`,
+  );
+
   try {
-    await armNativeCapture(options, response.rtp_target, response.payload_type, response.ssrc);
+    await armNativeCapture(
+      options,
+      negotiatedMimeType,
+      response.rtp_target,
+      response.payload_type,
+      response.ssrc,
+    );
     const backendStatus = await readNativeSenderBackendStatus();
     reportNativeSenderDiagnostic(
       channelId,

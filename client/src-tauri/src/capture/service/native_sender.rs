@@ -6,9 +6,13 @@ use std::time::Duration;
 
 use crate::capture::windows_capture::{self, NativeFramePacket};
 
-use super::encoder_backend::{create_encoder_backend, create_openh264_backend};
+use super::encoder_backend::{
+    create_encoder_backend_for_codec, create_openh264_backend, NativeCodecTarget,
+};
 use super::metrics::NativeSenderSharedMetrics;
-use super::rtp_packetizer::{H264RtpPacketizer, RtpPacketizer};
+use super::rtp_packetizer::{
+    Av1RtpPacketizer, H264RtpPacketizer, RtpPacketizer, Vp8RtpPacketizer, Vp9RtpPacketizer,
+};
 
 const FAILURE_WINDOW_MS: u64 = 12_000;
 const ENCODE_FAILURE_THRESHOLD: u64 = 18;
@@ -31,6 +35,50 @@ const LEVEL3_BITRATE_DENOMINATOR_DEFAULT: u32 = 10;
 const DEFAULT_TARGET_BITRATE_KBPS: u32 = 8_000;
 const MIN_DEGRADED_BITRATE_KBPS: u32 = 1_200;
 const NVENC_RUNTIME_FALLBACK_ENCODE_FAILURES_DEFAULT: u64 = 12;
+
+fn create_packetizer_for_codec(
+    mime_type: &str,
+    target_rtp: Option<String>,
+    payload_type: u8,
+    ssrc: u32,
+) -> Result<Box<dyn RtpPacketizer>, String> {
+    if mime_type.eq_ignore_ascii_case("video/h264") {
+        return Ok(Box::new(H264RtpPacketizer::new(
+            target_rtp,
+            payload_type,
+            ssrc,
+        )));
+    }
+
+    if mime_type.eq_ignore_ascii_case("video/vp8") {
+        return Ok(Box::new(Vp8RtpPacketizer::new(
+            target_rtp,
+            payload_type,
+            ssrc,
+        )));
+    }
+
+    if mime_type.eq_ignore_ascii_case("video/vp9") {
+        return Ok(Box::new(Vp9RtpPacketizer::new(
+            target_rtp,
+            payload_type,
+            ssrc,
+        )));
+    }
+
+    if mime_type.eq_ignore_ascii_case("video/av1") {
+        return Ok(Box::new(Av1RtpPacketizer::new(
+            target_rtp,
+            payload_type,
+            ssrc,
+        )));
+    }
+
+    Err(format!(
+        "Unsupported native RTP packetizer codec: {}",
+        mime_type
+    ))
+}
 
 #[derive(Debug, Clone)]
 struct DegradationTuning {
@@ -162,6 +210,7 @@ pub struct NativeSenderRuntimeConfig {
     pub target_fps: Option<u32>,
     pub target_bitrate_kbps: Option<u32>,
     pub encoder_backend_preference: Option<String>,
+    pub codec_mime_type: Option<String>,
     pub target_rtp: Option<String>,
     pub payload_type: u8,
     pub ssrc: u32,
@@ -467,7 +516,14 @@ pub fn run_native_sender_worker(
     stop_signal: Arc<std::sync::atomic::AtomicBool>,
     shared: Arc<NativeSenderSharedMetrics>,
 ) {
-    let (mut encoder, encoder_selection) = match create_encoder_backend(
+    let codec_target = config
+        .codec_mime_type
+        .as_deref()
+        .and_then(NativeCodecTarget::from_mime_type)
+        .unwrap_or(NativeCodecTarget::H264);
+
+    let (mut encoder, encoder_selection) = match create_encoder_backend_for_codec(
+        codec_target,
         config.target_fps,
         config.target_bitrate_kbps,
         config.encoder_backend_preference.as_deref(),
@@ -482,17 +538,34 @@ pub fn run_native_sender_worker(
                     .unwrap_or("auto"),
             );
             shared.set_encoder_backend_fallback_reason(Some(error.as_str()));
+            if codec_target != NativeCodecTarget::H264 {
+                shared.set_recent_fallback_reason(Some("native_sender_codec_not_ready"));
+            }
             trigger_native_fallback("encoder_init_failed", &config.source_id, &shared);
             stop_signal.store(true, Ordering::Relaxed);
             return;
         }
     };
     let codec = encoder.codec_descriptor();
-    let mut packetizer: Box<dyn RtpPacketizer> = Box::new(H264RtpPacketizer::new(
+    let mut packetizer = match create_packetizer_for_codec(
+        codec.mime_type,
         config.target_rtp.clone(),
         config.payload_type,
         config.ssrc,
-    ));
+    ) {
+        Ok(packetizer) => packetizer,
+        Err(error) => {
+            shared.encode_errors.fetch_add(1, Ordering::Relaxed);
+            shared.set_recent_fallback_reason(Some("unsupported_packetizer_codec"));
+            eprintln!(
+                "[native-sender] event=packetizer_init_failed source={} codec={} detail={}",
+                config.source_id, codec.mime_type, error,
+            );
+            trigger_native_fallback("unsupported_packetizer_codec", &config.source_id, &shared);
+            stop_signal.store(true, Ordering::Relaxed);
+            return;
+        }
+    };
     let now_ms = unix_timestamp_ms();
     let degradation_tuning = DegradationTuning::from_env();
 
@@ -625,9 +698,9 @@ pub fn run_native_sender_worker(
                     .store(encode_height as u64, Ordering::Relaxed);
 
                 let encode_start_ms = unix_timestamp_ms();
-                let encoded_nals =
+                let encoded_frames =
                     encoder.encode_frame(encode_input, encode_width, encode_height, &shared);
-                let Some(nals) = encoded_nals else {
+                let Some(frames) = encoded_frames else {
                     consecutive_encode_failures = consecutive_encode_failures.saturating_add(1);
                     if active_encoder_backend == "nvenc"
                         && encoder_selection.requested_backend == "auto"
@@ -652,7 +725,7 @@ pub fn run_native_sender_worker(
                 };
                 consecutive_encode_failures = 0;
 
-                let encoded_bytes: usize = nals.iter().map(|nal| nal.len()).sum();
+                let encoded_bytes: usize = frames.iter().map(|frame| frame.len()).sum();
                 let bitrate_cap_kbps = degradation_state
                     .bitrate_cap_kbps(config.target_bitrate_kbps, &degradation_tuning);
                 if !bitrate_limiter.allow(encoded_bytes, encode_start_ms, bitrate_cap_kbps) {
@@ -665,20 +738,29 @@ pub fn run_native_sender_worker(
                     .encoded_bytes
                     .fetch_add(encoded_bytes as u64, Ordering::Relaxed);
 
-                let rtp_packets = packetizer.send_nalus(&nals, packet.timestamp_ms);
+                let rtp_packets = packetizer.send_encoded_frames(&frames, packet.timestamp_ms);
                 shared
                     .rtp_packets_sent
                     .fetch_add(rtp_packets as u64, Ordering::Relaxed);
                 if rtp_packets == 0 {
                     shared.dropped_during_send.fetch_add(1, Ordering::Relaxed);
                 }
-                if packetizer.take_and_reset_error() {
+                if let Some(error_reason) = packetizer.take_and_reset_error_reason() {
                     shared.rtp_send_errors.fetch_add(1, Ordering::Relaxed);
                     shared.dropped_during_send.fetch_add(1, Ordering::Relaxed);
                     eprintln!(
-                        "[native-sender] event=transport_error source={} detail=udp_send_failed",
-                        config.source_id,
+                        "[native-sender] event=transport_error source={} detail={}",
+                        config.source_id, error_reason,
                     );
+                    if error_reason.starts_with("packetizer_not_implemented_") {
+                        trigger_native_fallback(
+                            "native_sender_packetizer_not_implemented",
+                            &config.source_id,
+                            &shared,
+                        );
+                        stop_signal.store(true, Ordering::Relaxed);
+                        break;
+                    }
                 }
 
                 let encode_latency_ms = unix_timestamp_ms().saturating_sub(encode_start_ms);

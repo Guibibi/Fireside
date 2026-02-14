@@ -20,7 +20,9 @@ Goals:
 
 - Native sender publishes H264 baseline (`profile-level-id=42e01f`, `packetization-mode=1`).
 - Payload type and SSRC are negotiated by server and passed to Tauri sender.
-- RTP packetizer is currently H264-only.
+- Native sender session signaling now includes additive codec metadata (`codec`, `available_codecs`).
+- Codec catalog advertises readiness status (`ready` vs `planned`) for negotiation safety.
+- RTP packetizer abstraction includes H264 and VP8 paths, plus explicit VP9/AV1 scaffold packetizers that fail fast with diagnostics until implemented.
 
 ### Current Scaffolding Switches
 

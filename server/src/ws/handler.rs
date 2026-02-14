@@ -65,6 +65,7 @@ enum MediaSignalRequest {
     },
     CreateNativeSenderSession {
         request_id: Option<String>,
+        preferred_codecs: Option<Vec<String>>,
     },
     ClientDiagnostic {
         request_id: Option<String>,
@@ -1074,10 +1075,17 @@ async fn handle_media_signal_message(
                 }
             }
         }
-        MediaSignalRequest::CreateNativeSenderSession { request_id } => {
+        MediaSignalRequest::CreateNativeSenderSession {
+            request_id,
+            preferred_codecs,
+        } => {
             match state
                 .media
-                .create_native_sender_session_for_connection(connection_id, channel_id)
+                .create_native_sender_session_for_connection(
+                    connection_id,
+                    channel_id,
+                    preferred_codecs,
+                )
                 .await
             {
                 Ok(session) => {
@@ -1099,6 +1107,8 @@ async fn handle_media_signal_message(
                                 "clock_rate": session.clock_rate,
                                 "packetization_mode": session.packetization_mode,
                                 "profile_level_id": session.profile_level_id,
+                                "codec": session.codec,
+                                "available_codecs": session.available_codecs,
                             }),
                         },
                     );
@@ -1163,7 +1173,7 @@ fn request_id_for(request: &MediaSignalRequest) -> Option<String> {
         | MediaSignalRequest::MediaConsume { request_id, .. }
         | MediaSignalRequest::MediaResumeConsumer { request_id, .. }
         | MediaSignalRequest::MediaCloseProducer { request_id, .. }
-        | MediaSignalRequest::CreateNativeSenderSession { request_id }
+        | MediaSignalRequest::CreateNativeSenderSession { request_id, .. }
         | MediaSignalRequest::ClientDiagnostic { request_id, .. } => request_id.clone(),
     }
 }
