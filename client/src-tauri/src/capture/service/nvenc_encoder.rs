@@ -8,6 +8,7 @@ use super::metrics::NativeSenderSharedMetrics;
 #[cfg(all(target_os = "windows", feature = "native-nvenc"))]
 mod imp {
     use std::io::{BufRead, BufReader, Read, Write};
+    use std::path::PathBuf;
     use std::process::{Child, ChildStdin, Command, Stdio};
     use std::sync::atomic::Ordering;
     use std::sync::mpsc::{self, Receiver, TryRecvError};
@@ -100,11 +101,7 @@ mod imp {
 
     impl NvencEncoderBackend {
         fn new(target_fps: Option<u32>, target_bitrate_kbps: Option<u32>) -> Result<Self, String> {
-            let ffmpeg_bin = std::env::var("YANKCORD_NATIVE_NVENC_FFMPEG_PATH")
-                .ok()
-                .map(|value| value.trim().to_string())
-                .filter(|value| !value.is_empty())
-                .unwrap_or_else(|| DEFAULT_FFMPEG_BIN.to_string());
+            let ffmpeg_bin = resolve_ffmpeg_bin();
 
             let preset = std::env::var("YANKCORD_NATIVE_NVENC_PRESET")
                 .ok()
@@ -275,6 +272,43 @@ mod imp {
         }
 
         Ok(())
+    }
+
+    fn resolve_ffmpeg_bin() -> String {
+        if let Some(configured) = std::env::var("YANKCORD_NATIVE_NVENC_FFMPEG_PATH")
+            .ok()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+        {
+            return configured;
+        }
+
+        for candidate in bundled_ffmpeg_candidates() {
+            if candidate.is_file() {
+                return candidate.to_string_lossy().to_string();
+            }
+        }
+
+        DEFAULT_FFMPEG_BIN.to_string()
+    }
+
+    fn bundled_ffmpeg_candidates() -> Vec<PathBuf> {
+        let mut candidates = Vec::new();
+
+        if let Ok(current_exe) = std::env::current_exe() {
+            if let Some(exe_dir) = current_exe.parent() {
+                candidates.push(exe_dir.join("ffmpeg.exe"));
+                candidates.push(exe_dir.join("resources").join("ffmpeg.exe"));
+            }
+        }
+
+        candidates.push(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("bin")
+                .join("ffmpeg.exe"),
+        );
+
+        candidates
     }
 
     fn spawn_nvenc_process(
