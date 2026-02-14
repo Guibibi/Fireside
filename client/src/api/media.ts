@@ -1,5 +1,6 @@
 import { Device } from "mediasoup-client";
 import type { Consumer, Producer, Transport } from "mediasoup-client/types";
+import type { ProducerOptions } from "mediasoup-client/types";
 import { onMessage, send } from "./ws";
 import { nativeCaptureStatus, startNativeCapture, stopNativeCapture } from "./nativeCapture";
 import {
@@ -164,6 +165,9 @@ interface QueuedProducerAnnouncement {
 type SinkableAudioElement = HTMLAudioElement & {
   setSinkId?: (sinkId: string) => Promise<void>;
 };
+
+type ProduceOptions = ProducerOptions;
+type ProduceCodec = NonNullable<ProducerOptions["codec"]>;
 
 let device: Device | null = null;
 let sendTransport: Transport | null = null;
@@ -995,6 +999,50 @@ function screenContentHintFor(options: ScreenShareStartOptions): "motion" | "det
   return "detail";
 }
 
+function isWindowsPlatform(): boolean {
+  if (typeof navigator === "undefined") {
+    return false;
+  }
+
+  const userAgentData = (navigator as Navigator & { userAgentData?: { platform?: string } }).userAgentData;
+  const platform = userAgentData?.platform ?? navigator.platform ?? "";
+  return platform.toLowerCase().includes("win");
+}
+
+function codecMimeType(codec: unknown): string | null {
+  if (!isObject(codec)) {
+    return null;
+  }
+
+  const mimeType = codec.mimeType;
+  return typeof mimeType === "string" && mimeType.length > 0 ? mimeType : null;
+}
+
+function selectScreenShareCodecForPlatform(): ProduceCodec | undefined {
+  if (!isWindowsPlatform() || !device) {
+    return undefined;
+  }
+
+  const codecs = device.rtpCapabilities.codecs;
+  if (!Array.isArray(codecs) || codecs.length === 0) {
+    console.debug("[media] No router codecs available for screen share preference");
+    return undefined;
+  }
+
+  const preferredOrder = ["video/av1", "video/vp9", "video/h264"];
+  for (const preferredMimeType of preferredOrder) {
+    const match = codecs.find((codec) => codecMimeType(codec)?.toLowerCase() === preferredMimeType);
+    if (match) {
+      const selectedMimeType = codecMimeType(match) ?? preferredMimeType;
+      console.debug("[media] Selected screen share codec", { mimeType: selectedMimeType, platform: "windows" });
+      return match as ProduceCodec;
+    }
+  }
+
+  console.debug("[media] No preferred Windows screen codec available; using runtime default");
+  return undefined;
+}
+
 function isMissingDeviceError(error: unknown): boolean {
   if (!(error instanceof DOMException)) {
     return false;
@@ -1259,7 +1307,7 @@ async function startBrowserScreenProducer(
       }
     }
 
-    const produceOptions: Parameters<Transport["produce"]>[0] = {
+    const produceOptions: ProduceOptions = {
       track: nextTrack,
       stopTracks: false,
       appData: {
@@ -1267,6 +1315,11 @@ async function startBrowserScreenProducer(
         routingMode: "sfu",
       },
     };
+
+    const preferredCodec = selectScreenShareCodecForPlatform();
+    if (preferredCodec) {
+      produceOptions.codec = preferredCodec;
+    }
 
     if (options) {
       produceOptions.encodings = [{

@@ -82,5 +82,5 @@ Goal: make voice/video behavior predictable under reconnects, signaling failures
   - [ ] Mic unplug/replug recovers without a full app restart.
   - [ ] Camera unplug/replug or track end recovers without stale local tile.
 
-- [ ] `PHASE3_PLAN.md`
+- [ ] `PLAN-EXECUTION.md`
   - [x] Mark 3.6 checklist items with final pass/fail status.

@@ -52,5 +52,12 @@ pub fn media_codecs() -> Vec<RtpCodecCapability> {
             parameters: RtpCodecParametersParameters::default(),
             rtcp_feedback: video_rtcp_feedback(),
         },
+        RtpCodecCapability::Video {
+            mime_type: MimeTypeVideo::AV1,
+            preferred_payload_type: None,
+            clock_rate: 90000.try_into().unwrap(),
+            parameters: RtpCodecParametersParameters::default(),
+            rtcp_feedback: video_rtcp_feedback(),
+        },
     ]
 }

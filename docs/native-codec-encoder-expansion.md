@@ -10,6 +10,12 @@ Goals:
 - Roll out hardware acceleration incrementally, with NVENC first.
 - Keep protocol changes additive and synchronized between server and client.
 
+## Screen-Share Codec Support (Current)
+
+- Router video codec capabilities include `VP8`, `H264`, `VP9`, and `AV1`.
+- Browser screen-share publish path applies Windows preference order `AV1 -> VP9 -> H264`, with runtime-default fallback when preferred codecs are unavailable.
+- `H265/HEVC` remains intentionally unsupported in the current stack.
+
 ## Current Baseline
 
 - Native sender publishes H264 baseline (`profile-level-id=42e01f`, `packetization-mode=1`).
