@@ -38,6 +38,7 @@ struct ActiveCaptureSession {
     fps: Option<u32>,
     bitrate_kbps: Option<u32>,
     encoder_backend: Option<String>,
+    codec_mime_type: Option<String>,
 }
 
 #[derive(Debug)]
@@ -66,6 +67,7 @@ pub struct StartNativeCaptureRequest {
     pub fps: Option<u32>,
     pub bitrate_kbps: Option<u32>,
     pub encoder_backend: Option<String>,
+    pub codec_mime_type: Option<String>,
     pub rtp_target: Option<String>,
     pub payload_type: Option<u8>,
     pub ssrc: Option<u32>,
@@ -310,6 +312,7 @@ impl NativeCaptureService {
         fps: Option<u32>,
         bitrate_kbps: Option<u32>,
         encoder_backend: Option<String>,
+        codec_mime_type: Option<String>,
         rtp_target: Option<String>,
         payload_type: u8,
         ssrc: u32,
@@ -331,6 +334,7 @@ impl NativeCaptureService {
         let worker_target_fps = fps;
         let worker_target_bitrate_kbps = bitrate_kbps;
         let worker_encoder_backend = encoder_backend.clone();
+        let worker_codec_mime_type = codec_mime_type.clone();
         let worker_target_rtp = target_rtp.clone();
         let handle = thread::Builder::new()
             .name("native-sender-worker".to_string())
@@ -341,6 +345,7 @@ impl NativeCaptureService {
                         target_fps: worker_target_fps,
                         target_bitrate_kbps: worker_target_bitrate_kbps,
                         encoder_backend_preference: worker_encoder_backend,
+                        codec_mime_type: worker_codec_mime_type,
                         target_rtp: worker_target_rtp,
                         payload_type,
                         ssrc,
@@ -433,6 +438,25 @@ fn normalize_encoder_backend(encoder_backend: Option<String>) -> Result<Option<S
     }
 }
 
+fn normalize_codec_mime_type(codec_mime_type: Option<String>) -> Result<Option<String>, String> {
+    let Some(value) = codec_mime_type else {
+        return Ok(None);
+    };
+
+    let normalized = value.trim().to_lowercase();
+    if normalized.is_empty() {
+        return Ok(None);
+    }
+
+    match normalized.as_str() {
+        "video/h264" | "video/vp8" | "video/vp9" | "video/av1" => Ok(Some(normalized)),
+        _ => Err(
+            "Unsupported native sender codec. Use video/H264, video/VP8, video/VP9, or video/AV1."
+                .to_string(),
+        ),
+    }
+}
+
 fn normalize_payload_type(payload_type: Option<u8>) -> Result<u8, String> {
     let value = payload_type.unwrap_or(96);
     if value > 127 {
@@ -471,6 +495,7 @@ pub fn start_native_capture(
     let fps = normalize_fps(request.fps)?;
     let bitrate_kbps = normalize_bitrate_kbps(request.bitrate_kbps)?;
     let encoder_backend = normalize_encoder_backend(request.encoder_backend)?;
+    let codec_mime_type = normalize_codec_mime_type(request.codec_mime_type)?;
     let payload_type = normalize_payload_type(request.payload_type)?;
     let ssrc = normalize_ssrc(request.ssrc)?;
 
@@ -497,6 +522,7 @@ pub fn start_native_capture(
             && active.fps == fps
             && active.bitrate_kbps == bitrate_kbps
             && active.encoder_backend == encoder_backend
+            && active.codec_mime_type == codec_mime_type
             && service.is_worker_active_for(normalized)?
             && windows_capture::is_capture_active_for(normalized)?
         {
@@ -521,6 +547,7 @@ pub fn start_native_capture(
         fps,
         bitrate_kbps,
         encoder_backend.clone(),
+        codec_mime_type.clone(),
         rtp_target,
         payload_type,
         ssrc,
@@ -548,6 +575,7 @@ pub fn start_native_capture(
         fps,
         bitrate_kbps,
         encoder_backend,
+        codec_mime_type,
     });
 
     drop(active_session);
