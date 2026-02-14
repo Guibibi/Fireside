@@ -1,0 +1,83 @@
+.PHONY: help dev build typecheck
+.PHONY: tauri-dev tauri-build tauri-build-release
+.PHONY: server-dev server-build server-fmt server-lint server-test
+.PHONY: db-up db-down db-logs
+
+# Default target
+help:
+	@echo "Yankcord Build Targets"
+	@echo ""
+	@echo "Client (Tauri):"
+	@echo "  tauri-dev            - Run Tauri in development mode"
+	@echo "  tauri-build          - Build Tauri app (debug)"
+	@echo "  tauri-build-release  - Build Tauri app (release, with native-nvenc on Windows)"
+	@echo ""
+	@echo "Client (Web):"
+	@echo "  dev                  - Run web dev server"
+	@echo "  build                - Build web client"
+	@echo "  typecheck            - Type-check TypeScript"
+	@echo ""
+	@echo "Server:"
+	@echo "  server-dev           - Run server in development mode"
+	@echo "  server-build         - Build server (release)"
+	@echo "  server-fmt           - Format server code"
+	@echo "  server-lint          - Lint server code"
+	@echo "  server-test          - Run server tests"
+	@echo ""
+	@echo "Database:"
+	@echo "  db-up                - Start PostgreSQL container"
+	@echo "  db-down              - Stop PostgreSQL container"
+	@echo "  db-logs              - Follow PostgreSQL logs"
+
+# Detect Windows for feature flags
+ifeq ($(OS),Windows_NT)
+    TAURI_FEATURES := --features native-nvenc
+else
+    TAURI_FEATURES :=
+endif
+
+# Client web targets
+dev:
+	npm --prefix client run dev
+
+build:
+	npm --prefix client run build
+
+typecheck:
+	npm --prefix client run typecheck
+
+# Tauri targets
+tauri-dev:
+	cd client && npm run tauri dev
+
+tauri-build:
+	cd client && npm run tauri build
+
+tauri-build-release:
+	cd client && npm run tauri build -- $(TAURI_FEATURES)
+
+# Server targets
+server-dev:
+	cargo run --manifest-path server/Cargo.toml
+
+server-build:
+	cargo build --release --manifest-path server/Cargo.toml
+
+server-fmt:
+	cargo fmt --all --manifest-path server/Cargo.toml
+
+server-lint:
+	cargo clippy --manifest-path server/Cargo.toml --all-targets -- -D warnings
+
+server-test:
+	cargo test --manifest-path server/Cargo.toml
+
+# Database targets (delegate to server/Makefile)
+db-up:
+	$(MAKE) -C server db-up
+
+db-down:
+	$(MAKE) -C server db-down
+
+db-logs:
+	$(MAKE) -C server db-logs
