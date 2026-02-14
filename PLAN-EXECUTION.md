@@ -33,9 +33,12 @@ This file consolidates active execution plans.
 
 1. Implement AV1 native encoder backend + RTP packetizer path. (completed)
 2. Add manual client screen-share codec selection (Auto/AV1/VP9/VP8/H264) and thread it through native + browser codec preference paths. (completed)
-3. Keep backwards compatibility: default to H264 when codec fields are absent.
-4. Keep web/browser flows unchanged.
+3. Keep backwards compatibility: default to H264 when codec fields are absent. (completed)
+4. Keep web/browser flows unchanged. (completed)
 5. Add client codec capability checks and disable unsupported manual codec selections in the native screen-share UI. (completed)
+6. Add strict-mode behavior for manual codec selection (optional): fail fast when selected codec is unavailable instead of silently falling back. (completed)
+7. Add lightweight telemetry tags for codec decision path (`codec_requested`, `codec_negotiated`, `codec_fallback_reason`). (completed)
+8. Decide readiness flip policy for server codec catalog (`VP9`/`AV1` remain `planned` until post-QA sign-off, then move to `ready` intentionally). (completed: `VP9` -> `ready`; `AV1` -> `ready` after QA sign-off)
 
 ### Validation
 
@@ -82,3 +85,7 @@ This file consolidates active execution plans.
 ## Track B Status
 
 - Phase 3 implementation and manual QA are complete.
+
+## Track A Status
+
+- Track A implementation milestones and codec readiness rollout are complete.

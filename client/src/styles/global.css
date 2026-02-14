@@ -566,6 +566,15 @@ input:focus {
   color: var(--overlay1);
 }
 
+.settings-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.74rem;
+  color: var(--subtext1);
+  font-weight: 600;
+}
+
 .voice-share-preview {
   width: 100%;
   min-height: 9rem;

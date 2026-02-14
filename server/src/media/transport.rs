@@ -217,8 +217,7 @@ impl NativeVideoCodec {
 
     fn readiness(self) -> NativeCodecReadiness {
         match self {
-            Self::H264 | Self::Vp8 => NativeCodecReadiness::Ready,
-            Self::Vp9 | Self::Av1 => NativeCodecReadiness::Planned,
+            Self::H264 | Self::Vp8 | Self::Vp9 | Self::Av1 => NativeCodecReadiness::Ready,
         }
     }
 

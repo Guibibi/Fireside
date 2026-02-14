@@ -153,6 +153,7 @@ export interface ScreenShareStartOptions {
   sourceKind: ScreenShareSourceKind;
   encoderBackend?: "auto" | "openh264" | "nvenc";
   codecPreference?: ScreenShareCodecPreference;
+  strictCodec?: boolean;
   sourceId?: string;
   sourceTitle?: string;
 }
@@ -1099,6 +1100,28 @@ function codecPreferenceMimeType(preference: ScreenShareCodecPreference): string
   return null;
 }
 
+function requestedCodecMimeType(preference: ScreenShareCodecPreference | undefined): string {
+  const preferredMimeType = codecPreferenceMimeType(preference ?? "auto");
+  return preferredMimeType ?? "auto";
+}
+
+function reportCodecDecision(
+  channelId: string,
+  codecRequested: string,
+  codecNegotiated: string,
+  codecFallbackReason: string,
+) {
+  reportNativeSenderDiagnostic(
+    channelId,
+    "screen_share_codec_decision",
+    `codec_requested=${codecRequested};codec_negotiated=${codecNegotiated};codec_fallback_reason=${codecFallbackReason}`,
+  );
+}
+
+function strictCodecModeEnabled(options?: ScreenShareStartOptions): boolean {
+  return options?.strictCodec === true && (options.codecPreference ?? "auto") !== "auto";
+}
+
 function preferredScreenShareCodecOrder(preference: ScreenShareCodecPreference): string[] {
   const baseOrder = ["video/av1", "video/vp9", "video/vp8", "video/h264"];
   const preferredMimeType = codecPreferenceMimeType(preference);
@@ -1435,7 +1458,23 @@ async function startBrowserScreenProducer(
       },
     };
 
-    const preferredCodec = selectScreenShareCodecForPlatform(options?.codecPreference ?? "auto");
+    const codecPreference = options?.codecPreference ?? "auto";
+    const preferredCodec = selectScreenShareCodecForPlatform(codecPreference);
+    const codecRequested = requestedCodecMimeType(codecPreference);
+    let codecNegotiated = preferredCodec
+      ? (codecMimeType(preferredCodec) ?? codecRequested)
+      : "runtime-default";
+    let codecFallbackReason = "none";
+    if (codecPreference !== "auto" && !preferredCodec) {
+      codecFallbackReason = "preferred_codec_unavailable";
+      if (strictCodecModeEnabled(options)) {
+        reportCodecDecision(channelId, codecRequested, codecNegotiated, "strict_unavailable");
+        throw new Error(`Strict codec mode: ${codecPreference.toUpperCase()} is unavailable for browser screen capture.`);
+      }
+    }
+
+    reportCodecDecision(channelId, codecRequested, codecNegotiated, codecFallbackReason);
+
     if (preferredCodec) {
       produceOptions.codec = preferredCodec;
     }
@@ -1516,65 +1555,80 @@ async function startNativeScreenProducer(
     throw new Error("Unexpected native sender setup response from server");
   }
 
-  if (!Number.isInteger(response.payload_type) || response.payload_type < 0 || response.payload_type > 127) {
-    reportNativeSenderDiagnostic(
-      channelId,
-      "native_sender_invalid_payload_type",
-      `payload_type=${String(response.payload_type)}`,
-    );
-    throw new Error(`Native sender negotiation failed: invalid RTP payload type (${response.payload_type}).`);
-  }
-
-  if (!Number.isInteger(response.ssrc) || response.ssrc <= 0 || response.ssrc > 0xFFFF_FFFF) {
-    reportNativeSenderDiagnostic(
-      channelId,
-      "native_sender_invalid_ssrc",
-      `ssrc=${String(response.ssrc)}`,
-    );
-    throw new Error(`Native sender negotiation failed: invalid RTP SSRC (${response.ssrc}).`);
-  }
-
-  const negotiatedMimeType = response.codec?.mime_type ?? response.mime_type;
-  if (typeof negotiatedMimeType !== "string" || negotiatedMimeType.trim().length === 0) {
-    reportNativeSenderDiagnostic(
-      channelId,
-      "native_sender_codec_missing",
-      "negotiated codec mime type missing",
-    );
-    throw new Error("Native sender negotiation failed: codec metadata missing.");
-  }
-
-  const negotiatedMimeTypeNormalized = negotiatedMimeType.toLowerCase();
-  if (
-    negotiatedMimeTypeNormalized !== "video/h264"
-    && negotiatedMimeTypeNormalized !== "video/vp8"
-    && negotiatedMimeTypeNormalized !== "video/vp9"
-    && negotiatedMimeTypeNormalized !== "video/av1"
-  ) {
-    reportNativeSenderDiagnostic(
-      channelId,
-      "native_sender_unsupported_codec",
-      `mime_type=${negotiatedMimeType}`,
-    );
-    throw new Error(`Native sender negotiation failed: unsupported codec (${negotiatedMimeType}).`);
-  }
-
-  const advertisedCodecSummary = Array.isArray(response.available_codecs)
-    ? response.available_codecs
-      .map((codec) => {
-        const mimeType = typeof codec.mime_type === "string" ? codec.mime_type : "unknown";
-        const readiness = typeof codec.readiness === "string" ? codec.readiness : "unknown";
-        return `${mimeType}:${readiness}`;
-      })
-      .join(",")
-    : "none";
-  reportNativeSenderDiagnostic(
-    channelId,
-    "native_sender_codec_catalog",
-    `selected=${negotiatedMimeType};available=${advertisedCodecSummary}`,
-  );
-
   try {
+    if (!Number.isInteger(response.payload_type) || response.payload_type < 0 || response.payload_type > 127) {
+      reportNativeSenderDiagnostic(
+        channelId,
+        "native_sender_invalid_payload_type",
+        `payload_type=${String(response.payload_type)}`,
+      );
+      throw new Error(`Native sender negotiation failed: invalid RTP payload type (${response.payload_type}).`);
+    }
+
+    if (!Number.isInteger(response.ssrc) || response.ssrc <= 0 || response.ssrc > 0xFFFF_FFFF) {
+      reportNativeSenderDiagnostic(
+        channelId,
+        "native_sender_invalid_ssrc",
+        `ssrc=${String(response.ssrc)}`,
+      );
+      throw new Error(`Native sender negotiation failed: invalid RTP SSRC (${response.ssrc}).`);
+    }
+
+    const negotiatedMimeType = response.codec?.mime_type ?? response.mime_type;
+    const codecRequested = requestedCodecMimeType(options.codecPreference);
+    if (typeof negotiatedMimeType !== "string" || negotiatedMimeType.trim().length === 0) {
+      reportCodecDecision(channelId, codecRequested, "unknown", "missing_codec_metadata");
+      reportNativeSenderDiagnostic(
+        channelId,
+        "native_sender_codec_missing",
+        "negotiated codec mime type missing",
+      );
+      throw new Error("Native sender negotiation failed: codec metadata missing.");
+    }
+
+    const negotiatedMimeTypeNormalized = negotiatedMimeType.toLowerCase();
+    if (
+      negotiatedMimeTypeNormalized !== "video/h264"
+      && negotiatedMimeTypeNormalized !== "video/vp8"
+      && negotiatedMimeTypeNormalized !== "video/vp9"
+      && negotiatedMimeTypeNormalized !== "video/av1"
+    ) {
+      reportCodecDecision(channelId, codecRequested, negotiatedMimeType, "unsupported_codec");
+      reportNativeSenderDiagnostic(
+        channelId,
+        "native_sender_unsupported_codec",
+        `mime_type=${negotiatedMimeType}`,
+      );
+      throw new Error(`Native sender negotiation failed: unsupported codec (${negotiatedMimeType}).`);
+    }
+
+    const strictMode = strictCodecModeEnabled(options);
+    const requestedManualMimeType = codecPreferenceMimeType(options.codecPreference ?? "auto");
+    const codecFallbackReason = requestedManualMimeType && requestedManualMimeType !== negotiatedMimeTypeNormalized
+      ? "server_negotiated_different_codec"
+      : "none";
+    reportCodecDecision(channelId, codecRequested, negotiatedMimeTypeNormalized, codecFallbackReason);
+    if (strictMode && codecFallbackReason !== "none") {
+      throw new Error(
+        `Strict codec mode: requested ${requestedManualMimeType?.toUpperCase()} but negotiated ${negotiatedMimeTypeNormalized.toUpperCase()}.`,
+      );
+    }
+
+    const advertisedCodecSummary = Array.isArray(response.available_codecs)
+      ? response.available_codecs
+        .map((codec) => {
+          const mimeType = typeof codec.mime_type === "string" ? codec.mime_type : "unknown";
+          const readiness = typeof codec.readiness === "string" ? codec.readiness : "unknown";
+          return `${mimeType}:${readiness}`;
+        })
+        .join(",")
+      : "none";
+    reportNativeSenderDiagnostic(
+      channelId,
+      "native_sender_codec_catalog",
+      `selected=${negotiatedMimeType};available=${advertisedCodecSummary}`,
+    );
+
     await armNativeCapture(
       options,
       negotiatedMimeType,
@@ -1683,6 +1737,12 @@ export async function startLocalScreenProducer(
         : "Native sender startup failed.";
       console.warn("[media] Native sender startup failed; falling back to browser capture", error);
       await disarmNativeCapture();
+    }
+
+    if (nativeStartErrorMessage?.startsWith("Strict codec mode:")) {
+      screenError = nativeStartErrorMessage;
+      notifyScreenStateSubscribers();
+      return { ok: false, error: nativeStartErrorMessage };
     }
 
     const browserFallbackResult = await startBrowserScreenProducer(channelId, options);

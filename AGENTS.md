@@ -87,6 +87,14 @@ Test/lint status (frontend TS):
   - `cargo test --manifest-path client/src-tauri/Cargo.toml`
 - If environment constraints block validation (DB unavailable, missing Linux libs), report exactly what could not run and why.
 
+## Manual QA Tracking Policy
+
+- Do not add new manual QA steps/checklists directly into planning docs (for example `PLAN-EXECUTION.md` or `PLAN.md`).
+- When manual human verification is needed, append it to `QA.md` instead.
+- Treat `QA.md` as the canonical backlog for human-run verification tasks.
+- Keep entries concise and actionable (feature area, scenario, expected result).
+- If a manual QA item is completed by a human, mark it done in `QA.md` rather than modifying plan milestones to include manual test details.
+
 ## Code Style: Cross-Cutting
 
 - Match local style and existing patterns before introducing new abstractions.

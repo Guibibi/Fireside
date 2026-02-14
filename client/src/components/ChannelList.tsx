@@ -39,6 +39,7 @@ import {
   savePreferredScreenShareCustomBitrateKbps,
   savePreferredScreenShareEncoderBackend,
   savePreferredScreenShareCodecPreference,
+  savePreferredScreenShareCodecStrictMode,
   savePreferredScreenShareFps,
   savePreferredScreenShareResolution,
   savePreferredScreenShareSourceKind,
@@ -49,6 +50,7 @@ import {
   type ScreenShareResolution,
   preferredScreenShareEncoderBackend,
   preferredScreenShareCodecPreference,
+  preferredScreenShareCodecStrictMode,
 } from "../stores/settings";
 import { isTauriRuntime } from "../utils/platform";
 import {
@@ -356,6 +358,7 @@ export default function ChannelList() {
       sourceKind,
       encoderBackend: preferredScreenShareEncoderBackend(),
       codecPreference: preferredScreenShareCodecPreference(),
+      strictCodec: preferredScreenShareCodecStrictMode(),
       sourceId: selected?.id,
       sourceTitle: selected?.title,
     };
@@ -924,6 +927,11 @@ export default function ChannelList() {
     }
   }
 
+  function handleScreenShareCodecStrictModeInput(event: Event) {
+    const checked = (event.currentTarget as HTMLInputElement).checked;
+    savePreferredScreenShareCodecStrictMode(checked);
+  }
+
   const sortedChannels = () => [...channels()].sort((a, b) => a.position - b.position);
   const connectedVoiceChannelName = () => {
     const connectedChannelId = joinedVoiceChannelId();
@@ -1414,6 +1422,17 @@ export default function ChannelList() {
                   <Show when={!supportsSelectedCodecPreference()}>
                     <p class="voice-dock-error">Selected codec is unavailable on this client. Pick a different codec or Auto.</p>
                   </Show>
+
+                  <label class="settings-checkbox" for="voice-share-codec-strict-mode">
+                    <input
+                      id="voice-share-codec-strict-mode"
+                      type="checkbox"
+                      checked={preferredScreenShareCodecStrictMode()}
+                      onInput={handleScreenShareCodecStrictModeInput}
+                    />
+                    Strict codec mode (no codec fallback)
+                  </label>
+                  <p class="settings-help">When enabled, manual codec selection fails if the requested codec cannot be negotiated.</p>
 
                   <p class="settings-help">Estimated target bitrate: {effectiveScreenShareBitrateLabel()}</p>
 

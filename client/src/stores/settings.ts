@@ -11,6 +11,7 @@ const SCREEN_SHARE_CUSTOM_BITRATE_KEY = "yankcord_screen_share_custom_bitrate_kb
 const SCREEN_SHARE_SOURCE_KIND_KEY = "yankcord_screen_share_source_kind";
 const SCREEN_SHARE_ENCODER_BACKEND_KEY = "yankcord_screen_share_encoder_backend";
 const SCREEN_SHARE_CODEC_PREFERENCE_KEY = "yankcord_screen_share_codec_preference";
+const SCREEN_SHARE_CODEC_STRICT_MODE_KEY = "yankcord_screen_share_codec_strict_mode";
 
 export type ScreenShareResolution = "720p" | "1080p" | "1440p" | "4k";
 export type ScreenShareFps = 30 | 60;
@@ -83,6 +84,11 @@ function readScreenShareCodecPreference(): ScreenShareCodecPreference {
   return "auto";
 }
 
+function readScreenShareCodecStrictMode(): boolean {
+  const value = localStorage.getItem(SCREEN_SHARE_CODEC_STRICT_MODE_KEY);
+  return value === "1";
+}
+
 const [preferredAudioInputDeviceId, setPreferredAudioInputDeviceId] = createSignal<string | null>(
   localStorage.getItem(AUDIO_INPUT_KEY),
 );
@@ -127,6 +133,10 @@ const [preferredScreenShareCodecPreference, setPreferredScreenShareCodecPreferen
   readScreenShareCodecPreference(),
 );
 
+const [preferredScreenShareCodecStrictMode, setPreferredScreenShareCodecStrictMode] = createSignal<boolean>(
+  readScreenShareCodecStrictMode(),
+);
+
 export {
   preferredAudioInputDeviceId,
   preferredAudioOutputDeviceId,
@@ -139,6 +149,7 @@ export {
   preferredScreenShareSourceKind,
   preferredScreenShareEncoderBackend,
   preferredScreenShareCodecPreference,
+  preferredScreenShareCodecStrictMode,
 };
 
 export function savePreferredAudioInputDeviceId(deviceId: string | null) {
@@ -215,6 +226,16 @@ export function savePreferredScreenShareEncoderBackend(backend: ScreenShareEncod
 export function savePreferredScreenShareCodecPreference(preference: ScreenShareCodecPreference) {
   localStorage.setItem(SCREEN_SHARE_CODEC_PREFERENCE_KEY, preference);
   setPreferredScreenShareCodecPreference(preference);
+}
+
+export function savePreferredScreenShareCodecStrictMode(strictMode: boolean) {
+  if (strictMode) {
+    localStorage.setItem(SCREEN_SHARE_CODEC_STRICT_MODE_KEY, "1");
+  } else {
+    localStorage.removeItem(SCREEN_SHARE_CODEC_STRICT_MODE_KEY);
+  }
+
+  setPreferredScreenShareCodecStrictMode(strictMode);
 }
 
 export function resetAudioPreferences() {
