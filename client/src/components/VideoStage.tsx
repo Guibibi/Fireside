@@ -40,8 +40,8 @@ export default function VideoStage() {
   const hasVideo = () => cameraEnabled() || screenShareEnabled() || videoTiles().length > 0;
 
   return (
-    <section class="video-stage" aria-label="Video stage">
-      <Show when={hasVideo()} fallback={<p class="video-stage-empty">No active video</p>}>
+    <Show when={hasVideo()}>
+      <section class="video-stage" aria-label="Video stage">
         <div class="video-stage-grid">
           <Show when={cameraEnabled() && localVideoStream()}>
             {(stream) => (
@@ -72,7 +72,7 @@ export default function VideoStage() {
             )}
           </For>
         </div>
-      </Show>
-    </section>
+      </section>
+    </Show>
   );
 }
