@@ -566,6 +566,26 @@ input:focus {
   color: var(--overlay1);
 }
 
+.voice-share-preview {
+  width: 100%;
+  min-height: 9rem;
+  border-radius: 8px;
+  border: 1px solid var(--surface1);
+  background: var(--surface0);
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  padding: 0.55rem;
+}
+
+.voice-share-preview-video {
+  width: 100%;
+  max-height: 12.5rem;
+  border-radius: 6px;
+  object-fit: contain;
+  background: #000;
+}
+
 .settings-avatar-preview {
   width: 4rem;
   height: 4rem;

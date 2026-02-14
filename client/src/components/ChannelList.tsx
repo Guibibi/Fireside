@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createSignal, onCleanup, onMount } from "solid-js";
+import { For, Show, createEffect, createSignal, onCleanup, onMount, untrack } from "solid-js";
 import { del, get, post } from "../api/http";
 import {
   cleanupMediaTransports,
@@ -101,6 +101,8 @@ export default function ChannelList() {
   const [nativeSourcesError, setNativeSourcesError] = createSignal("");
   const [nativeSources, setNativeSources] = createSignal<NativeCaptureSource[]>([]);
   const [selectedNativeSourceId, setSelectedNativeSourceId] = createSignal<string | null>(null);
+  const [screenSharePreviewStream, setScreenSharePreviewStream] = createSignal<MediaStream | null>(null);
+  const [screenSharePreviewError, setScreenSharePreviewError] = createSignal("");
   const [nativeSenderMetrics, setNativeSenderMetrics] = createSignal<NativeCaptureStatus["native_sender"] | null>(null);
   const [pulsingByChannel, setPulsingByChannel] = createSignal<Record<string, boolean>>({});
   const pulseTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -110,6 +112,73 @@ export default function ChannelList() {
     || window.localStorage.getItem("yankcord_debug_native_sender") === "1"
   );
   let toastTimer: ReturnType<typeof setTimeout> | null = null;
+  let screenSharePreviewVideoRef: HTMLVideoElement | undefined;
+
+  function selectedScreenShareSourceKind(): "screen" | "window" | "application" {
+    const selected = nativeSources().find((source) => source.id === selectedNativeSourceId()) ?? null;
+    if (selected) {
+      return selected.kind === "screen" ? "screen" : selected.kind === "application" ? "application" : "window";
+    }
+
+    return preferredScreenShareSourceKind();
+  }
+
+  function stopScreenSharePreview() {
+    const stream = screenSharePreviewStream();
+    if (stream) {
+      stream.getTracks().forEach((track) => track.stop());
+      setScreenSharePreviewStream(null);
+    }
+
+    setScreenSharePreviewError("");
+  }
+
+  function previewResolutionConstraints() {
+    const resolution = preferredScreenShareResolution();
+    if (resolution === "720p") {
+      return { width: { ideal: 1280 }, height: { ideal: 720 } };
+    }
+    if (resolution === "1080p") {
+      return { width: { ideal: 1920 }, height: { ideal: 1080 } };
+    }
+    if (resolution === "1440p") {
+      return { width: { ideal: 2560 }, height: { ideal: 1440 } };
+    }
+
+    return { width: { ideal: 3840 }, height: { ideal: 2160 } };
+  }
+
+  async function startScreenSharePreview() {
+    setScreenSharePreviewError("");
+    stopScreenSharePreview();
+
+    const sourceKind = selectedScreenShareSourceKind();
+    const displaySurface = sourceKind === "screen" ? "monitor" : "window";
+
+    try {
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: {
+          ...previewResolutionConstraints(),
+          frameRate: { ideal: preferredScreenShareFps(), max: preferredScreenShareFps() },
+          displaySurface,
+        },
+        audio: false,
+      });
+
+      const [track] = stream.getVideoTracks();
+      if (track) {
+        track.addEventListener("ended", () => {
+          if (screenSharePreviewStream() === stream) {
+            stopScreenSharePreview();
+          }
+        });
+      }
+
+      setScreenSharePreviewStream(stream);
+    } catch (error) {
+      setScreenSharePreviewError(error instanceof Error ? error.message : "Failed to start preview");
+    }
+  }
 
   function autoBitrateKbps(resolution: ScreenShareResolution, fps: ScreenShareFps): number {
     const at60 = fps >= 60;
@@ -265,6 +334,11 @@ export default function ChannelList() {
     }, 3500);
   }
 
+  function closeScreenShareModal() {
+    stopScreenSharePreview();
+    setScreenShareModalOpen(false);
+  }
+
   function ensureValidActiveChannel(nextChannels: Channel[]) {
     const selected = activeChannelId();
     const selectedStillExists = selected ? nextChannels.some((channel) => channel.id === selected) : false;
@@ -359,7 +433,7 @@ export default function ChannelList() {
 
     const result = await startScreenShareWithOptions(channelId, buildScreenShareOptions());
     if (result.ok) {
-      setScreenShareModalOpen(false);
+      closeScreenShareModal();
     }
   }
 
@@ -635,6 +709,7 @@ export default function ChannelList() {
       unsubscribe();
       unsubscribeClose();
       stopConnectionStatusSubscription();
+      stopScreenSharePreview();
     });
   });
 
@@ -755,8 +830,37 @@ export default function ChannelList() {
 
   createEffect(() => {
     if (!joinedVoiceChannelId()) {
-      setScreenShareModalOpen(false);
+      closeScreenShareModal();
     }
+  });
+
+  createEffect(() => {
+    if (!screenShareModalOpen()) {
+      stopScreenSharePreview();
+    }
+  });
+
+  createEffect(() => {
+    const stream = screenSharePreviewStream();
+    if (!screenSharePreviewVideoRef) {
+      return;
+    }
+
+    if (!stream) {
+      screenSharePreviewVideoRef.srcObject = null;
+      return;
+    }
+
+    screenSharePreviewVideoRef.srcObject = stream;
+    screenSharePreviewVideoRef.muted = true;
+    screenSharePreviewVideoRef.playsInline = true;
+    void screenSharePreviewVideoRef.play().catch(() => undefined);
+  });
+
+  createEffect(() => {
+    selectedNativeSourceId();
+    preferredScreenShareSourceKind();
+    untrack(() => stopScreenSharePreview());
   });
 
   createEffect(() => {
@@ -1007,7 +1111,7 @@ export default function ChannelList() {
             <div
               class="settings-modal-backdrop voice-share-modal-backdrop"
               role="presentation"
-              onClick={() => setScreenShareModalOpen(false)}
+              onClick={closeScreenShareModal}
             >
               <section
                 class="settings-modal voice-share-modal"
@@ -1021,7 +1125,7 @@ export default function ChannelList() {
                   <button
                     type="button"
                     class="settings-close"
-                    onClick={() => setScreenShareModalOpen(false)}
+                    onClick={closeScreenShareModal}
                     aria-label="Close share menu"
                   >
                     x
@@ -1073,6 +1177,27 @@ export default function ChannelList() {
                   <p class="settings-help">
                     Source selection is native in Tauri. Confirm the same source in the OS share prompt if shown.
                   </p>
+
+                  <label class="settings-label" for="voice-share-preview-video">Preview</label>
+                  <div class="voice-share-preview" role="status" aria-live="polite">
+                    <Show
+                      when={screenSharePreviewStream()}
+                      fallback={<p class="settings-help">Preview is off. Use Preview source to verify what will be shared.</p>}
+                    >
+                      <video
+                        id="voice-share-preview-video"
+                        ref={screenSharePreviewVideoRef}
+                        class="voice-share-preview-video"
+                        autoplay
+                        muted
+                        playsinline
+                      />
+                    </Show>
+                  </div>
+
+                  <Show when={screenSharePreviewError()}>
+                    <p class="voice-dock-error">{screenSharePreviewError()}</p>
+                  </Show>
 
                   <h5>Quality</h5>
                   <label class="settings-label" for="voice-share-resolution">Resolution</label>
@@ -1140,7 +1265,22 @@ export default function ChannelList() {
                     <button
                       type="button"
                       class="settings-secondary"
-                      onClick={() => setScreenShareModalOpen(false)}
+                      onClick={() => void startScreenSharePreview()}
+                    >
+                      Preview source
+                    </button>
+                    <button
+                      type="button"
+                      class="settings-secondary"
+                      onClick={stopScreenSharePreview}
+                      disabled={!screenSharePreviewStream()}
+                    >
+                      Stop preview
+                    </button>
+                    <button
+                      type="button"
+                      class="settings-secondary"
+                      onClick={closeScreenShareModal}
                     >
                       Cancel
                     </button>
