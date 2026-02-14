@@ -84,13 +84,6 @@ impl EncoderPreference {
         }
     }
 
-    fn from_env() -> Self {
-        let raw = std::env::var("YANKCORD_NATIVE_ENCODER_BACKEND")
-            .ok()
-            .unwrap_or_default();
-        Self::from_label(&raw)
-    }
-
     fn as_label(&self) -> &'static str {
         match self {
             Self::Auto => "auto",
@@ -107,7 +100,7 @@ pub fn create_encoder_backend(
 ) -> Result<(Box<dyn VideoEncoderBackend>, EncoderBackendSelection), String> {
     let preference = preference_override
         .map(EncoderPreference::from_label)
-        .unwrap_or_else(EncoderPreference::from_env);
+        .unwrap_or(EncoderPreference::Auto);
     let requested_backend = preference.as_label();
 
     if preference != EncoderPreference::OpenH264 {
@@ -166,7 +159,7 @@ pub fn create_encoder_backend_for_codec(
                 EncoderBackendSelection {
                     requested_backend: preference_override
                         .map(EncoderPreference::from_label)
-                        .unwrap_or_else(EncoderPreference::from_env)
+                        .unwrap_or(EncoderPreference::Auto)
                         .as_label(),
                     selected_backend: "ffmpeg-vp8",
                     fallback_reason: None,
@@ -181,7 +174,7 @@ pub fn create_encoder_backend_for_codec(
                 EncoderBackendSelection {
                     requested_backend: preference_override
                         .map(EncoderPreference::from_label)
-                        .unwrap_or_else(EncoderPreference::from_env)
+                        .unwrap_or(EncoderPreference::Auto)
                         .as_label(),
                     selected_backend: "ffmpeg-vp9",
                     fallback_reason: None,
@@ -196,7 +189,7 @@ pub fn create_encoder_backend_for_codec(
                 EncoderBackendSelection {
                     requested_backend: preference_override
                         .map(EncoderPreference::from_label)
-                        .unwrap_or_else(EncoderPreference::from_env)
+                        .unwrap_or(EncoderPreference::Auto)
                         .as_label(),
                     selected_backend: "ffmpeg-av1",
                     fallback_reason: None,
