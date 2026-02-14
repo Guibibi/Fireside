@@ -18,6 +18,7 @@ use crate::AppState;
 #[derive(Deserialize)]
 pub struct CreateChannelRequest {
     pub name: String,
+    pub description: Option<String>,
     pub kind: ChannelKind,
 }
 
@@ -104,6 +105,19 @@ async fn create_channel(
         ));
     }
 
+    let trimmed_description = body.description.as_deref().map(str::trim);
+    let description = match trimmed_description {
+        Some(value) if !value.is_empty() => {
+            if value.chars().count() > 280 {
+                return Err(AppError::BadRequest(
+                    "Channel description must be 280 characters or fewer".into(),
+                ));
+            }
+            Some(value)
+        }
+        _ => None,
+    };
+
     let (max_pos,): (i32,) = sqlx::query_as("SELECT COALESCE(MAX(position), -1) FROM channels")
         .fetch_one(&state.db)
         .await?;
@@ -115,10 +129,11 @@ async fn create_channel(
     };
 
     let channel: Channel = sqlx::query_as(
-        "INSERT INTO channels (id, name, kind, position) VALUES ($1, $2, $3::channel_kind, $4) RETURNING *",
+        "INSERT INTO channels (id, name, description, kind, position) VALUES ($1, $2, $3, $4::channel_kind, $5) RETURNING *",
     )
     .bind(Uuid::new_v4())
     .bind(trimmed_name)
+    .bind(description)
     .bind(kind_str)
     .bind(position)
     .fetch_one(&state.db)

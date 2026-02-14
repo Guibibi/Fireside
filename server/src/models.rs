@@ -14,6 +14,7 @@ pub enum ChannelKind {
 pub struct Channel {
     pub id: Uuid,
     pub name: String,
+    pub description: Option<String>,
     pub kind: ChannelKind,
     pub position: i32,
     pub created_at: DateTime<Utc>,

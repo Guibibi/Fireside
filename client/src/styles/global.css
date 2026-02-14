@@ -131,6 +131,83 @@ input:focus {
   gap: 0.25rem;
 }
 
+.channel-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.channel-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.channel-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.45rem;
+}
+
+.channel-group-heading {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--overlay1);
+}
+
+.channel-group-add {
+  min-width: 1rem;
+  height: 1rem;
+  padding: 0;
+  background: transparent;
+  color: var(--overlay1);
+  border: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.channel-group-add:hover:not(:disabled) {
+  color: var(--text);
+  opacity: 1;
+}
+
+.channel-group-add:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.channel-group-add:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+.channel-group-add-icon {
+  width: 0.9rem;
+  height: 0.9rem;
+}
+
+.channel-create-modal-backdrop {
+  z-index: 1180;
+}
+
+.channel-create-modal {
+  width: min(26rem, calc(100vw - 2rem));
+}
+
+.channel-create-form {
+  gap: 0.5rem;
+}
+
+.channel-group-empty {
+  font-size: 0.76rem;
+  color: var(--overlay0);
+  font-style: italic;
+  padding: 0 0.45rem;
+}
+
 .channel-item {
   width: 100%;
   display: flex;
@@ -623,6 +700,16 @@ input:focus {
   color: var(--text);
 }
 
+.settings-danger {
+  background: color-mix(in srgb, var(--red) 18%, var(--surface1));
+  color: color-mix(in srgb, var(--red) 76%, var(--text));
+  border: 1px solid color-mix(in srgb, var(--red) 38%, transparent);
+}
+
+.settings-danger:hover {
+  background: color-mix(in srgb, var(--red) 24%, var(--surface1));
+}
+
 .settings-audio-row {
   display: grid;
   gap: 0.25rem;
@@ -659,18 +746,37 @@ input:focus {
   min-width: 0;
 }
 
-.chat-actions {
-  display: flex;
-  justify-content: flex-end;
-  padding: 0.75rem 1rem;
-  border-bottom: 1px solid var(--surface0);
-}
-
 .message-area {
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
+}
+
+.message-area-header {
+  padding: 0.8rem 1rem 0.7rem;
+  border-bottom: 1px solid var(--surface0);
+  background: linear-gradient(to bottom, color-mix(in srgb, var(--base) 94%, black 6%), var(--base));
+}
+
+.message-area-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.message-area-prefix {
+  color: var(--overlay1);
+  font-weight: 600;
+}
+
+.message-area-description {
+  margin-top: 0.18rem;
+  font-size: 0.8rem;
+  color: var(--subtext0);
 }
 
 .messages {

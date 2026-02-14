@@ -2,7 +2,7 @@ import { For, Show, createEffect, createResource, createSignal, onCleanup, onMou
 import { del, get, patch } from "../api/http";
 import { connect, onMessage, send } from "../api/ws";
 import { username } from "../stores/auth";
-import { activeChannelId } from "../stores/chat";
+import { activeChannelId, type Channel } from "../stores/chat";
 import VideoStage from "./VideoStage";
 
 interface ChannelMessage {
@@ -23,6 +23,14 @@ async function fetchMessages(channelId: string | null) {
   return get<ChannelMessage[]>(`/channels/${channelId}/messages`);
 }
 
+async function fetchActiveChannel(channelId: string | null) {
+  if (!channelId) {
+    return null;
+  }
+
+  return get<Channel>(`/channels/${channelId}`);
+}
+
 export default function MessageArea() {
   const [draft, setDraft] = createSignal("");
   const [wsError, setWsError] = createSignal("");
@@ -40,6 +48,7 @@ export default function MessageArea() {
   const typingExpiryTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   const [history] = createResource(activeChannelId, fetchMessages);
+  const [activeChannel] = createResource(activeChannelId, fetchActiveChannel);
 
   function clearTypingExpiryTimer(typingUsername: string) {
     const timer = typingExpiryTimers.get(typingUsername);
@@ -362,6 +371,19 @@ export default function MessageArea() {
 
   return (
     <div class="message-area">
+      <header class="message-area-header">
+        <Show when={activeChannel()} fallback={<p class="message-area-title">Select a channel</p>}>
+          <>
+            <p class="message-area-title">
+              <span class="message-area-prefix">{activeChannel()?.kind === "voice" ? "~" : "#"}</span>
+              <span>{activeChannel()?.name}</span>
+            </p>
+            <Show when={activeChannel()?.description?.trim()}>
+              <p class="message-area-description">{activeChannel()?.description}</p>
+            </Show>
+          </>
+        </Show>
+      </header>
       <div class="messages" ref={listRef}>
         <Show when={!history.loading} fallback={<p class="placeholder">Loading messages...</p>}>
           <Show

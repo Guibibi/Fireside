@@ -1,4 +1,5 @@
-import { Show, createEffect, createSignal, onCleanup } from "solid-js";
+import { Show, createSignal, onCleanup } from "solid-js";
+import { useNavigate } from "@solidjs/router";
 import { patch } from "../api/http";
 import {
   isSpeakerSelectionSupported,
@@ -14,13 +15,16 @@ import {
 } from "../api/media";
 import { connect, disconnect } from "../api/ws";
 import {
+  clearAuth,
   serverUrl,
   updateAuthIdentity,
   username as currentUsername,
 } from "../stores/auth";
+import { resetChatState } from "../stores/chat";
 import {
   clearVoiceRejoinNotice,
   joinedVoiceChannelId,
+  resetVoiceState,
   setJoinedVoiceChannel,
   setVoiceActionState,
   showVoiceRejoinNotice,
@@ -32,6 +36,7 @@ import {
   preferredCameraDeviceId,
   saveAvatarPlaceholderName,
 } from "../stores/settings";
+import Modal from "./Modal";
 
 interface UpdateCurrentUserResponse {
   token: string;
@@ -39,6 +44,7 @@ interface UpdateCurrentUserResponse {
 }
 
 export default function UserSettingsDock() {
+  const navigate = useNavigate();
   const [isOpen, setIsOpen] = createSignal(false);
   const [draftUsername, setDraftUsername] = createSignal(currentUsername() ?? "");
   const [profileError, setProfileError] = createSignal("");
@@ -209,22 +215,15 @@ export default function UserSettingsDock() {
     saveAvatarPlaceholderName(null);
   }
 
-  createEffect(() => {
-    if (!isOpen()) {
-      return;
-    }
-
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        closeSettings();
-      }
-    };
-
-    window.addEventListener("keydown", onKeyDown);
-    onCleanup(() => {
-      window.removeEventListener("keydown", onKeyDown);
-    });
-  });
+  function handleLogout() {
+    cleanupMediaTransports();
+    disconnect();
+    resetChatState();
+    resetVoiceState();
+    clearAuth();
+    closeSettings();
+    navigate("/connect");
+  }
 
   onCleanup(() => {
     const preview = avatarPreviewUrl();
@@ -258,19 +257,13 @@ export default function UserSettingsDock() {
         </button>
       </div>
 
-      <Show when={isOpen()}>
-        <div class="settings-modal-backdrop" onClick={closeSettings} role="presentation">
-          <section
-            class="settings-modal"
-            role="dialog"
-            aria-modal="true"
-            aria-label="User settings"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <header class="settings-modal-header">
-              <h4>User Settings</h4>
-              <button type="button" class="settings-close" onClick={closeSettings} aria-label="Close settings">x</button>
-            </header>
+      <Modal
+        open={isOpen()}
+        onClose={closeSettings}
+        title="User Settings"
+        ariaLabel="User settings"
+      >
+        <>
 
             <form class="settings-section" onSubmit={(event) => void handleSaveProfile(event)}>
               <h5>Profile</h5>
@@ -373,9 +366,16 @@ export default function UserSettingsDock() {
                 <p class="error">{audioError()}</p>
               </Show>
             </section>
-          </section>
-        </div>
-      </Show>
+
+            <section class="settings-section">
+              <h5>Session</h5>
+              <p class="settings-help">Sign out from this server and return to connect screen.</p>
+              <div class="settings-actions">
+                <button type="button" class="settings-danger" onClick={handleLogout}>Log out</button>
+              </div>
+            </section>
+        </>
+      </Modal>
     </>
   );
 }

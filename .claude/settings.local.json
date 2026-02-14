@@ -13,7 +13,8 @@
       "Bash(PATH=\"/home/guibibi/.mediasoup-venv/bin:$PATH\" SQLX_OFFLINE=true cargo check:*)",
       "Bash(npm run build:*)",
       "Bash(git add:*)",
-      "Bash(wc:*)"
+      "Bash(wc:*)",
+      "Bash(git -C /home/guibibi/projects/yankcord status)"
     ]
   }
 }

@@ -88,6 +88,7 @@ import {
   voiceActionState,
 } from "../stores/voice";
 import UserSettingsDock from "./UserSettingsDock";
+import Modal from "./Modal";
 
 async function fetchChannels() {
   return get<Channel[]>("/channels");
@@ -95,10 +96,11 @@ async function fetchChannels() {
 
 export default function ChannelList() {
   const [channels, setChannels] = createSignal<Channel[]>([]);
-  const [newChannelName, setNewChannelName] = createSignal("");
-  const [newChannelKind, setNewChannelKind] = createSignal<Channel["kind"]>("text");
   const [isLoading, setIsLoading] = createSignal(true);
   const [isSaving, setIsSaving] = createSignal(false);
+  const [channelCreateOpenKind, setChannelCreateOpenKind] = createSignal<Channel["kind"] | null>(null);
+  const [channelCreateName, setChannelCreateName] = createSignal("");
+  const [channelCreateDescription, setChannelCreateDescription] = createSignal("");
   const [loadError, setLoadError] = createSignal("");
   const [toastError, setToastError] = createSignal("");
   const [cameraActionPending, setCameraActionPending] = createSignal(false);
@@ -121,6 +123,7 @@ export default function ChannelList() {
   );
   let toastTimer: ReturnType<typeof setTimeout> | null = null;
   let screenSharePreviewVideoRef: HTMLVideoElement | undefined;
+  let channelCreateNameInputRef: HTMLInputElement | undefined;
 
   function selectedScreenShareSourceKind(): "screen" | "window" | "application" {
     const selected = nativeSources().find((source) => source.id === selectedNativeSourceId()) ?? null;
@@ -637,13 +640,29 @@ export default function ChannelList() {
     }
   }
 
-  async function handleCreateChannel(e: Event) {
-    e.preventDefault();
+  function openCreateChannel(kind: Channel["kind"]) {
     if (isSaving()) {
       return;
     }
 
-    const trimmed = newChannelName().trim();
+    setChannelCreateOpenKind(kind);
+    setChannelCreateName("");
+    setChannelCreateDescription("");
+  }
+
+  function closeCreateChannel() {
+    setChannelCreateOpenKind(null);
+    setChannelCreateName("");
+    setChannelCreateDescription("");
+  }
+
+  async function handleCreateChannel(kind: Channel["kind"], rawName: string, rawDescription: string) {
+    if (isSaving()) {
+      return;
+    }
+
+    const trimmed = rawName.trim();
+    const trimmedDescription = rawDescription.trim();
     if (!trimmed) {
       showErrorToast("Channel name is required");
       return;
@@ -654,9 +673,10 @@ export default function ChannelList() {
     try {
       await post<Channel>("/channels", {
         name: trimmed,
-        kind: newChannelKind(),
+        description: trimmedDescription.length > 0 ? trimmedDescription : null,
+        kind,
       });
-      setNewChannelName("");
+      closeCreateChannel();
     } catch (error) {
       showErrorToast(error instanceof Error ? error.message : "Failed to create channel");
     } finally {
@@ -933,6 +953,8 @@ export default function ChannelList() {
   }
 
   const sortedChannels = () => [...channels()].sort((a, b) => a.position - b.position);
+  const textChannels = () => sortedChannels().filter((channel) => channel.kind === "text");
+  const voiceChannels = () => sortedChannels().filter((channel) => channel.kind === "voice");
   const connectedVoiceChannelName = () => {
     const connectedChannelId = joinedVoiceChannelId();
     if (!connectedChannelId) {
@@ -945,6 +967,17 @@ export default function ChannelList() {
 
   createEffect(() => {
     clearActiveChannelUnread();
+  });
+
+  createEffect(() => {
+    if (!channelCreateOpenKind()) {
+      return;
+    }
+
+    if (channelCreateNameInputRef) {
+      channelCreateNameInputRef.focus();
+      channelCreateNameInputRef.select();
+    }
   });
 
   createEffect(() => {
@@ -1019,80 +1052,188 @@ export default function ChannelList() {
       <h3>Channels</h3>
       <Show when={!isLoading()} fallback={<p class="placeholder">Loading channels...</p>}>
       <Show when={!loadError() || sortedChannels().length > 0} fallback={<p class="error">{loadError()}</p>}>
-        <Show when={sortedChannels().length > 0} fallback={<p class="placeholder">No channels available</p>}>
-          <ul class="channel-items">
-            <For each={sortedChannels()}>
-              {(channel) => (
-                <li class="channel-row">
-                  <div class="channel-row-main">
-                    <button
-                      type="button"
-                      class={`channel-item${activeChannelId() === channel.id ? " is-active" : ""}${joinedVoiceChannelId() === channel.id ? " is-voice-connected" : ""}`}
-                      onClick={() => selectChannel(channel)}
-                    >
-                      <span class="channel-prefix">{channel.kind === "voice" ? "~" : "#"}</span>
-                      <span class="channel-name">{channel.name}</span>
-                      <Show when={unreadCount(channel.id) > 0}>
-                        <span class={`channel-badge${pulsingByChannel()[channel.id] ? " is-pulsing" : ""}`}>
-                          {formatUnreadBadge(channel.id)}
-                        </span>
-                      </Show>
-                    </button>
-                    <button
-                      type="button"
-                      class="channel-delete"
-                      onClick={() => void handleDeleteChannel(channel)}
-                      disabled={isSaving()}
-                      title="Delete channel"
-                    >
-                      x
-                    </button>
-                  </div>
-                  <Show
-                    when={
-                      channel.kind === "voice"
-                      && voiceMembers(channel.id).length > 0
-                    }
-                  >
-                    <ul class="channel-voice-members">
-                      <For each={voiceMembers(channel.id)}>
-                        {(username) => (
-                          <li class="channel-voice-member">
-                            <span
-                              class={`channel-voice-member-dot${isVoiceMemberSpeaking(channel.id, username) ? " is-speaking" : ""}`}
-                              aria-hidden="true"
-                            />
-                            <span>{username}</span>
-                          </li>
-                        )}
-                      </For>
-                    </ul>
-                  </Show>
-                </li>
-              )}
-            </For>
-          </ul>
-        </Show>
+        <div class="channel-groups">
+          <section class="channel-group" aria-labelledby="text-channels-heading">
+            <div class="channel-group-header">
+              <h4 id="text-channels-heading" class="channel-group-heading">Text Channels</h4>
+              <button
+                type="button"
+                class="channel-group-add"
+                onClick={() => openCreateChannel("text")}
+                disabled={isSaving()}
+                title="Create text channel"
+                aria-label="Create text channel"
+              >
+                <svg viewBox="0 0 16 16" class="channel-group-add-icon" aria-hidden="true">
+                  <path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+                </svg>
+              </button>
+            </div>
+            <Show when={textChannels().length > 0} fallback={<p class="channel-group-empty">No text channels yet</p>}>
+              <ul class="channel-items">
+                <For each={textChannels()}>
+                  {(channel) => (
+                    <li class="channel-row">
+                      <div class="channel-row-main">
+                        <button
+                          type="button"
+                          class={`channel-item${activeChannelId() === channel.id ? " is-active" : ""}${joinedVoiceChannelId() === channel.id ? " is-voice-connected" : ""}`}
+                          onClick={() => selectChannel(channel)}
+                        >
+                          <span class="channel-prefix">#</span>
+                          <span class="channel-name">{channel.name}</span>
+                          <Show when={unreadCount(channel.id) > 0}>
+                            <span class={`channel-badge${pulsingByChannel()[channel.id] ? " is-pulsing" : ""}`}>
+                              {formatUnreadBadge(channel.id)}
+                            </span>
+                          </Show>
+                        </button>
+                        <button
+                          type="button"
+                          class="channel-delete"
+                          onClick={() => void handleDeleteChannel(channel)}
+                          disabled={isSaving()}
+                          title="Delete channel"
+                        >
+                          x
+                        </button>
+                      </div>
+                    </li>
+                  )}
+                </For>
+              </ul>
+            </Show>
+          </section>
 
-        <form class="channel-create" onSubmit={(e) => void handleCreateChannel(e)}>
-          <input
-            type="text"
-            value={newChannelName()}
-            onInput={(e) => setNewChannelName(e.currentTarget.value)}
-            placeholder="New channel"
-            maxlength={100}
-            disabled={isSaving()}
-          />
-          <select
-            value={newChannelKind()}
-            onInput={(e) => setNewChannelKind(e.currentTarget.value as Channel["kind"])}
-            disabled={isSaving()}
+          <section class="channel-group" aria-labelledby="voice-channels-heading">
+            <div class="channel-group-header">
+              <h4 id="voice-channels-heading" class="channel-group-heading">Voice Channels</h4>
+              <button
+                type="button"
+                class="channel-group-add"
+                onClick={() => openCreateChannel("voice")}
+                disabled={isSaving()}
+                title="Create voice channel"
+                aria-label="Create voice channel"
+              >
+                <svg viewBox="0 0 16 16" class="channel-group-add-icon" aria-hidden="true">
+                  <path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+                </svg>
+              </button>
+            </div>
+            <Show when={voiceChannels().length > 0} fallback={<p class="channel-group-empty">No voice channels yet</p>}>
+              <ul class="channel-items">
+                <For each={voiceChannels()}>
+                  {(channel) => (
+                    <li class="channel-row">
+                      <div class="channel-row-main">
+                        <button
+                          type="button"
+                          class={`channel-item${activeChannelId() === channel.id ? " is-active" : ""}${joinedVoiceChannelId() === channel.id ? " is-voice-connected" : ""}`}
+                          onClick={() => selectChannel(channel)}
+                        >
+                          <span class="channel-prefix">~</span>
+                          <span class="channel-name">{channel.name}</span>
+                        </button>
+                        <button
+                          type="button"
+                          class="channel-delete"
+                          onClick={() => void handleDeleteChannel(channel)}
+                          disabled={isSaving()}
+                          title="Delete channel"
+                        >
+                          x
+                        </button>
+                      </div>
+                      <Show when={voiceMembers(channel.id).length > 0}>
+                        <ul class="channel-voice-members">
+                          <For each={voiceMembers(channel.id)}>
+                            {(username) => (
+                              <li class="channel-voice-member">
+                                <span
+                                  class={`channel-voice-member-dot${isVoiceMemberSpeaking(channel.id, username) ? " is-speaking" : ""}`}
+                                  aria-hidden="true"
+                                />
+                                <span>{username}</span>
+                              </li>
+                            )}
+                          </For>
+                        </ul>
+                      </Show>
+                    </li>
+                  )}
+                </For>
+              </ul>
+            </Show>
+          </section>
+        </div>
+
+        <Modal
+          open={!!channelCreateOpenKind()}
+          onClose={closeCreateChannel}
+          title="Create Channel"
+          ariaLabel="Create channel"
+          backdropClass="channel-create-modal-backdrop"
+          modalClass="channel-create-modal"
+        >
+          <form
+            class="settings-section channel-create-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const kind = channelCreateOpenKind();
+              if (!kind) {
+                return;
+              }
+              void handleCreateChannel(kind, channelCreateName(), channelCreateDescription());
+            }}
           >
-            <option value="text">text</option>
-            <option value="voice">voice</option>
-          </select>
-          <button type="submit" disabled={isSaving()}>Create</button>
-        </form>
+            <label class="settings-label" for="channel-create-kind">Channel type</label>
+            <input
+              id="channel-create-kind"
+              type="text"
+              value={channelCreateOpenKind() === "voice" ? "Voice" : "Text"}
+              disabled
+            />
+
+            <label class="settings-label" for="channel-create-name">Channel name</label>
+            <input
+              id="channel-create-name"
+              ref={channelCreateNameInputRef}
+              type="text"
+              value={channelCreateName()}
+              onInput={(event) => setChannelCreateName(event.currentTarget.value)}
+              placeholder={channelCreateOpenKind() === "voice" ? "new-voice-channel" : "new-text-channel"}
+              maxlength={100}
+              disabled={isSaving()}
+            />
+
+            <label class="settings-label" for="channel-create-description">Description</label>
+            <input
+              id="channel-create-description"
+              type="text"
+              value={channelCreateDescription()}
+              onInput={(event) => setChannelCreateDescription(event.currentTarget.value)}
+              placeholder="Optional channel description"
+              maxlength={280}
+              disabled={isSaving()}
+            />
+            <p class="settings-help">Optional description shown in channel metadata surfaces.</p>
+
+            <div class="settings-actions">
+              <button
+                type="button"
+                class="settings-secondary"
+                onClick={closeCreateChannel}
+                disabled={isSaving()}
+              >
+                Cancel
+              </button>
+              <button type="submit" disabled={isSaving()}>
+                {isSaving() ? "Creating..." : "Create channel"}
+              </button>
+            </div>
+          </form>
+        </Modal>
 
         <div class="channel-footer">
           <Show when={voiceRejoinNotice() && !joinedVoiceChannelId()}>
@@ -1226,31 +1367,14 @@ export default function ChannelList() {
               </Show>
             </div>
           </Show>
-          <Show when={tauriRuntime && screenShareModalOpen() && !screenShareEnabled()}>
-            <div
-              class="settings-modal-backdrop voice-share-modal-backdrop"
-              role="presentation"
-              onClick={closeScreenShareModal}
-            >
-              <section
-                class="settings-modal voice-share-modal"
-                role="dialog"
-                aria-modal="true"
-                aria-label="Share screen"
-                onClick={(event) => event.stopPropagation()}
-              >
-                <header class="settings-modal-header">
-                  <h4>Share Screen</h4>
-                  <button
-                    type="button"
-                    class="settings-close"
-                    onClick={closeScreenShareModal}
-                    aria-label="Close share menu"
-                  >
-                    x
-                  </button>
-                </header>
-
+          <Modal
+            open={tauriRuntime && screenShareModalOpen() && !screenShareEnabled()}
+            onClose={closeScreenShareModal}
+            title="Share Screen"
+            ariaLabel="Share screen"
+            backdropClass="voice-share-modal-backdrop"
+            modalClass="voice-share-modal"
+          >
                 <section class="settings-section">
                   <h5>Capture Source</h5>
                   <Show when={!nativeSourcesLoading()} fallback={<p class="settings-help">Loading native sources...</p>}>
@@ -1468,9 +1592,7 @@ export default function ChannelList() {
                     </button>
                   </div>
                 </section>
-              </section>
-            </div>
-          </Show>
+          </Modal>
           <UserSettingsDock />
         </div>
       </Show>

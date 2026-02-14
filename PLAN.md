@@ -4,273 +4,181 @@
 
 Yankcord is a self-hosted, minimal chat app. One server instance = one community. The server operator sets a server password in config. Clients install the app, point it at the server URL/IP, enter password + username, and start chatting. No signup, no email, no multi-tenant server directory.
 
-## Ground Rules (Important for Scope)
+## Scope Rules
 
-- We ship both sides together for each MVP step: **server API/WS + client UI/state**.
-- JWT identity is `username`-based for MVP; no per-user password.
-- Keep the `users` table for now (stable `author_id` foreign key in `messages`), but remove credential fields.
-- Single-community mode: remove server/guild management from API and UI.
-
----
-
-## Phase 1: Minimal Working Chat (MVP)
-
-Goal: a user can connect, select a channel, load history, and exchange real-time messages with others.
-
-### 1.1 Simplify authentication
-
-**Server**
-- Add/keep `SERVER_PASSWORD` in config.
-- `POST /api/connect` accepts `{ password, username }`.
-- Validate server password and username constraints.
-- Reject if username is currently connected.
-- Return JWT with username claim.
-- Remove credential field(s) from schema (`password_hash`), keep lightweight user rows.
-
-**Client**
-- Connect form submits `{ serverUrl, password, username }`.
-- Save token, username, and server URL in auth store.
-- Use saved server URL for HTTP + WS base URLs.
-
-### 1.2 Remove multi-server concept
-
-**Server**
-- Remove server CRUD/member routes and server-scoped channel endpoints.
-- Drop `servers` and `server_members` tables.
-- Make channels instance-scoped (no `server_id`).
-- Seed `#general` if no channels exist.
-
-**Client**
-- Remove server-centric routing/props (`serverId`) from chat flow.
-- Update API calls to non-server-scoped endpoints (`/api/channels`, etc.).
-
-### 1.3 Finalize connect flow and routes
-
-**Server**
-- Ensure `/api/connect` is the only auth entrypoint for MVP.
-
-**Client**
-- Keep a single Connect page.
-- Route unauthenticated users to Connect; authenticated users to chat.
-- Remove stale `/login` and `/register` route aliases.
-
-### 1.4 Simplify chat layout
-
-**Server**
-- No API changes required.
-
-**Client**
-- Remove `Sidebar` (no server list).
-- Use 3-column layout: `ChannelList | MessageArea | MemberList`.
-- Rename `ServerView` to `Chat` (or equivalent) and update router imports.
-
-### 1.5 Wire channels end-to-end
-
-**Server**
-- `GET /api/channels` returns all channels ordered by position.
-
-**Client**
-- `ChannelList` fetches channels, renders list, tracks active channel.
-- Clicking a channel updates active channel state and highlight.
-
-### 1.6 Wire messaging end-to-end
-
-**Server**
-- REST history: `GET /api/channels/:id/messages`.
-- WS events:
-  - Client -> server: `subscribe_channel`, `send_message`.
-  - Server -> client: `new_message`.
-- Persist messages before broadcast.
-- Track subscriptions by **connection id** (not user id) to support reconnects and future multi-tab behavior.
-- Include enough author data in outbound message payload to render UI without extra round trips.
-
-**Client**
-- On channel switch: fetch history + send `subscribe_channel`.
-- On submit: send `send_message` via WS.
-- Render message list and input; auto-scroll on new messages.
-
-### 1.7 Wire member list end-to-end
-
-**Server**
-- Track connected usernames from authenticated WS sessions.
-- Emit `presence_snapshot` on auth success.
-- Emit `user_connected` / `user_disconnected` on join/leave.
-
-**Client**
-- `MemberList` consumes presence events and displays connected users.
+- Ship server and client together for each milestone (REST/WS + UI/state).
+- Preserve existing protocol behavior unless a milestone explicitly changes it.
+- Keep changes additive and migration-safe by default.
+- Track human verification in `QA.md` (not in this plan).
 
 ---
 
-## Phase 2: Real-Time Polish
+## Completed Milestones
 
-### 2.1 Typing indicators
-- [x] WS events: `typing_start` / `typing_stop`.
-- [x] Show `X is typing...` in message area.
-- [x] Client-side auto-expire typing state after 3s.
-
-### 2.2 Message edit/delete
-- [x] REST: `PATCH /api/messages/:id`, `DELETE /api/messages/:id` (author-only by username ownership).
-- [x] WS broadcast: `message_edited`, `message_deleted`.
-- [x] Inline edit/delete controls in message UI.
-
-### 2.3 Channel management
-- [x] REST: create/delete channels.
-- [x] WS broadcast: `channel_created`, `channel_deleted`.
-- [x] Live channel list updates on all clients.
-- [x] Global `channel_activity` event added for unread badges without cross-channel message leakage.
-- [x] Channel delete guard prevents deleting the last text channel, with atomic transaction + lock.
-- [x] Non-blocking client error toast for channel action failures.
+- MVP chat flow is shipped: connect, channels, history, real-time messaging, presence.
+- Real-time polish is shipped: typing indicators, edit/delete, channel management updates.
+- Voice/video core is shipped: channel-scoped voice, camera, screen share, reconnect/device-change resilience.
+- Native sender codec expansion is shipped: additive codec negotiation, strict codec mode, codec telemetry, codec readiness rollout (`VP8`/`VP9`/`AV1` ready).
+- Phase 5.1 is shipped: channel list now renders separate `Text Channels` and `Voice Channels` sections while preserving existing unread and voice presence behavior.
 
 ---
 
-## Phase 3: Voice & Video (future)
+## Active Roadmap
 
-- Reuse mediasoup infrastructure already in `server/src/media`.
-- Add practical voice-channel flow and membership signaling.
-- Integrate client voice panel with real transports/producers/consumers.
+## Phase 4: Hardening
 
----
+### 4.1 Operator/admin role boundaries
 
-## Phase 4: Hardening (future)
+- Add explicit server-side role checks for privileged actions.
+- Define role capability matrix for channel management, moderation, and future media/admin controls.
+- Surface permission failures with stable error codes/messages for client handling.
 
-- Server operator/admin role.
-- Rate limiting and abuse controls.
-- Stronger validation (length, charset, payload sizes).
-- Kick/ban and moderation actions.
+### 4.2 Rate limiting and abuse controls
 
----
+- Add request limits for auth/connect, message send, and high-cost media endpoints.
+- Add WS event throttling for spam-prone actions (message send, typing, reaction bursts).
+- Add temporary penalties/backoff behavior with clear client-safe errors.
 
-## Phase 5: Nice-to-Have Social & UX Features (future)
+### 4.3 Stronger validation and payload safety
 
-- **User avatars**
-  - Add profile avatar upload/storage (with size/type validation).
-  - Render avatars in message list, member list, and presence surfaces.
+- Enforce stricter length/charset/shape validation at server boundaries.
+- Cap payload sizes for text/JSON/media metadata and reject malformed payloads early.
+- Keep schema/model validation and transport-layer validation aligned.
 
-- **GIF search support**
-  - Add GIF picker with provider integration (e.g. Tenor/Giphy).
-  - Post GIF embeds as rich message attachments.
+### 4.4 Moderation controls (kick/ban)
 
-- **Image support in chat**
-  - Add image upload + preview + download/open actions.
-  - Generate thumbnails and validate file constraints on server.
-
-- **Custom emojis**
-  - Add per-instance emoji management (upload/delete/list).
-  - Support `:shortcode:` parsing + emoji picker in composer.
-
-- **Message reactions**
-  - Add emoji reactions with per-user uniqueness per message.
-  - Broadcast reaction add/remove in real time.
-
-- **Voice participant avatars**
-  - Show connected users' avatars in voice UI tiles/participant row.
-  - Highlight speaking/active states once audio-level signaling exists.
+- Add operator/admin moderation actions with audit-friendly event trails.
+- Enforce kick/ban checks on REST and WS auth/session paths.
+- Add client UX for moderation feedback and forced-session cleanup handling.
 
 ---
 
-## File Map (Primary Touch Points)
+## Phase 5: Social + UX Expansion
 
-| Step | Server | Client |
-|------|--------|--------|
-| 1.1 | `server/src/config.rs`, `server/src/auth.rs`, `server/src/routes/auth_routes.rs`, migration(s) | `client/src/pages/Connect.tsx`, `client/src/stores/auth.ts`, `client/src/api/http.ts`, `client/src/api/ws.ts` |
-| 1.2 | `server/src/main.rs`, `server/src/routes/server_routes.rs` (delete), `server/src/routes/channel_routes.rs`, `server/src/models.rs`, migration(s) | `client/src/index.tsx`, `client/src/pages/ServerView.tsx` (or replacement), channel/member components |
-| 1.3 | auth route cleanup | `client/src/index.tsx`, connect redirects/guards |
-| 1.4 | — | `client/src/pages/ServerView.tsx` -> `client/src/pages/Chat.tsx` (or equivalent), `client/src/components/Sidebar.tsx` (delete) |
-| 1.5 | `server/src/routes/channel_routes.rs` | `client/src/components/ChannelList.tsx` |
-| 1.6 | `server/src/ws/messages.rs`, `server/src/ws/handler.rs`, `server/src/routes/channel_routes.rs` | `client/src/api/ws.ts`, `client/src/components/MessageArea.tsx` |
-| 1.7 | `server/src/ws/messages.rs`, `server/src/ws/handler.rs` | `client/src/components/MemberList.tsx` |
-| 2.x | channel/message/ws route handlers | message/channel UI components |
+### Execution Order
+
+1. Separate text/voice channel groups in UI
+2. Native-style context menus
+3. Media pipeline foundation (storage abstraction + processing)
+4. User avatars + chat image uploads
+5. Custom emojis/icons
+6. Per-voice-channel codec configuration
+7. Message reactions
+8. GIF search support
+9. Voice participant avatars polish
+
+### 5.1 Separate text and voice channel groups in UI
+
+**Goal**
+- Improve navigation clarity by rendering explicit `Text Channels` and `Voice Channels` sections.
+
+**Implementation details**
+- Client: split channel list rendering by channel type while preserving sort/position semantics.
+- Client: keep unread/activity badges on text channels and voice presence affordances on voice channels.
+- Server: keep channel list endpoint compatible; include/confirm channel type field is authoritative.
+
+### 5.2 Native-style context menus
+
+**Goal**
+- Provide desktop-native-feeling right-click menus for channels, users, messages, and member entries.
+
+**Implementation details**
+- Client: add shared context menu action registry keyed by target type (`channel`, `user`, `message`, `member`).
+- Client: support mouse right-click, keyboard context key, and long-press fallback behavior.
+- Server/client: enforce role-aware actions (show/enable only when permitted, re-check on server).
+- UX: use confirmation affordances for destructive actions.
+
+### 5.3 Media storage + optimization foundation
+
+**Goal**
+- Add a self-hosted media pipeline with local storage first and optional S3-compatible backend later.
+
+**Implementation details**
+- Server: introduce storage abstraction (`local` backend default, `s3`/MinIO optional via config).
+- Server: store media metadata in Postgres (`owner_id`, `mime_type`, `bytes`, `checksum`, `storage_key`, timestamps, processing status).
+- Server: process uploads into optimized derivatives and track lifecycle (`processing`, `ready`, `failed`).
+- Server: add cleanup job for orphaned/failed derivatives.
+
+### 5.4 User avatars
+
+**Goal**
+- Add profile avatars with optimized delivery.
+
+**Implementation details**
+- Upload constraints: `jpeg|png|webp`, max `2 MB`.
+- Processing: normalize square variants (`256x256 webp` and `64x64 webp`), strip EXIF.
+- Client: render avatars in member list, message list, and presence surfaces with fallback initials.
+
+### 5.5 Image support in chat
+
+**Goal**
+- Support image attachments with preview and optimized transfer.
+
+**Implementation details**
+- Upload constraints: `image/jpeg|png|webp|gif`, max `10 MB`.
+- Processing: display derivative (`max 1920x1920`, webp quality ~82) + thumbnail (`max 320x320`, quality ~75), EXIF stripped.
+- Client: preview in message timeline; include open/download actions.
+- Server: sniff MIME by content, not extension, and enforce dimension/payload limits before persist.
+
+### 5.6 Custom emojis/icons
+
+**Goal**
+- Add per-instance custom emoji management and message usage.
+
+**Implementation details**
+- Upload constraints: `png|webp|gif` (static-first rollout), max `512 KB`, bounded to `128x128`.
+- Server: CRUD APIs for emoji set and shortcode uniqueness validation.
+- Client: emoji picker + `:shortcode:` parsing/rendering in composer and message body.
+
+### 5.7 Per-voice-channel codec configuration
+
+**Goal**
+- Let operators configure preferred voice codec policy per voice channel.
+
+**Implementation details**
+- Server: add channel-level codec policy fields with migration-safe defaults.
+- Negotiation precedence: channel policy > user preference > runtime auto fallback.
+- Compatibility: when channel policy is absent, preserve current behavior.
+- Client: expose codec config in channel settings with clear capability/compatibility messaging.
+
+### 5.8 Message reactions
+
+**Goal**
+- Add lightweight emoji reactions with real-time updates.
+
+**Implementation details**
+- Server: reaction add/remove endpoints + WS broadcast events.
+- Data model: enforce per-user uniqueness per message/reaction key.
+- Client: render reaction chips, counts, and active-user state.
+
+### 5.9 GIF search support
+
+**Goal**
+- Add GIF picker integration for rich inline content.
+
+**Implementation details**
+- Client: provider-backed GIF search UI (e.g., Tenor/Giphy) with safe insertion UX.
+- Server: treat GIF embeds as attachment metadata payloads with validation.
+- Client: render GIF embeds consistently with other attachment types.
+
+### 5.10 Voice participant avatars
+
+**Goal**
+- Improve voice UI legibility with participant avatars and speaking emphasis.
+
+**Implementation details**
+- Client: show avatar tiles/rows for active voice participants.
+- Client: preserve speaking-state emphasis and active-media affordances.
+- Server/client: reuse existing presence and voice state streams without protocol breakage.
 
 ---
 
-## Implementation Checklist (Execution Order)
+## Validation Baseline
 
-Use this as the working checklist while coding. Every MVP step includes both server and client tasks.
+Run these for relevant milestones:
 
-### MVP 1.1 - Simplify authentication
-
-- [x] **Server:** Ensure `SERVER_PASSWORD` exists in config loading + docs.
-- [x] **Server:** Keep `POST /api/connect` as `{ password, username }` and validate:
-  - [x] password matches server config
-  - [x] username length/format is valid
-  - [x] username is not already in active connection set
-- [x] **Server:** Keep/create lightweight user row for username if missing.
-- [x] **Server:** JWT contains username claim and works for REST + WS auth.
-- [x] **Server:** Migration removes `users.password_hash` and leaves schema valid.
-- [x] **Client:** Connect page sends server URL, password, username.
-- [x] **Client:** Save token + username + normalized server URL in auth store.
-- [x] **Client:** HTTP and WS base URLs come from saved server URL.
-- [x] **Verify:** Connect succeeds with correct password and fails with wrong password.
-
-### MVP 1.2 - Remove multi-server model
-
-- [x] **Server:** Delete server CRUD/member routes from router and module exports.
-- [x] **Server:** Migration drops `servers` and `server_members` safely.
-- [x] **Server:** Migration removes `channels.server_id` and updates constraints/indexes.
-- [x] **Server:** Add startup seed to ensure at least one `general` text channel exists.
-- [x] **Client:** Remove `serverId` dependencies from route params and components.
-- [x] **Client:** Update API calls from server-scoped endpoints to instance-scoped endpoints.
-- [x] **Verify:** App works without any `/servers/:id/*` path assumptions.
-
-### MVP 1.3 - Finalize connect route flow
-
-- [x] **Server:** Keep `/api/connect` as the only MVP auth entrypoint.
-- [x] **Client:** Keep only Connect page in routing flow.
-- [x] **Client:** Remove `/login` and `/register` aliases and stale redirects.
-- [x] **Client:** Add simple route guard: unauthenticated -> Connect, authenticated -> chat.
-- [x] **Verify:** Refresh keeps session; logout returns to Connect.
-
-### MVP 1.4 - Simplify chat layout
-
-- [x] **Client:** Remove `Sidebar` component usage and file if unused.
-- [x] **Client:** Rename `ServerView` to `Chat` (or equivalent) and update imports/routes.
-- [x] **Client:** Render 3-column layout: `ChannelList | MessageArea | MemberList`.
-- [x] **Verify:** Layout is usable at common desktop and narrow widths.
-
-### MVP 1.5 - Wire channels end-to-end
-
-- [x] **Server:** Add/confirm `GET /api/channels` returns channels ordered by position.
-- [x] **Client:** `ChannelList` fetches and renders channels from `/api/channels`.
-- [x] **Client:** Clicking channel updates active channel signal/store.
-- [x] **Client:** Active channel visual state is clearly highlighted.
-- [x] **Verify:** Channel list loads after connect and channel switching updates selection.
-
-### MVP 1.6 - Wire messaging end-to-end
-
-- [x] **Server REST:** `GET /api/channels/:id/messages` returns recent history.
-- [x] **Server WS:** Add `subscribe_channel` client event.
-- [x] **Server WS:** `send_message` validates content, persists message, then broadcasts `new_message` to current channel subscribers.
-- [x] **Server WS:** Track subscriptions by connection id.
-- [x] **Server WS:** `new_message` payload includes `author_username` (or equivalent display-ready author field).
-- [x] **Client:** On channel select, fetch history and send WS `subscribe_channel`.
-- [x] **Client:** On message submit, send WS `send_message` and clear input.
-- [x] **Client:** Render history + realtime messages in one list and auto-scroll on new items.
-- [x] **Verify:** Two clients in same channel see real-time messages; other channels do not.
-
-### MVP 1.7 - Wire member list end-to-end
-
-- [x] **Server WS:** Maintain connected authenticated usernames.
-- [x] **Server WS:** Send `presence_snapshot` after successful WS auth.
-- [x] **Server WS:** Broadcast `user_connected` and `user_disconnected` events.
-- [x] **Client:** `MemberList` initializes from snapshot and updates on presence events.
-- [x] **Verify:** Member list updates when another client connects/disconnects.
-
-### MVP Exit Criteria
-
-- [x] User can connect from a fresh client using server URL + password + username.
-- [x] User can select channels and load message history.
-- [x] User can send and receive real-time messages across multiple clients.
-- [x] User can see currently connected members in real time.
-- [x] No remaining runtime path uses deleted multi-server API/UI assumptions.
-- [x] Server and client build successfully.
-
-### Verification Commands
-
-- [x] Server: `cd server && cargo test`
-- [x] Server: `cd server && cargo build`
-- [x] Client: `cd client && npm run build`
-
-### Phase 2 Verification Commands
-
-- [x] Server: `cd server && cargo check`
-- [x] Client: `cd client && npm run build`
+- Backend: `cargo fmt --all --manifest-path server/Cargo.toml -- --check`
+- Backend: `cargo clippy --manifest-path server/Cargo.toml --all-targets -- -D warnings`
+- Backend: `cargo test --manifest-path server/Cargo.toml`
+- Frontend: `npm --prefix client run typecheck`
+- Frontend: `npm --prefix client run build`

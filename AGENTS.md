@@ -95,6 +95,19 @@ Test/lint status (frontend TS):
 - Keep entries concise and actionable (feature area, scenario, expected result).
 - If a manual QA item is completed by a human, mark it done in `QA.md` rather than modifying plan milestones to include manual test details.
 
+## Planning Document Workflow Policy
+
+- Treat `PLAN.md` as the canonical roadmap (what is planned and what is completed).
+- Treat `PLAN-EXECUTION.md` as a living implementation document for the current active phase only.
+- At the start of a new phase/feature:
+  - rewrite/update `PLAN-EXECUTION.md` with concrete implementation details, scope, ordered checklist, touch points, and validation commands for that phase.
+  - avoid keeping historical completed tracks in `PLAN-EXECUTION.md`.
+- During implementation:
+  - keep `PLAN-EXECUTION.md` current as execution details change.
+- When the active phase is complete:
+  - update `PLAN.md` to mark/describe completion.
+  - refresh `PLAN-EXECUTION.md` so it represents the next current phase (or an explicit "awaiting next phase" placeholder).
+
 ## Code Style: Cross-Cutting
 
 - Match local style and existing patterns before introducing new abstractions.

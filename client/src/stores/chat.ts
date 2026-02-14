@@ -3,6 +3,7 @@ import { createSignal } from "solid-js";
 export interface Channel {
   id: string;
   name: string;
+  description: string | null;
   kind: "text" | "voice";
   position: number;
   created_at: string;

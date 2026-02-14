@@ -1,91 +1,64 @@
-# Yankcord Execution Plan (Consolidated)
+# Yankcord Execution Plan (Current Phase)
 
-This file consolidates active execution plans.
+`PLAN-EXECUTION.md` is a living implementation document for the active phase only.
+Long-term roadmap and completed milestone tracking live in `PLAN.md`.
 
-- Master roadmap remains in `PLAN.md`.
-- This file replaces `PLAN-NATIVE-MEDIASOUP-NEXT.md` and `PHASE3_PLAN.md`.
+## Active Phase
 
-## Track A: Native Sender -> Mediasoup
+- Phase 5.2: Native-style context menus
 
-### Objective
+## Objective
 
-- Keep Tauri native screen-share publishing to mediasoup stable.
-- Preserve browser `getDisplayMedia` fallback behavior.
-- Keep protocol changes additive/minimal.
+- Introduce consistent context menus for channels, users, messages, and member entries.
+- Keep role/permission enforcement server-authoritative while improving client affordance.
+- Preserve existing REST/WS contracts unless an explicit action needs extension.
 
-### Current Status
+## Scope
 
-- [x] Native RTP ingest flow is live via additive signaling.
-- [x] Native sender uses negotiated RTP params (`rtp_target`, `payload_type`, `ssrc`).
-- [x] Runtime fallback to browser capture is implemented.
-- [x] Diagnostics and debug surfaces are in place.
-- [x] Windows manual verification pass completed.
-- [x] Performance hardening and threshold tuning completed.
-- [x] NVENC-backed native path wired with fallback policy.
-- [x] Native sender session signaling now carries additive codec negotiation fields (`codec`, `available_codecs`) with backwards-compatible H264 defaults.
-- [x] Native RTP packetizer abstraction now supports codec-specific packetizers (H264 + VP8), while preserving H264 behavior.
-- [x] VP9 native encoder + RTP packetizer path is implemented but kept negotiation-planned for controlled rollout.
-- [x] Codec catalog/negotiation now advertises `VP8` as `ready` and keeps `VP9`/`AV1` as `planned`.
-- [x] Codec expansion complete for AV1 native encoder + packetizer path.
-- [x] Native sender codec negotiation is additive and codec-aware (`codec`, `available_codecs`) with H264-compatible legacy fields.
+### In scope
 
-### Near-Term Next Steps
+- Shared context menu primitives (state, positioning, dismissal, keyboard support).
+- Target-specific menu entry wiring for `channel`, `user`, `message`, and `member` surfaces.
+- Accessibility and fallback behavior (right-click, keyboard context key, long-press).
+- Permission-aware menu item visibility/disabled state based on existing capabilities.
 
-1. Implement AV1 native encoder backend + RTP packetizer path. (completed)
-2. Add manual client screen-share codec selection (Auto/AV1/VP9/VP8/H264) and thread it through native + browser codec preference paths. (completed)
-3. Keep backwards compatibility: default to H264 when codec fields are absent. (completed)
-4. Keep web/browser flows unchanged. (completed)
-5. Add client codec capability checks and disable unsupported manual codec selections in the native screen-share UI. (completed)
-6. Add strict-mode behavior for manual codec selection (optional): fail fast when selected codec is unavailable instead of silently falling back. (completed)
-7. Add lightweight telemetry tags for codec decision path (`codec_requested`, `codec_negotiated`, `codec_fallback_reason`). (completed)
-8. Decide readiness flip policy for server codec catalog (`VP9`/`AV1` remain `planned` until post-QA sign-off, then move to `ready` intentionally). (completed: `VP9` -> `ready`; `AV1` -> `ready` after QA sign-off)
+### Out of scope
 
-### Validation
+- New moderation features or role model changes.
+- New backend permission semantics beyond existing server checks.
+- Broad visual redesign outside context-menu UI.
+- Per-platform native OS menu integrations in Tauri host.
 
-- `cargo fmt --manifest-path client/src-tauri/Cargo.toml`
-- `cargo check --manifest-path client/src-tauri/Cargo.toml`
-- `cargo test --manifest-path client/src-tauri/Cargo.toml`
+## Implementation Checklist
+
+1. Audit current action entry points in channel list, message list, and member list.
+2. Create reusable context menu state/controller and anchor-positioning behavior.
+3. Add `channel` target menu with existing channel actions.
+4. Add `message` target menu with existing message actions.
+5. Add `user`/`member` target menu stubs wired to currently supported actions.
+6. Add keyboard invocation and escape/outside-click dismissal behavior.
+7. Add long-press fallback for touch/narrow viewports.
+8. Ensure disabled/hidden action states align with current permission and ownership rules.
+9. Validate tab order/focus restoration after menu close.
+10. Update `PLAN.md` once implementation and validation are complete.
+
+## Primary Touch Points
+
+- `client/src/components/ChannelList.tsx`
+- `client/src/components/MessageArea.tsx`
+- `client/src/components/MemberList.tsx`
+- `client/src/styles/global.css` (or new context-menu styles module)
+
+## Validation
+
 - `npm --prefix client run typecheck`
 - `npm --prefix client run build`
 
-## Track B: Phase 3 Voice & Video
+## Done Criteria
 
-### Goal
-
-- Ship practical channel-scoped voice/video/screen-share with resilient reconnection and device-change handling.
-
-### Milestone Status
-
-- [x] 3.1 Voice presence and signaling contract.
-- [x] 3.2 Mediasoup transport handshake.
-- [x] 3.3 Audio publish/subscribe.
-- [x] 3.4 Camera video publish/subscribe (core implementation).
-- [x] 3.5 Screen sharing publish/subscribe (core implementation).
-- [x] 3.6 Reliability/polish implementation items.
-
-### Remaining QA / Exit Checks
-
-- [x] Re-run multi-client QA focused on audio continuity while repeatedly toggling camera.
-- [x] Verify screen share stability and channel isolation.
-- [x] Verify reconnect and device-change stability.
-- [x] Confirm exit criteria via manual matrix:
-  - [x] Single user join/leave repeatedly.
-  - [x] Two users audio-only mute/unmute.
-  - [x] Two users audio+video toggle loops.
-  - [x] Three users same-channel smoke.
-  - [x] Users split across two channels isolation.
-  - [x] Unexpected disconnect cleanup behavior.
-
-### Validation
-
-- `cargo check --manifest-path server/Cargo.toml`
-- `cargo test --manifest-path server/Cargo.toml`
-- `npm --prefix client run build`
-
-## Track B Status
-
-- Phase 3 implementation and manual QA are complete.
-
-## Track A Status
-
-- Track A implementation milestones and codec readiness rollout are complete.
+- Context menus are available on channel, message, and member/user targets.
+- Existing actions remain functional and permission-safe.
+- Keyboard and pointer interactions are predictable and dismiss cleanly.
+- No unintended protocol changes are required.
+- Validation commands pass.
+- `PLAN.md` updated to reflect completion of Phase 5.2.
