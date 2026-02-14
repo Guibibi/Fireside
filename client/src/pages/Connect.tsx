@@ -1,6 +1,7 @@
 import { createSignal } from "solid-js";
 import { useNavigate } from "@solidjs/router";
 import { normalizeServerUrl, saveAuth, serverUrl } from "../stores/auth";
+import { errorMessage } from "../utils/error";
 
 interface ConnectResponse {
   token: string;
@@ -46,7 +47,7 @@ export default function Connect() {
       saveAuth(res.token, res.username, url());
       navigate("/chat");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to connect");
+      setError(errorMessage(err, "Failed to connect"));
     }
   }
 

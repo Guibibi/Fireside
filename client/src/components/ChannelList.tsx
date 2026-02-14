@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createSignal, onCleanup, onMount, untrack } from "solid-js";
+import { For, Show, createEffect, createSignal, onCleanup, onMount, untrack, type JSX } from "solid-js";
 import { del, get, post } from "../api/http";
 import {
   cleanupMediaTransports,
@@ -52,6 +52,7 @@ import {
   preferredScreenShareCodecPreference,
   preferredScreenShareCodecStrictMode,
 } from "../stores/settings";
+import { errorMessage } from "../utils/error";
 import { isTauriRuntime } from "../utils/platform";
 import {
   applyVoiceJoined,
@@ -87,11 +88,50 @@ import {
   voiceRejoinNotice,
   voiceActionState,
 } from "../stores/voice";
+import AsyncContent from "./AsyncContent";
 import UserSettingsDock from "./UserSettingsDock";
 import Modal from "./Modal";
 
 async function fetchChannels() {
   return get<Channel[]>("/channels");
+}
+
+function ChannelRow(props: {
+  channel: Channel;
+  prefix: string;
+  isActive: boolean;
+  isVoiceConnected: boolean;
+  onSelect: () => void;
+  onDelete: () => void;
+  disabled: boolean;
+  badge?: JSX.Element;
+  children?: JSX.Element;
+}) {
+  return (
+    <li class="channel-row">
+      <div class="channel-row-main">
+        <button
+          type="button"
+          class={`channel-item${props.isActive ? " is-active" : ""}${props.isVoiceConnected ? " is-voice-connected" : ""}`}
+          onClick={props.onSelect}
+        >
+          <span class="channel-prefix">{props.prefix}</span>
+          <span class="channel-name">{props.channel.name}</span>
+          {props.badge}
+        </button>
+        <button
+          type="button"
+          class="channel-delete"
+          onClick={props.onDelete}
+          disabled={props.disabled}
+          title="Delete channel"
+        >
+          x
+        </button>
+      </div>
+      {props.children}
+    </li>
+  );
 }
 
 export default function ChannelList() {
@@ -266,7 +306,7 @@ export default function ChannelList() {
 
       setScreenSharePreviewStream(stream);
     } catch (error) {
-      setScreenSharePreviewError(error instanceof Error ? error.message : "Failed to start preview");
+      setScreenSharePreviewError(errorMessage(error, "Failed to start preview"));
     }
   }
 
@@ -390,7 +430,7 @@ export default function ChannelList() {
     } catch (error) {
       setNativeSources([]);
       setSelectedNativeSourceId(null);
-      setNativeSourcesError(error instanceof Error ? error.message : "Failed to load native capture sources");
+      setNativeSourcesError(errorMessage(error, "Failed to load native capture sources"));
     } finally {
       setNativeSourcesLoading(false);
     }
@@ -634,7 +674,7 @@ export default function ChannelList() {
       setChannels(sorted);
       ensureValidActiveChannel(sorted);
     } catch (error) {
-      setLoadError(error instanceof Error ? error.message : "Failed to load channels");
+      setLoadError(errorMessage(error, "Failed to load channels"));
     } finally {
       setIsLoading(false);
     }
@@ -678,7 +718,7 @@ export default function ChannelList() {
       });
       closeCreateChannel();
     } catch (error) {
-      showErrorToast(error instanceof Error ? error.message : "Failed to create channel");
+      showErrorToast(errorMessage(error, "Failed to create channel"));
     } finally {
       setIsSaving(false);
     }
@@ -698,7 +738,7 @@ export default function ChannelList() {
     try {
       await del<{ deleted: true }>(`/channels/${channel.id}`);
     } catch (error) {
-      showErrorToast(error instanceof Error ? error.message : "Failed to delete channel");
+      showErrorToast(errorMessage(error, "Failed to delete channel"));
     } finally {
       setIsSaving(false);
     }
@@ -789,7 +829,7 @@ export default function ChannelList() {
         clearVoiceRejoinNotice();
         setVoiceActionState("idle");
         void initializeMediaTransports(msg.channel_id).catch((error) => {
-          showErrorToast(error instanceof Error ? error.message : "Failed to initialize media transports");
+          showErrorToast(errorMessage(error, "Failed to initialize media transports"));
         });
         setMicrophoneMuted(micMuted());
         setSpeakersMuted(speakerMuted());
@@ -1050,8 +1090,12 @@ export default function ChannelList() {
   return (
     <div class="channel-list">
       <h3>Channels</h3>
-      <Show when={!isLoading()} fallback={<p class="placeholder">Loading channels...</p>}>
-      <Show when={!loadError() || sortedChannels().length > 0} fallback={<p class="error">{loadError()}</p>}>
+      <AsyncContent
+        loading={isLoading()}
+        loadingText="Loading channels..."
+        error={sortedChannels().length === 0 ? loadError() : null}
+        empty={false}
+      >
         <div class="channel-groups">
           <section class="channel-group" aria-labelledby="text-channels-heading">
             <div class="channel-group-header">
@@ -1073,32 +1117,22 @@ export default function ChannelList() {
               <ul class="channel-items">
                 <For each={textChannels()}>
                   {(channel) => (
-                    <li class="channel-row">
-                      <div class="channel-row-main">
-                        <button
-                          type="button"
-                          class={`channel-item${activeChannelId() === channel.id ? " is-active" : ""}${joinedVoiceChannelId() === channel.id ? " is-voice-connected" : ""}`}
-                          onClick={() => selectChannel(channel)}
-                        >
-                          <span class="channel-prefix">#</span>
-                          <span class="channel-name">{channel.name}</span>
-                          <Show when={unreadCount(channel.id) > 0}>
-                            <span class={`channel-badge${pulsingByChannel()[channel.id] ? " is-pulsing" : ""}`}>
-                              {formatUnreadBadge(channel.id)}
-                            </span>
-                          </Show>
-                        </button>
-                        <button
-                          type="button"
-                          class="channel-delete"
-                          onClick={() => void handleDeleteChannel(channel)}
-                          disabled={isSaving()}
-                          title="Delete channel"
-                        >
-                          x
-                        </button>
-                      </div>
-                    </li>
+                    <ChannelRow
+                      channel={channel}
+                      prefix="#"
+                      isActive={activeChannelId() === channel.id}
+                      isVoiceConnected={joinedVoiceChannelId() === channel.id}
+                      onSelect={() => selectChannel(channel)}
+                      onDelete={() => void handleDeleteChannel(channel)}
+                      disabled={isSaving()}
+                      badge={
+                        <Show when={unreadCount(channel.id) > 0}>
+                          <span class={`channel-badge${pulsingByChannel()[channel.id] ? " is-pulsing" : ""}`}>
+                            {formatUnreadBadge(channel.id)}
+                          </span>
+                        </Show>
+                      }
+                    />
                   )}
                 </For>
               </ul>
@@ -1125,26 +1159,15 @@ export default function ChannelList() {
               <ul class="channel-items">
                 <For each={voiceChannels()}>
                   {(channel) => (
-                    <li class="channel-row">
-                      <div class="channel-row-main">
-                        <button
-                          type="button"
-                          class={`channel-item${activeChannelId() === channel.id ? " is-active" : ""}${joinedVoiceChannelId() === channel.id ? " is-voice-connected" : ""}`}
-                          onClick={() => selectChannel(channel)}
-                        >
-                          <span class="channel-prefix">~</span>
-                          <span class="channel-name">{channel.name}</span>
-                        </button>
-                        <button
-                          type="button"
-                          class="channel-delete"
-                          onClick={() => void handleDeleteChannel(channel)}
-                          disabled={isSaving()}
-                          title="Delete channel"
-                        >
-                          x
-                        </button>
-                      </div>
+                    <ChannelRow
+                      channel={channel}
+                      prefix="~"
+                      isActive={activeChannelId() === channel.id}
+                      isVoiceConnected={joinedVoiceChannelId() === channel.id}
+                      onSelect={() => selectChannel(channel)}
+                      onDelete={() => void handleDeleteChannel(channel)}
+                      disabled={isSaving()}
+                    >
                       <Show when={voiceMembers(channel.id).length > 0}>
                         <ul class="channel-voice-members">
                           <For each={voiceMembers(channel.id)}>
@@ -1160,7 +1183,7 @@ export default function ChannelList() {
                           </For>
                         </ul>
                       </Show>
-                    </li>
+                    </ChannelRow>
                   )}
                 </For>
               </ul>
@@ -1595,8 +1618,7 @@ export default function ChannelList() {
           </Modal>
           <UserSettingsDock />
         </div>
-      </Show>
-      </Show>
+      </AsyncContent>
       <Show when={toastError()}>
         <div class="toast toast-error" role="status" aria-live="polite">{toastError()}</div>
       </Show>

@@ -1,6 +1,8 @@
 import { For, Show, createEffect, createResource, createSignal, onCleanup, onMount } from "solid-js";
 import { del, get, patch } from "../api/http";
 import { connect, onMessage, send } from "../api/ws";
+import { errorMessage } from "../utils/error";
+import AsyncContent from "./AsyncContent";
 import { username } from "../stores/auth";
 import { activeChannelId, type Channel } from "../stores/chat";
 import VideoStage from "./VideoStage";
@@ -157,7 +159,7 @@ export default function MessageArea() {
       )));
       cancelEdit();
     } catch (error) {
-      setWsError(error instanceof Error ? error.message : "Failed to edit message");
+      setWsError(errorMessage(error, "Failed to edit message"));
     } finally {
       setSavingMessageId(null);
     }
@@ -182,7 +184,7 @@ export default function MessageArea() {
         cancelEdit();
       }
     } catch (error) {
-      setWsError(error instanceof Error ? error.message : "Failed to delete message");
+      setWsError(errorMessage(error, "Failed to delete message"));
     } finally {
       setDeletingMessageId(null);
     }
@@ -385,88 +387,85 @@ export default function MessageArea() {
         </Show>
       </header>
       <div class="messages" ref={listRef}>
-        <Show when={!history.loading} fallback={<p class="placeholder">Loading messages...</p>}>
-          <Show
-            when={!history.error}
-            fallback={<p class="error">{history.error instanceof Error ? history.error.message : "Failed to load messages"}</p>}
-          >
-            <Show
-              when={messages().length > 0}
-              fallback={<p class="placeholder">No messages yet</p>}
-            >
-              <ul class="message-items">
-                <For each={messages()}>
-                  {(message) => (
-                    <li class="message-item">
-                      <div class="message-meta">
-                        <span class="message-author">{message.author_username}</span>
-                        <time class="message-time">
-                          {new Date(message.created_at).toLocaleTimeString([], {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
-                        </time>
-                        <Show when={message.edited_at}>
-                          <span class="message-edited">(edited)</span>
-                        </Show>
-                        <Show when={message.author_username === username()}>
-                          <div class="message-actions">
-                            <button
-                              type="button"
-                              class="message-action"
-                              onClick={() => beginEdit(message)}
-                              disabled={!!savingMessageId() || !!deletingMessageId()}
-                            >
-                              edit
-                            </button>
-                            <button
-                              type="button"
-                              class="message-action message-action-danger"
-                              onClick={() => void removeMessage(message)}
-                              disabled={!!savingMessageId() || !!deletingMessageId()}
-                            >
-                              delete
-                            </button>
-                          </div>
-                        </Show>
+        <AsyncContent
+          loading={history.loading}
+          loadingText="Loading messages..."
+          error={history.error}
+          errorText="Failed to load messages"
+          empty={messages().length === 0}
+          emptyText="No messages yet"
+        >
+          <ul class="message-items">
+            <For each={messages()}>
+              {(message) => (
+                <li class="message-item">
+                  <div class="message-meta">
+                    <span class="message-author">{message.author_username}</span>
+                    <time class="message-time">
+                      {new Date(message.created_at).toLocaleTimeString([], {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </time>
+                    <Show when={message.edited_at}>
+                      <span class="message-edited">(edited)</span>
+                    </Show>
+                    <Show when={message.author_username === username()}>
+                      <div class="message-actions">
+                        <button
+                          type="button"
+                          class="message-action"
+                          onClick={() => beginEdit(message)}
+                          disabled={!!savingMessageId() || !!deletingMessageId()}
+                        >
+                          edit
+                        </button>
+                        <button
+                          type="button"
+                          class="message-action message-action-danger"
+                          onClick={() => void removeMessage(message)}
+                          disabled={!!savingMessageId() || !!deletingMessageId()}
+                        >
+                          delete
+                        </button>
                       </div>
-                      <Show
-                        when={editingMessageId() === message.id}
-                        fallback={<p class="message-content">{message.content}</p>}
+                    </Show>
+                  </div>
+                  <Show
+                    when={editingMessageId() === message.id}
+                    fallback={<p class="message-content">{message.content}</p>}
+                  >
+                    <form class="message-edit" onSubmit={(e) => {
+                      e.preventDefault();
+                      void saveEdit(message.id);
+                    }}>
+                      <input
+                        type="text"
+                        value={editDraft()}
+                        onInput={(e) => setEditDraft(e.currentTarget.value)}
+                        maxlength={4000}
+                        disabled={savingMessageId() === message.id || !!deletingMessageId()}
+                      />
+                      <button
+                        type="submit"
+                        disabled={savingMessageId() === message.id || !!deletingMessageId()}
                       >
-                        <form class="message-edit" onSubmit={(e) => {
-                          e.preventDefault();
-                          void saveEdit(message.id);
-                        }}>
-                          <input
-                            type="text"
-                            value={editDraft()}
-                            onInput={(e) => setEditDraft(e.currentTarget.value)}
-                            maxlength={4000}
-                            disabled={savingMessageId() === message.id || !!deletingMessageId()}
-                          />
-                          <button
-                            type="submit"
-                            disabled={savingMessageId() === message.id || !!deletingMessageId()}
-                          >
-                            save
-                          </button>
-                          <button
-                            type="button"
-                            onClick={cancelEdit}
-                            disabled={savingMessageId() === message.id || !!deletingMessageId()}
-                          >
-                            cancel
-                          </button>
-                        </form>
-                      </Show>
-                    </li>
-                  )}
-                </For>
-              </ul>
-            </Show>
-          </Show>
-        </Show>
+                        save
+                      </button>
+                      <button
+                        type="button"
+                        onClick={cancelEdit}
+                        disabled={savingMessageId() === message.id || !!deletingMessageId()}
+                      >
+                        cancel
+                      </button>
+                    </form>
+                  </Show>
+                </li>
+              )}
+            </For>
+          </ul>
+        </AsyncContent>
       </div>
       <VideoStage />
       <form class="message-input" onSubmit={handleSubmit}>

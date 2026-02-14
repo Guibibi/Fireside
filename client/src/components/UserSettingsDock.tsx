@@ -1,6 +1,7 @@
 import { Show, createSignal, onCleanup } from "solid-js";
 import { useNavigate } from "@solidjs/router";
 import { patch } from "../api/http";
+import { errorMessage } from "../utils/error";
 import {
   isSpeakerSelectionSupported,
   listAudioDevices,
@@ -104,7 +105,7 @@ export default function UserSettingsDock() {
       setAudioOutputs(inventory.outputs);
       setCameraInputs(cameras);
     } catch (error) {
-      setAudioError(error instanceof Error ? error.message : "Failed to load media devices");
+      setAudioError(errorMessage(error, "Failed to load media devices"));
     } finally {
       setIsRefreshingDevices(false);
     }
@@ -140,51 +141,37 @@ export default function UserSettingsDock() {
       connect();
       closeSettings();
     } catch (error) {
-      setProfileError(error instanceof Error ? error.message : "Failed to update profile");
+      setProfileError(errorMessage(error, "Failed to update profile"));
     } finally {
       setIsSavingProfile(false);
     }
   }
 
-  async function handleAudioInputChange(event: Event) {
-    const value = (event.currentTarget as HTMLSelectElement).value;
-    setAudioError("");
-
-    try {
-      await setPreferredMicrophoneDevice(value || null);
-    } catch (error) {
-      setAudioError(error instanceof Error ? error.message : "Failed to switch microphone device");
-    }
+  function handleDeviceChange(
+    setter: (id: string | null) => Promise<void>,
+    failureMessage: string,
+  ) {
+    return async (event: Event) => {
+      const value = (event.currentTarget as HTMLSelectElement).value;
+      setAudioError("");
+      try {
+        await setter(value || null);
+      } catch (error) {
+        setAudioError(errorMessage(error, failureMessage));
+      }
+    };
   }
 
-  async function handleAudioOutputChange(event: Event) {
-    const value = (event.currentTarget as HTMLSelectElement).value;
-    setAudioError("");
-
-    try {
-      await setPreferredSpeakerDevice(value || null);
-    } catch (error) {
-      setAudioError(error instanceof Error ? error.message : "Failed to switch speaker device");
-    }
-  }
-
-  async function handleCameraInputChange(event: Event) {
-    const value = (event.currentTarget as HTMLSelectElement).value;
-    setAudioError("");
-
-    try {
-      await setPreferredCameraDevice(value || null);
-    } catch (error) {
-      setAudioError(error instanceof Error ? error.message : "Failed to switch camera device");
-    }
-  }
+  const handleAudioInputChange = handleDeviceChange(setPreferredMicrophoneDevice, "Failed to switch microphone device");
+  const handleAudioOutputChange = handleDeviceChange(setPreferredSpeakerDevice, "Failed to switch speaker device");
+  const handleCameraInputChange = handleDeviceChange(setPreferredCameraDevice, "Failed to switch camera device");
 
   async function handleResetAudioPreferences() {
     setAudioError("");
     try {
       await resetPreferredAudioDevices();
     } catch (error) {
-      setAudioError(error instanceof Error ? error.message : "Failed to reset audio preferences");
+      setAudioError(errorMessage(error, "Failed to reset audio preferences"));
     }
   }
 

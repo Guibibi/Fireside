@@ -116,6 +116,8 @@ Test/lint status (frontend TS):
 - Prefer explicit, boundary-facing types over inferred structural types.
 - Avoid placeholder naming (`tmp`, `data2`, `foo`); use domain terms.
 - Do not silently alter protocol field names or serialized wire values.
+- Keep source files under 500 lines whenever practical.
+- If a file is already at or above 500 lines, refactor by extracting cohesive pieces into smaller files as part of the change.
 
 ## Rust Style (`server/`)
 
