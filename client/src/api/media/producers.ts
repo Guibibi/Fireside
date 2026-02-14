@@ -643,38 +643,18 @@ export async function startLocalScreenProducer(
   }
 
   if (isTauriRuntime() && options?.sourceId) {
-    let nativeStartErrorMessage: string | null = null;
     try {
       return await startNativeScreenProducer(channelId, options);
     } catch (error) {
-      nativeStartErrorMessage = error instanceof Error
+      const message = error instanceof Error
         ? error.message
-        : "Native sender startup failed.";
-      console.warn("[media] Native sender startup failed; falling back to browser capture", error);
+        : "Native screen capture failed.";
+      console.error("[media] Native screen capture failed", error);
       await disarmNativeCapture();
-    }
-
-    if (nativeStartErrorMessage?.startsWith("Strict codec mode:")) {
-      setScreenError(nativeStartErrorMessage);
+      setScreenError(message);
       notifyScreenStateSubscribers();
-      return { ok: false, error: nativeStartErrorMessage };
+      return { ok: false, error: message };
     }
-
-    const browserFallbackResult = await startBrowserScreenProducer(channelId, options);
-    if (!browserFallbackResult.ok && nativeStartErrorMessage) {
-      reportNativeSenderDiagnostic(
-        channelId,
-        "native_sender_and_browser_fallback_failed",
-        nativeStartErrorMessage,
-      );
-      const browserMessage = browserFallbackResult.error ?? "Browser fallback failed.";
-      const combined = `${nativeStartErrorMessage} ${browserMessage}`;
-      setScreenError(combined);
-      notifyScreenStateSubscribers();
-      return { ok: false, error: combined };
-    }
-
-    return browserFallbackResult;
   }
 
   return startBrowserScreenProducer(channelId, options);
