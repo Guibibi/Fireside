@@ -24,6 +24,16 @@ Goals:
   - `openh264`: force software backend
 - Build feature for NVENC wiring: `native-nvenc` (in `client/src-tauri/Cargo.toml`)
   - Current status: selection and module scaffolding are wired; NVENC encode path is not implemented yet.
+- Diagnostics-only UDP mirror (disabled by default):
+  - Cargo feature: `native-diagnostic-udp-mirror`
+  - Env opt-in: `YANKCORD_NATIVE_ENABLE_DIAGNOSTIC_UDP_MIRROR=1`
+  - Mirror target: `YANKCORD_NATIVE_DIAGNOSTIC_UDP_MIRROR_TARGET=host:port`
+- Degradation tuning knobs for Windows calibration:
+  - `YANKCORD_NATIVE_DEGRADE_LEVEL1_AVG_DEPTH`, `YANKCORD_NATIVE_DEGRADE_LEVEL1_PEAK_DEPTH`
+  - `YANKCORD_NATIVE_DEGRADE_LEVEL2_AVG_DEPTH`, `YANKCORD_NATIVE_DEGRADE_LEVEL2_PEAK_DEPTH`, `YANKCORD_NATIVE_DEGRADE_LEVEL2_SCALE_DIVISOR`
+  - `YANKCORD_NATIVE_DEGRADE_LEVEL3_AVG_DEPTH`, `YANKCORD_NATIVE_DEGRADE_LEVEL3_PEAK_DEPTH`, `YANKCORD_NATIVE_DEGRADE_LEVEL3_SCALE_DIVISOR`
+  - `YANKCORD_NATIVE_DEGRADE_LEVEL3_BITRATE_NUMERATOR`, `YANKCORD_NATIVE_DEGRADE_LEVEL3_BITRATE_DENOMINATOR`
+  - `YANKCORD_NATIVE_DEGRADE_RECOVER_AVG_DEPTH`, `YANKCORD_NATIVE_DEGRADE_RECOVER_PEAK_DEPTH`
 
 ## Phase 1: Stabilize Abstractions (No New Codec Enabled)
 
@@ -51,10 +61,16 @@ Plan:
 
 1. Add NVENC-backed H264 encoder backend under Windows-only module.
 2. Startup selection policy:
-   - Prefer NVENC when available and healthy.
-   - Fallback to OpenH264 automatically on init/runtime errors.
+    - Prefer NVENC when available and healthy.
+    - Fallback to OpenH264 automatically on init/runtime errors.
 3. Surface backend selection in diagnostics (`encoder_backend: "nvenc" | "openh264"`).
 4. Keep RTP payload shape and H264 fmtp aligned with server canonical profile.
+
+Current implementation status:
+
+- Startup/runtime fallback policy to OpenH264 is wired.
+- Backend selection is surfaced via `native_capture_status.native_sender.encoder_backend` and client diagnostic events.
+- Real NVENC frame encode path is still pending.
 
 Guardrails:
 

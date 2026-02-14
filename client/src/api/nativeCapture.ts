@@ -63,6 +63,7 @@ export interface NativeCaptureStatus {
     sender_stopped_events: number;
     fallback_triggered_events: number;
     fallback_completed_events: number;
+    encoder_backend: "openh264" | "nvenc" | string | null;
   };
 }
 

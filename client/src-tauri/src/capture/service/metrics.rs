@@ -30,6 +30,7 @@ pub struct NativeSenderSharedMetrics {
     pub transport_connected: AtomicBool,
     pub producer_connected: AtomicBool,
     pub degradation_level: AtomicU64,
+    pub encoder_backend: Mutex<Option<String>>,
     pub recent_fallback_reason: Mutex<Option<String>>,
 }
 
@@ -69,6 +70,7 @@ pub struct NativeSenderMetrics {
     pub sender_stopped_events: u64,
     pub fallback_triggered_events: u64,
     pub fallback_completed_events: u64,
+    pub encoder_backend: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -83,6 +85,12 @@ pub struct NativeSenderSnapshotInput {
 }
 
 impl NativeSenderSharedMetrics {
+    pub fn set_encoder_backend(&self, backend: &str) {
+        if let Ok(mut slot) = self.encoder_backend.lock() {
+            *slot = Some(backend.to_string());
+        }
+    }
+
     pub fn set_recent_fallback_reason(&self, reason: Option<&str>) {
         if let Ok(mut slot) = self.recent_fallback_reason.lock() {
             *slot = reason.map(ToString::to_string);
@@ -116,6 +124,11 @@ impl NativeSenderSharedMetrics {
         let dropped_before_encode = self.dropped_before_encode.load(Ordering::Relaxed);
         let dropped_during_send = self.dropped_during_send.load(Ordering::Relaxed);
         let degradation_level = self.degradation_level.load(Ordering::Relaxed);
+        let encoder_backend = self
+            .encoder_backend
+            .lock()
+            .ok()
+            .and_then(|backend| backend.clone());
         let fallback_reason = self
             .recent_fallback_reason
             .lock()
@@ -173,6 +186,7 @@ impl NativeSenderSharedMetrics {
             sender_stopped_events: self.sender_stopped_events.load(Ordering::Relaxed),
             fallback_triggered_events: self.fallback_triggered_events.load(Ordering::Relaxed),
             fallback_completed_events: self.fallback_completed_events.load(Ordering::Relaxed),
+            encoder_backend,
         }
     }
 }

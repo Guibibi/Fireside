@@ -16,14 +16,144 @@ const RTP_FAILURE_THRESHOLD: u64 = 18;
 const DROPPED_FULL_THRESHOLD: u64 = 220;
 const PRESSURE_SAMPLE_INTERVAL_MS: u64 = 250;
 const PRESSURE_SAMPLE_WINDOW: usize = 20;
-const DEGRADE_TO_LEVEL1_AVG_DEPTH: u64 = 2;
-const DEGRADE_TO_LEVEL2_AVG_DEPTH: u64 = 4;
-const DEGRADE_TO_LEVEL3_AVG_DEPTH: u64 = 6;
-const DEGRADE_TO_LEVEL1_PEAK_DEPTH: u64 = 4;
-const DEGRADE_TO_LEVEL2_PEAK_DEPTH: u64 = 6;
-const DEGRADE_TO_LEVEL3_PEAK_DEPTH: u64 = 7;
-const DEGRADE_RECOVER_AVG_DEPTH: u64 = 1;
-const DEGRADE_RECOVER_PEAK_DEPTH: u64 = 2;
+const DEGRADE_TO_LEVEL1_AVG_DEPTH_DEFAULT: u64 = 2;
+const DEGRADE_TO_LEVEL2_AVG_DEPTH_DEFAULT: u64 = 4;
+const DEGRADE_TO_LEVEL3_AVG_DEPTH_DEFAULT: u64 = 6;
+const DEGRADE_TO_LEVEL1_PEAK_DEPTH_DEFAULT: u64 = 4;
+const DEGRADE_TO_LEVEL2_PEAK_DEPTH_DEFAULT: u64 = 6;
+const DEGRADE_TO_LEVEL3_PEAK_DEPTH_DEFAULT: u64 = 7;
+const DEGRADE_RECOVER_AVG_DEPTH_DEFAULT: u64 = 1;
+const DEGRADE_RECOVER_PEAK_DEPTH_DEFAULT: u64 = 2;
+const LEVEL2_SCALE_DIVISOR_DEFAULT: u32 = 2;
+const LEVEL3_SCALE_DIVISOR_DEFAULT: u32 = 2;
+const LEVEL3_BITRATE_NUMERATOR_DEFAULT: u32 = 7;
+const LEVEL3_BITRATE_DENOMINATOR_DEFAULT: u32 = 10;
+const DEFAULT_TARGET_BITRATE_KBPS: u32 = 8_000;
+const MIN_DEGRADED_BITRATE_KBPS: u32 = 1_200;
+
+#[derive(Debug, Clone)]
+struct DegradationTuning {
+    level1_avg_depth: u64,
+    level2_avg_depth: u64,
+    level3_avg_depth: u64,
+    level1_peak_depth: u64,
+    level2_peak_depth: u64,
+    level3_peak_depth: u64,
+    recover_avg_depth: u64,
+    recover_peak_depth: u64,
+    level2_scale_divisor: u32,
+    level3_scale_divisor: u32,
+    level3_bitrate_numerator: u32,
+    level3_bitrate_denominator: u32,
+}
+
+impl DegradationTuning {
+    fn from_env() -> Self {
+        let level1_avg_depth = env_u64(
+            "YANKCORD_NATIVE_DEGRADE_LEVEL1_AVG_DEPTH",
+            DEGRADE_TO_LEVEL1_AVG_DEPTH_DEFAULT,
+            1,
+            32,
+        );
+        let level2_avg_depth = env_u64(
+            "YANKCORD_NATIVE_DEGRADE_LEVEL2_AVG_DEPTH",
+            DEGRADE_TO_LEVEL2_AVG_DEPTH_DEFAULT,
+            level1_avg_depth,
+            64,
+        );
+        let level3_avg_depth = env_u64(
+            "YANKCORD_NATIVE_DEGRADE_LEVEL3_AVG_DEPTH",
+            DEGRADE_TO_LEVEL3_AVG_DEPTH_DEFAULT,
+            level2_avg_depth,
+            64,
+        );
+        let level1_peak_depth = env_u64(
+            "YANKCORD_NATIVE_DEGRADE_LEVEL1_PEAK_DEPTH",
+            DEGRADE_TO_LEVEL1_PEAK_DEPTH_DEFAULT,
+            1,
+            64,
+        );
+        let level2_peak_depth = env_u64(
+            "YANKCORD_NATIVE_DEGRADE_LEVEL2_PEAK_DEPTH",
+            DEGRADE_TO_LEVEL2_PEAK_DEPTH_DEFAULT,
+            level1_peak_depth,
+            64,
+        );
+        let level3_peak_depth = env_u64(
+            "YANKCORD_NATIVE_DEGRADE_LEVEL3_PEAK_DEPTH",
+            DEGRADE_TO_LEVEL3_PEAK_DEPTH_DEFAULT,
+            level2_peak_depth,
+            64,
+        );
+        let recover_avg_depth = env_u64(
+            "YANKCORD_NATIVE_DEGRADE_RECOVER_AVG_DEPTH",
+            DEGRADE_RECOVER_AVG_DEPTH_DEFAULT,
+            0,
+            level1_avg_depth,
+        );
+        let recover_peak_depth = env_u64(
+            "YANKCORD_NATIVE_DEGRADE_RECOVER_PEAK_DEPTH",
+            DEGRADE_RECOVER_PEAK_DEPTH_DEFAULT,
+            0,
+            level1_peak_depth,
+        );
+        let level2_scale_divisor = env_u32(
+            "YANKCORD_NATIVE_DEGRADE_LEVEL2_SCALE_DIVISOR",
+            LEVEL2_SCALE_DIVISOR_DEFAULT,
+            1,
+            4,
+        );
+        let level3_scale_divisor = env_u32(
+            "YANKCORD_NATIVE_DEGRADE_LEVEL3_SCALE_DIVISOR",
+            LEVEL3_SCALE_DIVISOR_DEFAULT,
+            level2_scale_divisor,
+            4,
+        );
+        let level3_bitrate_numerator = env_u32(
+            "YANKCORD_NATIVE_DEGRADE_LEVEL3_BITRATE_NUMERATOR",
+            LEVEL3_BITRATE_NUMERATOR_DEFAULT,
+            1,
+            100,
+        );
+        let level3_bitrate_denominator = env_u32(
+            "YANKCORD_NATIVE_DEGRADE_LEVEL3_BITRATE_DENOMINATOR",
+            LEVEL3_BITRATE_DENOMINATOR_DEFAULT,
+            level3_bitrate_numerator,
+            100,
+        );
+
+        Self {
+            level1_avg_depth,
+            level2_avg_depth,
+            level3_avg_depth,
+            level1_peak_depth,
+            level2_peak_depth,
+            level3_peak_depth,
+            recover_avg_depth,
+            recover_peak_depth,
+            level2_scale_divisor,
+            level3_scale_divisor,
+            level3_bitrate_numerator,
+            level3_bitrate_denominator,
+        }
+    }
+}
+
+fn env_u64(key: &str, default: u64, min: u64, max: u64) -> u64 {
+    std::env::var(key)
+        .ok()
+        .and_then(|raw| raw.trim().parse::<u64>().ok())
+        .filter(|value| (*value >= min) && (*value <= max))
+        .unwrap_or(default)
+}
+
+fn env_u32(key: &str, default: u32, min: u32, max: u32) -> u32 {
+    std::env::var(key)
+        .ok()
+        .and_then(|raw| raw.trim().parse::<u32>().ok())
+        .filter(|value| (*value >= min) && (*value <= max))
+        .unwrap_or(default)
+}
 
 #[derive(Debug, Clone)]
 pub struct NativeSenderRuntimeConfig {
@@ -130,25 +260,27 @@ struct AdaptiveDegradationState {
 }
 
 impl AdaptiveDegradationState {
-    fn update_level(&mut self, queue_depth: u64, now_ms: u64, shared: &NativeSenderSharedMetrics) {
+    fn update_level(
+        &mut self,
+        queue_depth: u64,
+        now_ms: u64,
+        shared: &NativeSenderSharedMetrics,
+        tuning: &DegradationTuning,
+    ) {
         self.record_sample(queue_depth, now_ms);
         let (avg_depth, peak_depth) = self.pressure_stats();
 
-        let next_level = if avg_depth >= DEGRADE_TO_LEVEL3_AVG_DEPTH
-            || peak_depth >= DEGRADE_TO_LEVEL3_PEAK_DEPTH
+        let next_level = if avg_depth >= tuning.level3_avg_depth
+            || peak_depth >= tuning.level3_peak_depth
         {
             3
-        } else if avg_depth >= DEGRADE_TO_LEVEL2_AVG_DEPTH
-            || peak_depth >= DEGRADE_TO_LEVEL2_PEAK_DEPTH
-        {
+        } else if avg_depth >= tuning.level2_avg_depth || peak_depth >= tuning.level2_peak_depth {
             2
-        } else if avg_depth >= DEGRADE_TO_LEVEL1_AVG_DEPTH
-            || peak_depth >= DEGRADE_TO_LEVEL1_PEAK_DEPTH
-        {
+        } else if avg_depth >= tuning.level1_avg_depth || peak_depth >= tuning.level1_peak_depth {
             1
         } else if self.level > 0
-            && avg_depth <= DEGRADE_RECOVER_AVG_DEPTH
-            && peak_depth <= DEGRADE_RECOVER_PEAK_DEPTH
+            && avg_depth <= tuning.recover_avg_depth
+            && peak_depth <= tuning.recover_peak_depth
         {
             self.level.saturating_sub(1)
         } else {
@@ -200,6 +332,130 @@ impl AdaptiveDegradationState {
             _ => self.frame_index % 4 != 0,
         }
     }
+
+    fn scale_divisor(&self, tuning: &DegradationTuning) -> u32 {
+        match self.level {
+            0 | 1 => 1,
+            2 => tuning.level2_scale_divisor,
+            _ => tuning.level3_scale_divisor,
+        }
+    }
+
+    fn bitrate_cap_kbps(
+        &self,
+        target_bitrate_kbps: Option<u32>,
+        tuning: &DegradationTuning,
+    ) -> Option<u32> {
+        if self.level < 3 {
+            return None;
+        }
+
+        let baseline = target_bitrate_kbps
+            .unwrap_or(DEFAULT_TARGET_BITRATE_KBPS)
+            .max(MIN_DEGRADED_BITRATE_KBPS);
+        let reduced = baseline
+            .saturating_mul(tuning.level3_bitrate_numerator)
+            .saturating_div(tuning.level3_bitrate_denominator)
+            .max(MIN_DEGRADED_BITRATE_KBPS);
+        Some(reduced)
+    }
+}
+
+#[derive(Debug, Default)]
+struct DownscaleBuffer {
+    buffer: Vec<u8>,
+}
+
+impl DownscaleBuffer {
+    fn downscale<'a>(
+        &'a mut self,
+        bgra: &'a [u8],
+        width: u32,
+        height: u32,
+        divisor: u32,
+    ) -> (&'a [u8], u32, u32) {
+        if divisor <= 1 {
+            return (bgra, width, height);
+        }
+
+        let target_width = (width / divisor).max(2) & !1;
+        let target_height = (height / divisor).max(2) & !1;
+
+        if target_width >= width || target_height >= height {
+            return (bgra, width, height);
+        }
+
+        let output_len = target_width as usize * target_height as usize * 4;
+        if self.buffer.len() != output_len {
+            self.buffer.resize(output_len, 0);
+        }
+
+        let width_scale = width as usize / target_width as usize;
+        let height_scale = height as usize / target_height as usize;
+
+        for target_y in 0..target_height as usize {
+            let source_y = target_y.saturating_mul(height_scale);
+            let source_row_start = source_y.saturating_mul(width as usize).saturating_mul(4);
+            let target_row_start = target_y
+                .saturating_mul(target_width as usize)
+                .saturating_mul(4);
+
+            for target_x in 0..target_width as usize {
+                let source_x = target_x.saturating_mul(width_scale);
+                let source_index = source_row_start.saturating_add(source_x.saturating_mul(4));
+                let target_index = target_row_start.saturating_add(target_x.saturating_mul(4));
+
+                self.buffer[target_index..target_index + 4]
+                    .copy_from_slice(&bgra[source_index..source_index + 4]);
+            }
+        }
+
+        (&self.buffer, target_width, target_height)
+    }
+}
+
+#[derive(Debug, Default)]
+struct BitrateLimiter {
+    tokens_bytes: f64,
+    max_bucket_bytes: f64,
+    current_bitrate_kbps: Option<u32>,
+    last_refill_at_ms: u64,
+}
+
+impl BitrateLimiter {
+    fn allow(&mut self, encoded_bytes: usize, now_ms: u64, bitrate_cap_kbps: Option<u32>) -> bool {
+        let Some(cap_kbps) = bitrate_cap_kbps else {
+            self.current_bitrate_kbps = None;
+            self.tokens_bytes = 0.0;
+            self.max_bucket_bytes = 0.0;
+            self.last_refill_at_ms = now_ms;
+            return true;
+        };
+
+        if self.current_bitrate_kbps != Some(cap_kbps) {
+            let bytes_per_second = (cap_kbps as f64 * 1000.0) / 8.0;
+            self.max_bucket_bytes = bytes_per_second * 1.2;
+            self.tokens_bytes = self.max_bucket_bytes;
+            self.current_bitrate_kbps = Some(cap_kbps);
+            self.last_refill_at_ms = now_ms;
+        }
+
+        let elapsed_ms = now_ms.saturating_sub(self.last_refill_at_ms);
+        if elapsed_ms > 0 {
+            let bytes_per_ms = (cap_kbps as f64 * 1000.0) / 8_000.0;
+            self.tokens_bytes =
+                (self.tokens_bytes + (bytes_per_ms * elapsed_ms as f64)).min(self.max_bucket_bytes);
+            self.last_refill_at_ms = now_ms;
+        }
+
+        let needed = encoded_bytes as f64;
+        if self.tokens_bytes >= needed {
+            self.tokens_bytes -= needed;
+            return true;
+        }
+
+        false
+    }
 }
 
 pub fn run_native_sender_worker(
@@ -217,9 +473,11 @@ pub fn run_native_sender_worker(
         config.ssrc,
     ));
     let now_ms = unix_timestamp_ms();
+    let degradation_tuning = DegradationTuning::from_env();
 
     shared.worker_started_ms.store(now_ms, Ordering::Relaxed);
     shared.sender_started_events.fetch_add(1, Ordering::Relaxed);
+    shared.set_encoder_backend(encoder.backend_name());
     shared.set_recent_fallback_reason(None);
     shared.set_degradation_level(0);
     shared
@@ -230,7 +488,7 @@ pub fn run_native_sender_worker(
         .store(packetizer.transport_connected(), Ordering::Relaxed);
 
     eprintln!(
-        "[native-sender] event=sender_started source={} codec={} encoder_backend={} pt={} ssrc={} clock={} packetization={} profile={} target={}",
+        "[native-sender] event=sender_started source={} codec={} encoder_backend={} pt={} ssrc={} clock={} packetization={} profile={} target={} degrade_l1(avg={},peak={}) degrade_l2(avg={},peak={},scale={}) degrade_l3(avg={},peak={},scale={},bitrate={}/{}) recover(avg={},peak={})",
         config.source_id,
         codec.mime_type,
         encoder.backend_name(),
@@ -240,10 +498,24 @@ pub fn run_native_sender_worker(
         codec.packetization_mode,
         codec.profile_level_id,
         config.target_rtp.as_deref().unwrap_or("disabled"),
+        degradation_tuning.level1_avg_depth,
+        degradation_tuning.level1_peak_depth,
+        degradation_tuning.level2_avg_depth,
+        degradation_tuning.level2_peak_depth,
+        degradation_tuning.level2_scale_divisor,
+        degradation_tuning.level3_avg_depth,
+        degradation_tuning.level3_peak_depth,
+        degradation_tuning.level3_scale_divisor,
+        degradation_tuning.level3_bitrate_numerator,
+        degradation_tuning.level3_bitrate_denominator,
+        degradation_tuning.recover_avg_depth,
+        degradation_tuning.recover_peak_depth,
     );
 
     let mut failure_window = FailureWindowState::new(now_ms, &shared);
     let mut degradation_state = AdaptiveDegradationState::default();
+    let mut downscale_buffer = DownscaleBuffer::default();
+    let mut bitrate_limiter = BitrateLimiter::default();
 
     while !stop_signal.load(Ordering::Relaxed) {
         match receiver.recv_timeout(Duration::from_millis(250)) {
@@ -270,12 +542,6 @@ pub fn run_native_sender_worker(
                 shared
                     .last_frame_timestamp_ms
                     .store(packet.timestamp_ms, Ordering::Relaxed);
-                shared
-                    .last_frame_width
-                    .store(packet.width as u64, Ordering::Relaxed);
-                shared
-                    .last_frame_height
-                    .store(packet.height as u64, Ordering::Relaxed);
 
                 let Some(bgra) = packet.bgra.as_ref() else {
                     shared.dropped_missing_bgra.fetch_add(1, Ordering::Relaxed);
@@ -300,20 +566,43 @@ pub fn run_native_sender_worker(
                 let queue_depth = dispatch
                     .queued_frames
                     .saturating_sub(shared.received_packets.load(Ordering::Relaxed));
-                degradation_state.update_level(queue_depth, unix_timestamp_ms(), &shared);
+                degradation_state.update_level(
+                    queue_depth,
+                    unix_timestamp_ms(),
+                    &shared,
+                    &degradation_tuning,
+                );
 
                 if degradation_state.should_drop_before_encode() {
                     shared.dropped_before_encode.fetch_add(1, Ordering::Relaxed);
                     continue;
                 }
 
+                let scale_divisor = degradation_state.scale_divisor(&degradation_tuning);
+                let (encode_input, encode_width, encode_height) =
+                    downscale_buffer.downscale(bgra, packet.width, packet.height, scale_divisor);
+                shared
+                    .last_frame_width
+                    .store(encode_width as u64, Ordering::Relaxed);
+                shared
+                    .last_frame_height
+                    .store(encode_height as u64, Ordering::Relaxed);
+
                 let encode_start_ms = unix_timestamp_ms();
-                let encoded_nals = encoder.encode_frame(bgra, packet.width, packet.height, &shared);
+                let encoded_nals =
+                    encoder.encode_frame(encode_input, encode_width, encode_height, &shared);
                 let Some(nals) = encoded_nals else {
                     continue;
                 };
 
                 let encoded_bytes: usize = nals.iter().map(|nal| nal.len()).sum();
+                let bitrate_cap_kbps = degradation_state
+                    .bitrate_cap_kbps(config.target_bitrate_kbps, &degradation_tuning);
+                if !bitrate_limiter.allow(encoded_bytes, encode_start_ms, bitrate_cap_kbps) {
+                    shared.dropped_during_send.fetch_add(1, Ordering::Relaxed);
+                    continue;
+                }
+
                 shared.encoded_frames.fetch_add(1, Ordering::Relaxed);
                 shared
                     .encoded_bytes

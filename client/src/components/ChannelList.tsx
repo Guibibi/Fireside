@@ -978,6 +978,7 @@ export default function ChannelList() {
                   <p class="voice-dock-channel">Keyframe requests: {nativeSenderMetrics()?.keyframe_requests ?? 0} | Drop(no BGRA): {nativeSenderMetrics()?.dropped_missing_bgra ?? 0}</p>
                   <p class="voice-dock-channel">Transport: {nativeSenderMetrics()?.transport_connected ? "connected" : "disconnected"} | Producer: {nativeSenderMetrics()?.producer_connected ? "connected" : "disconnected"}</p>
                   <p class="voice-dock-channel">Degradation: {nativeSenderMetrics()?.degradation_level ?? "none"} | Fallback: {nativeSenderMetrics()?.recent_fallback_reason ?? "none"}</p>
+                  <p class="voice-dock-channel">Encoder backend: {nativeSenderMetrics()?.encoder_backend ?? "unknown"}</p>
                   <Show when={nativeSenderMetrics()?.rtp_target}>
                     <p class="voice-dock-channel">RTP target: {nativeSenderMetrics()?.rtp_target}</p>
                   </Show>

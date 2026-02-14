@@ -65,6 +65,16 @@
   - [x] Server native RTP bind/announce configuration added
   - [x] Docs/examples updated for native RTP deploy settings
 - [x] Client-to-server diagnostic reporting landed for native failure classes.
+- [x] Native degradation ladder now applies resolution and bitrate pressure controls.
+  - [x] Level 2+ applies downscaled encode input before H264 encode
+  - [x] Level 3 applies bitrate token-bucket cap on encoded output
+  - [x] Degradation thresholds/scales are env-tunable for Windows pass calibration
+- [x] Diagnostics-only UDP mirror path is now feature/env gated.
+  - [x] Feature flag: `native-diagnostic-udp-mirror`
+  - [x] Env guard: `YANKCORD_NATIVE_ENABLE_DIAGNOSTIC_UDP_MIRROR` + `YANKCORD_NATIVE_DIAGNOSTIC_UDP_MIRROR_TARGET`
+- [x] Native sender status/diagnostics now include selected encoder backend.
+  - [x] `native_capture_status.native_sender.encoder_backend`
+  - [x] Client diagnostic events include encoder backend on native startup/runtime fallback
 
 ### Contract Impact
 
@@ -87,15 +97,15 @@
   - [x] Frame copy minimization / pooling (YUV reuse in OpenH264 path)
   - [x] Adaptive degradation ladder behavior (moving-window avg/peak pressure)
   - [x] Queue tuning split counters (before-encode vs during-send)
-  - [ ] Add resolution/bitrate degradation tiers (currently frame dropping only)
+  - [x] Add resolution/bitrate degradation tiers (currently frame dropping only)
   - [ ] Tune ladder thresholds based on Windows manual runs
-- [ ] Optional diagnostics-only UDP mirror finalized as explicitly feature/env-guarded.
+- [x] Optional diagnostics-only UDP mirror finalized as explicitly feature/env-guarded.
 - [ ] Codec and encoder expansion implementation.
   - [x] Define backend abstraction for encoder and RTP packetizer by codec
   - [x] Add VP8/VP9/AV1 feasibility + rollout decision
   - [x] Add encoder backend selector + NVENC scaffold (feature/env-gated)
   - [ ] Implement real NVENC backend and runtime fallback policy
-  - [ ] Surface selected encoder backend in client diagnostics payload/status
+  - [x] Surface selected encoder backend in client diagnostics payload/status
 
 ## Current Baseline (Starting Point)
 

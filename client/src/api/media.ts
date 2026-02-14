@@ -1362,6 +1362,11 @@ async function startNativeScreenProducer(
 
   try {
     await armNativeCapture(options, response.rtp_target, response.payload_type, response.ssrc);
+    const status = await nativeCaptureStatus().catch(() => null);
+    if (status) {
+      const backend = status.native_sender.encoder_backend ?? "unknown";
+      reportNativeSenderDiagnostic(channelId, "native_sender_started", `encoder_backend=${backend}`);
+    }
   } catch (error) {
     await requestMediaSignal(channelId, "media_close_producer", {
       producer_id: response.producer_id,
@@ -1392,6 +1397,14 @@ async function startNativeScreenProducer(
         if (status.native_sender.worker_active || !fallbackReason) {
           return;
         }
+
+        const backend = status.native_sender.encoder_backend ?? "unknown";
+        const degradation = status.native_sender.degradation_level;
+        reportNativeSenderDiagnostic(
+          channelId,
+          "native_sender_runtime_fallback",
+          `reason=${fallbackReason};encoder_backend=${backend};degradation=${degradation}`,
+        );
 
         const browserFallbackOptions: ScreenShareStartOptions = {
           ...options,

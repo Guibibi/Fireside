@@ -191,6 +191,7 @@ impl NativeCaptureService {
                 sender_stopped_events: 0,
                 fallback_triggered_events: 0,
                 fallback_completed_events: 0,
+                encoder_backend: None,
             });
         };
 

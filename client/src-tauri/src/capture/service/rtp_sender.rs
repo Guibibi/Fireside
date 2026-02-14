@@ -13,6 +13,7 @@ const RTCP_FMT_FIR: u8 = 4;
 pub struct NativeRtpSender {
     socket: Option<UdpSocket>,
     target: Option<SocketAddr>,
+    diagnostics_mirror: Option<DiagnosticsMirrorTarget>,
     payload_type: u8,
     sequence_number: u16,
     ssrc: u32,
@@ -39,6 +40,7 @@ impl NativeRtpSender {
         Self {
             socket,
             target: parsed_target,
+            diagnostics_mirror: DiagnosticsMirrorTarget::from_env(),
             payload_type,
             sequence_number: 1,
             ssrc,
@@ -186,12 +188,72 @@ impl NativeRtpSender {
                 }
             }
         }
+
+        if let Some(mirror) = self.diagnostics_mirror.as_mut() {
+            mirror.send_packet(packet);
+        }
     }
 
     pub fn take_and_reset_error(&mut self) -> bool {
         let had_error = self.had_send_error;
         self.had_send_error = false;
         had_error
+    }
+}
+
+#[derive(Debug)]
+struct DiagnosticsMirrorTarget {
+    socket: UdpSocket,
+    target: SocketAddr,
+}
+
+impl DiagnosticsMirrorTarget {
+    #[cfg(feature = "native-diagnostic-udp-mirror")]
+    fn from_env() -> Option<Self> {
+        let enabled = std::env::var("YANKCORD_NATIVE_ENABLE_DIAGNOSTIC_UDP_MIRROR")
+            .ok()
+            .map(|value| {
+                value.trim().eq_ignore_ascii_case("1") || value.trim().eq_ignore_ascii_case("true")
+            })
+            .unwrap_or(false);
+        if !enabled {
+            return None;
+        }
+
+        let target = std::env::var("YANKCORD_NATIVE_DIAGNOSTIC_UDP_MIRROR_TARGET")
+            .ok()
+            .and_then(|value| value.parse::<SocketAddr>().ok())?;
+
+        let bind_address = if target.is_ipv4() {
+            "0.0.0.0:0"
+        } else {
+            "[::]:0"
+        };
+        let socket = UdpSocket::bind(bind_address).ok()?;
+        socket.set_nonblocking(true).ok()?;
+        Some(Self { socket, target })
+    }
+
+    #[cfg(not(feature = "native-diagnostic-udp-mirror"))]
+    fn from_env() -> Option<Self> {
+        None
+    }
+
+    fn send_packet(&mut self, packet: &[u8]) {
+        loop {
+            match self.socket.send_to(packet, self.target) {
+                Ok(_) => break,
+                Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {
+                    continue;
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    break;
+                }
+                Err(_) => {
+                    break;
+                }
+            }
+        }
     }
 }
 
