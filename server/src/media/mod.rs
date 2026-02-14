@@ -91,7 +91,19 @@ impl MediaService {
         }
     }
 
-    pub async fn get_or_create_router(&self, channel_id: Uuid) -> Router {
+    /// Gets an existing router for the channel or creates a new one.
+    ///
+    /// NOTE: Routers are cached by channel_id. The `opus_config` is only applied
+    /// when creating a new router. If a channel's codec settings are modified
+    /// after the router is created, the cached router will retain its original
+    /// settings until the server restarts or the router is otherwise evicted.
+    /// For now this is acceptable since codec settings are set at channel creation
+    /// and are not expected to change frequently.
+    pub async fn get_or_create_router(
+        &self,
+        channel_id: Uuid,
+        opus_config: router::OpusConfig,
+    ) -> Router {
         let mut routers = self.routers.lock().await;
 
         if let Some(router) = routers.get(&channel_id) {
@@ -99,7 +111,7 @@ impl MediaService {
         }
 
         let worker = &self.workers[channel_id.as_bytes()[0] as usize % self.workers.len()];
-        let media_codecs = router::media_codecs();
+        let media_codecs = router::media_codecs(Some(&opus_config));
 
         let router = worker
             .create_router(RouterOptions::new(media_codecs))
@@ -108,6 +120,13 @@ impl MediaService {
 
         routers.insert(channel_id, router.clone());
         router
+    }
+
+    /// Removes the cached router for a channel, allowing it to be recreated
+    /// with fresh settings on the next call to `get_or_create_router`.
+    pub async fn invalidate_router(&self, channel_id: Uuid) {
+        let mut routers = self.routers.lock().await;
+        routers.remove(&channel_id);
     }
 
     pub(super) fn webrtc_listen_info(&self) -> ListenInfo {

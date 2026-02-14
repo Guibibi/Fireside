@@ -1,20 +1,26 @@
 {
-  "permissions": {
-    "allow": [
-      "Bash(npm view:*)",
-      "Bash(npx create-tauri-app:*)",
-      "Bash(cargo search:*)",
-      "Bash(cargo info:*)",
-      "Bash(curl:*)",
-      "Bash(python3:*)",
-      "WebFetch(domain:crates.io)",
-      "Bash(npm install:*)",
-      "Bash(cargo update:*)",
-      "Bash(PATH=\"/home/guibibi/.mediasoup-venv/bin:$PATH\" SQLX_OFFLINE=true cargo check:*)",
-      "Bash(npm run build:*)",
-      "Bash(git add:*)",
-      "Bash(wc:*)",
-      "Bash(git -C /home/guibibi/projects/yankcord status)"
-    ]
-  }
+    "permissions": {
+        "allow": [
+            "Bash(npm view:*)",
+            "Bash(npx create-tauri-app:*)",
+            "Bash(cargo search:*)",
+            "Bash(cargo info:*)",
+            "Bash(curl:*)",
+            "Bash(python3:*)",
+            "WebFetch(domain:crates.io)",
+            "Bash(npm install:*)",
+            "Bash(cargo update:*)",
+            "Bash(PATH=\"/home/guibibi/.mediasoup-venv/bin:$PATH\" SQLX_OFFLINE=true cargo check:*)",
+            "Bash(npm run build:*)",
+            "Bash(git add:*)",
+            "Bash(wc:*)",
+            "Bash(git -C /home/guibibi/projects/yankcord status)",
+            "Bash(npm --prefix client run typecheck)",
+            "Bash(npm --prefix client run build)",
+            "Bash(npm:*)",
+            "Bash(cargo fmt:*)",
+            "Bash(cargo:*)"
+        ]
+    },
+    "prefersReducedMotion": true
 }

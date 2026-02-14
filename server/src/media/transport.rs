@@ -12,6 +12,7 @@ use super::native_codec::{
     canonical_native_ssrc, native_rtp_parameters, NativeSenderSession, NativeVideoCodec,
     NATIVE_H264_PACKETIZATION_MODE, NATIVE_H264_PROFILE_LEVEL_ID,
 };
+use super::router::OpusConfig;
 use super::MediaService;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -137,8 +138,9 @@ impl MediaService {
     pub async fn router_rtp_capabilities(
         &self,
         channel_id: Uuid,
+        opus_config: OpusConfig,
     ) -> Result<RtpCapabilitiesFinalized, String> {
-        let router = self.get_or_create_router(channel_id).await;
+        let router = self.get_or_create_router(channel_id, opus_config).await;
         Ok(router.rtp_capabilities())
     }
 
@@ -147,6 +149,7 @@ impl MediaService {
         connection_id: Uuid,
         channel_id: Uuid,
         direction: TransportDirection,
+        opus_config: OpusConfig,
     ) -> Result<CreatedWebRtcTransport, String> {
         {
             let media_state_lock = self.connection_media();
@@ -158,7 +161,7 @@ impl MediaService {
             }
         }
 
-        let router = self.get_or_create_router(channel_id).await;
+        let router = self.get_or_create_router(channel_id, opus_config).await;
         let listen_infos = WebRtcTransportListenInfos::new(self.webrtc_listen_info());
         let transport_options = WebRtcTransportOptions::new(listen_infos);
 
@@ -341,6 +344,7 @@ impl MediaService {
         connection_id: Uuid,
         channel_id: Uuid,
         preferred_codecs: Option<Vec<String>>,
+        opus_config: OpusConfig,
     ) -> Result<NativeSenderSession, String> {
         {
             let media_state_lock = self.connection_media();
@@ -362,7 +366,7 @@ impl MediaService {
             }
         }
 
-        let router = self.get_or_create_router(channel_id).await;
+        let router = self.get_or_create_router(channel_id, opus_config).await;
         let listen_info = self.native_rtp_listen_info();
 
         let mut plain_transport_options = PlainTransportOptions::new(listen_info);

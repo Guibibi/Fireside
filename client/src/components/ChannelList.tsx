@@ -107,6 +107,11 @@ export default function ChannelList() {
     const [channelCreateName, setChannelCreateName] = createSignal("");
     const [channelCreateDescription, setChannelCreateDescription] =
         createSignal("");
+    const [channelCreateOpusBitrate, setChannelCreateOpusBitrate] = createSignal<
+        number | undefined
+    >(undefined);
+    const [channelCreateOpusDtx, setChannelCreateOpusDtx] = createSignal(false);
+    const [channelCreateOpusFec, setChannelCreateOpusFec] = createSignal(false);
     const [loadError, setLoadError] = createSignal("");
     const [toastError, setToastError] = createSignal("");
     const [cameraActionPending, setCameraActionPending] = createSignal(false);
@@ -552,12 +557,18 @@ export default function ChannelList() {
         setChannelCreateOpenKind(null);
         setChannelCreateName("");
         setChannelCreateDescription("");
+        setChannelCreateOpusBitrate(undefined);
+        setChannelCreateOpusDtx(false);
+        setChannelCreateOpusFec(false);
     }
 
     async function handleCreateChannel(
         kind: Channel["kind"],
         rawName: string,
         rawDescription: string,
+        opusBitrate?: number,
+        opusDtx?: boolean,
+        opusFec?: boolean,
     ) {
         if (isSaving()) {
             return;
@@ -578,6 +589,9 @@ export default function ChannelList() {
                 description:
                     trimmedDescription.length > 0 ? trimmedDescription : null,
                 kind,
+                opus_bitrate: opusBitrate,
+                opus_dtx: opusDtx,
+                opus_fec: opusFec,
             });
             closeCreateChannel();
         } catch (error) {
@@ -1069,8 +1083,14 @@ export default function ChannelList() {
                     setDescription={setChannelCreateDescription}
                     nameInputRef={() => channelCreateNameInputRef}
                     isSaving={isSaving()}
-                    onSubmit={(kind, name, description) =>
-                        void handleCreateChannel(kind, name, description)
+                    opusBitrate={channelCreateOpusBitrate}
+                    setOpusBitrate={setChannelCreateOpusBitrate}
+                    opusDtx={channelCreateOpusDtx}
+                    setOpusDtx={setChannelCreateOpusDtx}
+                    opusFec={channelCreateOpusFec}
+                    setOpusFec={setChannelCreateOpusFec}
+                    onSubmit={(kind, name, description, opusBitrate, opusDtx, opusFec) =>
+                        void handleCreateChannel(kind, name, description, opusBitrate, opusDtx, opusFec)
                     }
                 />
 

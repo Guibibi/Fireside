@@ -7,6 +7,7 @@ use uuid::Uuid;
 use super::broadcast::send_server_message;
 use super::messages::ServerMessage;
 use super::voice::{broadcast_closed_producers, broadcast_media_signal_to_voice_channel};
+use crate::media::router::OpusConfig;
 use crate::media::transport::{ProducerSource, RoutingMode, TransportDirection};
 use crate::AppState;
 
@@ -15,6 +16,33 @@ pub const MAX_REQUEST_ID_CHARS: usize = 128;
 pub const MAX_ENTITY_ID_CHARS: usize = 128;
 pub const MEDIA_SIGNAL_RATE_WINDOW: Duration = Duration::from_secs(5);
 pub const MAX_MEDIA_SIGNAL_EVENTS_PER_WINDOW: u32 = 80;
+
+async fn get_channel_opus_config(state: &AppState, channel_id: Uuid) -> OpusConfig {
+    let result =
+        sqlx::query_as("SELECT opus_bitrate, opus_dtx, opus_fec FROM channels WHERE id = $1")
+            .bind(channel_id)
+            .fetch_optional(&state.db)
+            .await;
+
+    let row: Option<(Option<i32>, Option<bool>, Option<bool>)> = match result {
+        Ok(row) => row,
+        Err(e) => {
+            tracing::warn!(
+                "Failed to fetch opus config for channel {}: {}",
+                channel_id,
+                e
+            );
+            None
+        }
+    };
+
+    row.map(|(bitrate, dtx, fec)| OpusConfig {
+        bitrate: bitrate.map(|b| b as u32),
+        dtx,
+        fec,
+    })
+    .unwrap_or_default()
+}
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "action", rename_all = "snake_case")]
@@ -326,7 +354,12 @@ pub async fn handle_media_signal_message(
 
     match request {
         MediaSignalRequest::GetRouterRtpCapabilities { request_id } => {
-            match state.media.router_rtp_capabilities(channel_id).await {
+            let opus_config = get_channel_opus_config(state, channel_id).await;
+            match state
+                .media
+                .router_rtp_capabilities(channel_id, opus_config)
+                .await
+            {
                 Ok(rtp_capabilities) => {
                     send_server_message(
                         out_tx,
@@ -363,9 +396,15 @@ pub async fn handle_media_signal_message(
                 }
             };
 
+            let opus_config = get_channel_opus_config(state, channel_id).await;
             match state
                 .media
-                .create_webrtc_transport_for_connection(connection_id, channel_id, direction)
+                .create_webrtc_transport_for_connection(
+                    connection_id,
+                    channel_id,
+                    direction,
+                    opus_config,
+                )
                 .await
             {
                 Ok(transport) => {
@@ -641,12 +680,14 @@ pub async fn handle_media_signal_message(
             request_id,
             preferred_codecs,
         } => {
+            let opus_config = get_channel_opus_config(state, channel_id).await;
             match state
                 .media
                 .create_native_sender_session_for_connection(
                     connection_id,
                     channel_id,
                     preferred_codecs,
+                    opus_config,
                 )
                 .await
             {

@@ -18,6 +18,9 @@ pub struct Channel {
     pub kind: ChannelKind,
     pub position: i32,
     pub created_at: DateTime<Utc>,
+    pub opus_bitrate: Option<i32>,
+    pub opus_dtx: Option<bool>,
+    pub opus_fec: Option<bool>,
 }
 
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]

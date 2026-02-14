@@ -7,6 +7,9 @@ export interface Channel {
   kind: "text" | "voice";
   position: number;
   created_at: string;
+  opus_bitrate?: number | null;
+  opus_dtx?: boolean | null;
+  opus_fec?: boolean | null;
 }
 
 const [activeChannelId, setActiveChannelId] = createSignal<string | null>(null);

@@ -68,7 +68,7 @@ Yankcord is a self-hosted, minimal chat app. One server instance = one community
 8. GIF search support
 9. Voice participant avatars polish
 
-### 5.1 Separate text and voice channel groups in UI
+### 5.1 Separate text and voice channel groups in UI (completed)
 
 **Goal**
 - Improve navigation clarity by rendering explicit `Text Channels` and `Voice Channels` sections.
@@ -78,7 +78,7 @@ Yankcord is a self-hosted, minimal chat app. One server instance = one community
 - Client: keep unread/activity badges on text channels and voice presence affordances on voice channels.
 - Server: keep channel list endpoint compatible; include/confirm channel type field is authoritative.
 
-### 5.2 Native-style context menus
+### 5.2 Native-style context menus (completed)
 
 **Goal**
 - Provide desktop-native-feeling right-click menus for channels, users, messages, and member entries.

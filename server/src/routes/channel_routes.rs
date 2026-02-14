@@ -20,6 +20,9 @@ pub struct CreateChannelRequest {
     pub name: String,
     pub description: Option<String>,
     pub kind: ChannelKind,
+    pub opus_bitrate: Option<i32>,
+    pub opus_dtx: Option<bool>,
+    pub opus_fec: Option<bool>,
 }
 
 #[derive(Deserialize)]
@@ -118,6 +121,15 @@ async fn create_channel(
         _ => None,
     };
 
+    // Validate opus_bitrate range (Opus supports 6000-510000 bps)
+    if let Some(bitrate) = body.opus_bitrate {
+        if !(6000..=510000).contains(&bitrate) {
+            return Err(AppError::BadRequest(
+                "opus_bitrate must be between 6000 and 510000".into(),
+            ));
+        }
+    }
+
     let (max_pos,): (i32,) = sqlx::query_as("SELECT COALESCE(MAX(position), -1) FROM channels")
         .fetch_one(&state.db)
         .await?;
@@ -129,13 +141,16 @@ async fn create_channel(
     };
 
     let channel: Channel = sqlx::query_as(
-        "INSERT INTO channels (id, name, description, kind, position) VALUES ($1, $2, $3, $4::channel_kind, $5) RETURNING *",
+        "INSERT INTO channels (id, name, description, kind, position, opus_bitrate, opus_dtx, opus_fec) VALUES ($1, $2, $3, $4::channel_kind, $5, $6, $7, $8) RETURNING *",
     )
     .bind(Uuid::new_v4())
     .bind(trimmed_name)
     .bind(description)
     .bind(kind_str)
     .bind(position)
+    .bind(body.opus_bitrate)
+    .bind(body.opus_dtx)
+    .bind(body.opus_fec)
     .fetch_one(&state.db)
     .await?;
 
@@ -273,6 +288,9 @@ async fn cleanup_deleted_voice_channel(state: &AppState, channel_id: Uuid) {
     for connection_id in affected_connection_ids {
         let _ = state.media.cleanup_connection_media(connection_id).await;
     }
+
+    // Invalidate the cached router so it can be garbage collected
+    state.media.invalidate_router(channel_id).await;
 
     for username in removed_usernames {
         broadcast_global_message(
