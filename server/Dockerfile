@@ -2,6 +2,8 @@ FROM rust:bookworm AS builder
 
 WORKDIR /app
 
+RUN rustup component add rustfmt
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
   build-essential \
   clang \
