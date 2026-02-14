@@ -35,12 +35,15 @@ import {
   preferredScreenShareSourceKind,
   savePreferredScreenShareBitrateMode,
   savePreferredScreenShareCustomBitrateKbps,
+  savePreferredScreenShareEncoderBackend,
   savePreferredScreenShareFps,
   savePreferredScreenShareResolution,
   savePreferredScreenShareSourceKind,
   type ScreenShareBitrateMode,
+  type ScreenShareEncoderBackend,
   type ScreenShareFps,
   type ScreenShareResolution,
+  preferredScreenShareEncoderBackend,
 } from "../stores/settings";
 import { isTauriRuntime } from "../utils/platform";
 import {
@@ -197,6 +200,7 @@ export default function ChannelList() {
       fps: preferredScreenShareFps(),
       bitrateKbps: selectedScreenShareBitrateKbps(),
       sourceKind,
+      encoderBackend: preferredScreenShareEncoderBackend(),
       sourceId: selected?.id,
       sourceTitle: selected?.title,
     };
@@ -727,6 +731,13 @@ export default function ChannelList() {
     savePreferredScreenShareCustomBitrateKbps(value);
   }
 
+  function handleScreenShareEncoderBackendInput(event: Event) {
+    const value = (event.currentTarget as HTMLSelectElement).value;
+    if (value === "auto" || value === "openh264" || value === "nvenc") {
+      savePreferredScreenShareEncoderBackend(value as ScreenShareEncoderBackend);
+    }
+  }
+
   const sortedChannels = () => [...channels()].sort((a, b) => a.position - b.position);
   const connectedVoiceChannelName = () => {
     const connectedChannelId = joinedVoiceChannelId();
@@ -1111,6 +1122,17 @@ export default function ChannelList() {
                       onInput={handleScreenShareCustomBitrateInput}
                     />
                   </Show>
+
+                  <label class="settings-label" for="voice-share-encoder-backend">Encoder backend</label>
+                  <select
+                    id="voice-share-encoder-backend"
+                    value={preferredScreenShareEncoderBackend()}
+                    onInput={handleScreenShareEncoderBackendInput}
+                  >
+                    <option value="auto">Auto (prefer NVENC)</option>
+                    <option value="nvenc">NVENC only</option>
+                    <option value="openh264">OpenH264 only</option>
+                  </select>
 
                   <p class="settings-help">Estimated target bitrate: {effectiveScreenShareBitrateLabel()}</p>
 

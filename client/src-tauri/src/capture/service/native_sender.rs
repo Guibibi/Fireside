@@ -161,6 +161,7 @@ pub struct NativeSenderRuntimeConfig {
     pub source_id: String,
     pub target_fps: Option<u32>,
     pub target_bitrate_kbps: Option<u32>,
+    pub encoder_backend_preference: Option<String>,
     pub target_rtp: Option<String>,
     pub payload_type: u8,
     pub ssrc: u32,
@@ -466,8 +467,26 @@ pub fn run_native_sender_worker(
     stop_signal: Arc<std::sync::atomic::AtomicBool>,
     shared: Arc<NativeSenderSharedMetrics>,
 ) {
-    let (mut encoder, encoder_selection) =
-        create_encoder_backend(config.target_fps, config.target_bitrate_kbps);
+    let (mut encoder, encoder_selection) = match create_encoder_backend(
+        config.target_fps,
+        config.target_bitrate_kbps,
+        config.encoder_backend_preference.as_deref(),
+    ) {
+        Ok(selection) => selection,
+        Err(error) => {
+            shared.encode_errors.fetch_add(1, Ordering::Relaxed);
+            shared.set_encoder_backend_requested(
+                config
+                    .encoder_backend_preference
+                    .as_deref()
+                    .unwrap_or("auto"),
+            );
+            shared.set_encoder_backend_fallback_reason(Some(error.as_str()));
+            trigger_native_fallback("encoder_init_failed", &config.source_id, &shared);
+            stop_signal.store(true, Ordering::Relaxed);
+            return;
+        }
+    };
     let codec = encoder.codec_descriptor();
     let mut packetizer: Box<dyn RtpPacketizer> = Box::new(H264RtpPacketizer::new(
         config.target_rtp.clone(),
@@ -611,6 +630,7 @@ pub fn run_native_sender_worker(
                 let Some(nals) = encoded_nals else {
                     consecutive_encode_failures = consecutive_encode_failures.saturating_add(1);
                     if active_encoder_backend == "nvenc"
+                        && encoder_selection.requested_backend == "auto"
                         && consecutive_encode_failures >= nvenc_runtime_fallback_encode_failures
                     {
                         encoder =

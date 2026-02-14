@@ -130,6 +130,7 @@ export interface ScreenShareStartOptions {
   fps: ScreenShareFps;
   bitrateKbps: number;
   sourceKind: ScreenShareSourceKind;
+  encoderBackend?: "auto" | "openh264" | "nvenc";
   sourceId?: string;
   sourceTitle?: string;
 }
@@ -849,6 +850,7 @@ async function armNativeCapture(
     resolution: options.resolution,
     fps: options.fps,
     bitrate_kbps: options.bitrateKbps,
+    encoder_backend: options.encoderBackend,
     rtp_target: rtpTarget,
     payload_type: payloadType,
     ssrc,

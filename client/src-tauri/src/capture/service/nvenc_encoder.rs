@@ -97,7 +97,6 @@ mod imp {
         preset: String,
         target_fps: u32,
         target_bitrate_kbps: u32,
-        force_next_idr: bool,
         process: Option<NvencProcess>,
     }
 
@@ -120,7 +119,6 @@ mod imp {
                 target_bitrate_kbps: target_bitrate_kbps
                     .unwrap_or(DEFAULT_TARGET_BITRATE_KBPS)
                     .max(1_000),
-                force_next_idr: false,
                 process: None,
             })
         }
@@ -132,16 +130,14 @@ mod imp {
         }
 
         fn ensure_process(&mut self, width: u32, height: u32) -> Result<&mut NvencProcess, String> {
-            let need_restart = self.force_next_idr
-                || self
-                    .process
-                    .as_ref()
-                    .map(|process| process.width != width || process.height != height)
-                    .unwrap_or(false);
+            let need_restart = self
+                .process
+                .as_ref()
+                .map(|process| process.width != width || process.height != height)
+                .unwrap_or(false);
 
             if need_restart {
                 self.restart_process();
-                self.force_next_idr = false;
             }
 
             if self.process.is_none() {
@@ -228,8 +224,7 @@ mod imp {
         }
 
         fn request_keyframe(&mut self) -> bool {
-            self.force_next_idr = true;
-            true
+            false
         }
     }
 

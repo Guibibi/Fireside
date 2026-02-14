@@ -45,16 +45,20 @@ enum EncoderPreference {
 }
 
 impl EncoderPreference {
-    fn from_env() -> Self {
-        let raw = std::env::var("YANKCORD_NATIVE_ENCODER_BACKEND")
-            .ok()
-            .unwrap_or_default();
+    fn from_label(raw: &str) -> Self {
         let normalized = raw.trim().to_lowercase();
         match normalized.as_str() {
             "openh264" | "open_h264" | "software" => Self::OpenH264,
             "nvenc" => Self::Nvenc,
             _ => Self::Auto,
         }
+    }
+
+    fn from_env() -> Self {
+        let raw = std::env::var("YANKCORD_NATIVE_ENCODER_BACKEND")
+            .ok()
+            .unwrap_or_default();
+        Self::from_label(&raw)
     }
 
     fn as_label(&self) -> &'static str {
@@ -69,57 +73,49 @@ impl EncoderPreference {
 pub fn create_encoder_backend(
     target_fps: Option<u32>,
     target_bitrate_kbps: Option<u32>,
-) -> (Box<dyn VideoEncoderBackend>, EncoderBackendSelection) {
-    let preference = EncoderPreference::from_env();
+    preference_override: Option<&str>,
+) -> Result<(Box<dyn VideoEncoderBackend>, EncoderBackendSelection), String> {
+    let preference = preference_override
+        .map(EncoderPreference::from_label)
+        .unwrap_or_else(EncoderPreference::from_env);
     let requested_backend = preference.as_label();
 
     if preference != EncoderPreference::OpenH264 {
         match try_build_nvenc_backend(target_fps, target_bitrate_kbps) {
             Ok(backend) => {
-                return (
+                return Ok((
                     backend,
                     EncoderBackendSelection {
                         requested_backend,
                         selected_backend: "nvenc",
                         fallback_reason: None,
                     },
-                );
+                ));
             }
             Err(error) if preference == EncoderPreference::Nvenc => {
-                eprintln!(
-                    "[native-sender] event=encoder_backend_fallback requested=nvenc selected=openh264 reason={}",
-                    error
-                );
-                return (
-                    create_openh264_backend(target_fps, target_bitrate_kbps),
-                    EncoderBackendSelection {
-                        requested_backend,
-                        selected_backend: "openh264",
-                        fallback_reason: Some(error),
-                    },
-                );
+                return Err(error);
             }
             Err(error) => {
-                return (
+                return Ok((
                     create_openh264_backend(target_fps, target_bitrate_kbps),
                     EncoderBackendSelection {
                         requested_backend,
                         selected_backend: "openh264",
                         fallback_reason: Some(error),
                     },
-                );
+                ));
             }
         }
     }
 
-    (
+    Ok((
         create_openh264_backend(target_fps, target_bitrate_kbps),
         EncoderBackendSelection {
             requested_backend,
             selected_backend: "openh264",
             fallback_reason: None,
         },
-    )
+    ))
 }
 
 pub struct OpenH264EncoderBackend {

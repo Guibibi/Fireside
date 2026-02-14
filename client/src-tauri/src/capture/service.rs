@@ -37,6 +37,7 @@ struct ActiveCaptureSession {
     resolution: Option<String>,
     fps: Option<u32>,
     bitrate_kbps: Option<u32>,
+    encoder_backend: Option<String>,
 }
 
 #[derive(Debug)]
@@ -64,6 +65,7 @@ pub struct StartNativeCaptureRequest {
     pub resolution: Option<String>,
     pub fps: Option<u32>,
     pub bitrate_kbps: Option<u32>,
+    pub encoder_backend: Option<String>,
     pub rtp_target: Option<String>,
     pub payload_type: Option<u8>,
     pub ssrc: Option<u32>,
@@ -307,6 +309,7 @@ impl NativeCaptureService {
         source_id: String,
         fps: Option<u32>,
         bitrate_kbps: Option<u32>,
+        encoder_backend: Option<String>,
         rtp_target: Option<String>,
         payload_type: u8,
         ssrc: u32,
@@ -327,6 +330,7 @@ impl NativeCaptureService {
         let worker_source_id = source_id.clone();
         let worker_target_fps = fps;
         let worker_target_bitrate_kbps = bitrate_kbps;
+        let worker_encoder_backend = encoder_backend.clone();
         let worker_target_rtp = target_rtp.clone();
         let handle = thread::Builder::new()
             .name("native-sender-worker".to_string())
@@ -336,6 +340,7 @@ impl NativeCaptureService {
                         source_id: worker_source_id,
                         target_fps: worker_target_fps,
                         target_bitrate_kbps: worker_target_bitrate_kbps,
+                        encoder_backend_preference: worker_encoder_backend,
                         target_rtp: worker_target_rtp,
                         payload_type,
                         ssrc,
@@ -412,6 +417,22 @@ fn normalize_bitrate_kbps(bitrate_kbps: Option<u32>) -> Result<Option<u32>, Stri
     Err("Bitrate out of range. Use a value between 1500 and 50000 kbps.".to_string())
 }
 
+fn normalize_encoder_backend(encoder_backend: Option<String>) -> Result<Option<String>, String> {
+    let Some(value) = encoder_backend else {
+        return Ok(None);
+    };
+
+    let normalized = value.trim().to_lowercase();
+    if normalized.is_empty() {
+        return Ok(None);
+    }
+
+    match normalized.as_str() {
+        "auto" | "openh264" | "nvenc" => Ok(Some(normalized)),
+        _ => Err("Unsupported encoder backend. Use auto, openh264, or nvenc.".to_string()),
+    }
+}
+
 fn normalize_payload_type(payload_type: Option<u8>) -> Result<u8, String> {
     let value = payload_type.unwrap_or(96);
     if value > 127 {
@@ -449,6 +470,7 @@ pub fn start_native_capture(
     let resolution = normalize_resolution(request.resolution)?;
     let fps = normalize_fps(request.fps)?;
     let bitrate_kbps = normalize_bitrate_kbps(request.bitrate_kbps)?;
+    let encoder_backend = normalize_encoder_backend(request.encoder_backend)?;
     let payload_type = normalize_payload_type(request.payload_type)?;
     let ssrc = normalize_ssrc(request.ssrc)?;
 
@@ -474,6 +496,7 @@ pub fn start_native_capture(
             && active.resolution == resolution
             && active.fps == fps
             && active.bitrate_kbps == bitrate_kbps
+            && active.encoder_backend == encoder_backend
             && service.is_worker_active_for(normalized)?
             && windows_capture::is_capture_active_for(normalized)?
         {
@@ -497,6 +520,7 @@ pub fn start_native_capture(
         normalized.to_string(),
         fps,
         bitrate_kbps,
+        encoder_backend.clone(),
         rtp_target,
         payload_type,
         ssrc,
@@ -523,6 +547,7 @@ pub fn start_native_capture(
         resolution,
         fps,
         bitrate_kbps,
+        encoder_backend,
     });
 
     drop(active_session);

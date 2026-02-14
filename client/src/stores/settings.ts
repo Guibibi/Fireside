@@ -9,11 +9,13 @@ const SCREEN_SHARE_FPS_KEY = "yankcord_screen_share_fps";
 const SCREEN_SHARE_BITRATE_MODE_KEY = "yankcord_screen_share_bitrate_mode";
 const SCREEN_SHARE_CUSTOM_BITRATE_KEY = "yankcord_screen_share_custom_bitrate_kbps";
 const SCREEN_SHARE_SOURCE_KIND_KEY = "yankcord_screen_share_source_kind";
+const SCREEN_SHARE_ENCODER_BACKEND_KEY = "yankcord_screen_share_encoder_backend";
 
 export type ScreenShareResolution = "720p" | "1080p" | "1440p" | "4k";
 export type ScreenShareFps = 30 | 60;
 export type ScreenShareBitrateMode = "auto" | "balanced" | "high" | "ultra" | "custom";
 export type ScreenShareSourceKind = "screen" | "window" | "application";
+export type ScreenShareEncoderBackend = "auto" | "openh264" | "nvenc";
 
 function readScreenShareResolution(): ScreenShareResolution {
   const value = localStorage.getItem(SCREEN_SHARE_RESOLUTION_KEY);
@@ -61,6 +63,15 @@ function readScreenShareSourceKind(): ScreenShareSourceKind {
   return "screen";
 }
 
+function readScreenShareEncoderBackend(): ScreenShareEncoderBackend {
+  const value = localStorage.getItem(SCREEN_SHARE_ENCODER_BACKEND_KEY);
+  if (value === "auto" || value === "openh264" || value === "nvenc") {
+    return value;
+  }
+
+  return "auto";
+}
+
 const [preferredAudioInputDeviceId, setPreferredAudioInputDeviceId] = createSignal<string | null>(
   localStorage.getItem(AUDIO_INPUT_KEY),
 );
@@ -97,6 +108,10 @@ const [preferredScreenShareSourceKind, setPreferredScreenShareSourceKind] = crea
   readScreenShareSourceKind(),
 );
 
+const [preferredScreenShareEncoderBackend, setPreferredScreenShareEncoderBackend] = createSignal<ScreenShareEncoderBackend>(
+  readScreenShareEncoderBackend(),
+);
+
 export {
   preferredAudioInputDeviceId,
   preferredAudioOutputDeviceId,
@@ -107,6 +122,7 @@ export {
   preferredScreenShareBitrateMode,
   preferredScreenShareCustomBitrateKbps,
   preferredScreenShareSourceKind,
+  preferredScreenShareEncoderBackend,
 };
 
 export function savePreferredAudioInputDeviceId(deviceId: string | null) {
@@ -173,6 +189,11 @@ export function savePreferredScreenShareCustomBitrateKbps(kbps: number) {
 export function savePreferredScreenShareSourceKind(kind: ScreenShareSourceKind) {
   localStorage.setItem(SCREEN_SHARE_SOURCE_KIND_KEY, kind);
   setPreferredScreenShareSourceKind(kind);
+}
+
+export function savePreferredScreenShareEncoderBackend(backend: ScreenShareEncoderBackend) {
+  localStorage.setItem(SCREEN_SHARE_ENCODER_BACKEND_KEY, backend);
+  setPreferredScreenShareEncoderBackend(backend);
 }
 
 export function resetAudioPreferences() {
