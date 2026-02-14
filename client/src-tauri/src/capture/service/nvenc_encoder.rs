@@ -8,6 +8,7 @@ use super::metrics::NativeSenderSharedMetrics;
 #[cfg(all(target_os = "windows", feature = "native-nvenc"))]
 mod imp {
     use std::io::{BufRead, BufReader, Read, Write};
+    use std::os::windows::process::CommandExt;
     use std::path::PathBuf;
     use std::process::{Child, ChildStdin, Command, Stdio};
     use std::sync::atomic::Ordering;
@@ -22,6 +23,7 @@ mod imp {
     const DEFAULT_TARGET_FPS: u32 = 30;
     const DEFAULT_TARGET_BITRATE_KBPS: u32 = 8_000;
     const FRAME_ENCODE_TIMEOUT_MS: u64 = 1_500;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
     struct NvencProcess {
         child: Child,
@@ -247,6 +249,7 @@ mod imp {
 
     fn ensure_nvenc_encoder_available(ffmpeg_bin: &str) -> Result<(), String> {
         let output = Command::new(ffmpeg_bin)
+            .creation_flags(CREATE_NO_WINDOW)
             .arg("-hide_banner")
             .arg("-encoders")
             .stdout(Stdio::piped())
@@ -299,6 +302,7 @@ mod imp {
             if let Some(exe_dir) = current_exe.parent() {
                 candidates.push(exe_dir.join("ffmpeg.exe"));
                 candidates.push(exe_dir.join("resources").join("ffmpeg.exe"));
+                candidates.push(exe_dir.join("resources").join("bin").join("ffmpeg.exe"));
             }
         }
 
@@ -321,6 +325,7 @@ mod imp {
     ) -> Result<NvencProcess, String> {
         let mut command = Command::new(ffmpeg_bin);
         command
+            .creation_flags(CREATE_NO_WINDOW)
             .arg("-hide_banner")
             .arg("-loglevel")
             .arg("error")

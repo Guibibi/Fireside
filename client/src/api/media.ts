@@ -800,6 +800,44 @@ function reportNativeSenderDiagnostic(channelId: string, event: string, detail?:
   });
 }
 
+async function readNativeSenderBackendStatus(): Promise<{
+  backend: string;
+  requestedBackend: string;
+  fallbackReason: string;
+}> {
+  const maxAttempts = 10;
+  const retryDelayMs = 50;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const status = await nativeCaptureStatus().catch(() => null);
+    if (!status) {
+      continue;
+    }
+
+    const backend = status.native_sender.encoder_backend;
+    const requestedBackend = status.native_sender.encoder_backend_requested;
+    const fallbackReason = status.native_sender.encoder_backend_fallback_reason ?? "none";
+
+    if (backend && requestedBackend) {
+      return {
+        backend,
+        requestedBackend,
+        fallbackReason,
+      };
+    }
+
+    if (attempt < maxAttempts - 1) {
+      await new Promise((resolve) => window.setTimeout(resolve, retryDelayMs));
+    }
+  }
+
+  return {
+    backend: "unknown",
+    requestedBackend: "unknown",
+    fallbackReason: "none",
+  };
+}
+
 async function armNativeCapture(
   options: ScreenShareStartOptions,
   rtpTarget: string,
@@ -1415,17 +1453,12 @@ async function startNativeScreenProducer(
 
   try {
     await armNativeCapture(options, response.rtp_target, response.payload_type, response.ssrc);
-    const status = await nativeCaptureStatus().catch(() => null);
-    if (status) {
-      const backend = status.native_sender.encoder_backend ?? "unknown";
-      const requestedBackend = status.native_sender.encoder_backend_requested ?? "unknown";
-      const fallbackReason = status.native_sender.encoder_backend_fallback_reason ?? "none";
-      reportNativeSenderDiagnostic(
-        channelId,
-        "native_sender_started",
-        `encoder_backend=${backend};requested_backend=${requestedBackend};backend_fallback_reason=${fallbackReason}`,
-      );
-    }
+    const backendStatus = await readNativeSenderBackendStatus();
+    reportNativeSenderDiagnostic(
+      channelId,
+      "native_sender_started",
+      `encoder_backend=${backendStatus.backend};requested_backend=${backendStatus.requestedBackend};backend_fallback_reason=${backendStatus.fallbackReason}`,
+    );
   } catch (error) {
     await requestMediaSignal(channelId, "media_close_producer", {
       producer_id: response.producer_id,
