@@ -16,9 +16,14 @@ const [serverUrl, setServerUrl] = createSignal<string>(
 
 export function normalizeServerUrl(url: string): string {
   const trimmed = url.trim();
-  const withProtocol = /^https?:\/\//i.test(trimmed)
-    ? trimmed
-    : `http://${trimmed}`;
+  let withProtocol: string;
+  if (/^https?:\/\//i.test(trimmed)) {
+    withProtocol = trimmed;
+  } else if (/^localhost(:|$)/i.test(trimmed) || /^127\./.test(trimmed)) {
+    withProtocol = `http://${trimmed}`;
+  } else {
+    withProtocol = `https://${trimmed}`;
+  }
   return withProtocol.replace(/\/api\/?$/i, "").replace(/\/+$/, "");
 }
 
