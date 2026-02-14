@@ -1,0 +1,88 @@
+/* ==========================================================================
+   YANKCORD - Design System Variables
+   ========================================================================== */
+
+:root {
+  /* Core palette - Deep purple-grey night sky */
+  --void: #13111c;
+  --nebula-deep: #1a1726;
+  --nebula: #1e1b2e;
+  --nebula-light: #262336;
+  --cloud-dark: #322e45;
+  --cloud: #433e5a;
+  --mist: #5c5678;
+  --haze: #7a7394;
+  --soft: #9d97b5;
+  --pearl: #c4bfd6;
+  --snow: #e8e4f0;
+  --white: #f8f6fc;
+
+  /* Pastel accents - Soft and dreamy */
+  --lavender: #b4a7d6;
+  --lavender-soft: rgba(180, 167, 214, 0.15);
+  --lavender-glow: rgba(180, 167, 214, 0.25);
+
+  --pink: #e8b4bc;
+  --pink-soft: rgba(232, 180, 188, 0.15);
+  --pink-glow: rgba(232, 180, 188, 0.25);
+
+  --mint: #a8e6cf;
+  --mint-soft: rgba(168, 230, 207, 0.15);
+  --mint-glow: rgba(168, 230, 207, 0.3);
+
+  --peach: #ffd3b6;
+  --peach-soft: rgba(255, 211, 182, 0.15);
+  --peach-glow: rgba(255, 211, 182, 0.3);
+
+  --sky: #a7c5eb;
+  --sky-soft: rgba(167, 197, 235, 0.15);
+  --sky-glow: rgba(167, 197, 235, 0.25);
+
+  --coral: #f4a4a4;
+  --coral-soft: rgba(244, 164, 164, 0.15);
+  --coral-glow: rgba(244, 164, 164, 0.3);
+
+  /* Semantic colors */
+  --accent: var(--lavender);
+  --success: var(--mint);
+  --warning: var(--peach);
+  --danger: var(--coral);
+  --info: var(--sky);
+
+  /* Typography */
+  --font-sans: 'DM Sans', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --font-mono: 'Inconsolata', 'Consolas', monospace;
+
+  /* Spacing */
+  --space-2xs: 0.125rem;
+  --space-xs: 0.25rem;
+  --space-sm: 0.5rem;
+  --space-md: 0.75rem;
+  --space-lg: 1rem;
+  --space-xl: 1.25rem;
+  --space-2xl: 1.75rem;
+  --space-3xl: 2.5rem;
+
+  /* Border radius - Pillowy and soft */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --radius-full: 9999px;
+
+  /* Shadows - Soft and diffused */
+  --shadow-sm: 0 2px 8px rgba(19, 17, 28, 0.3);
+  --shadow-md: 0 4px 16px rgba(19, 17, 28, 0.4);
+  --shadow-lg: 0 8px 32px rgba(19, 17, 28, 0.5);
+  --shadow-glow-lavender: 0 0 20px var(--lavender-glow);
+  --shadow-glow-mint: 0 0 16px var(--mint-glow);
+  --shadow-glow-pink: 0 0 16px var(--pink-glow);
+
+  /* Transitions */
+  --ease-soft: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* Layout */
+  --sidebar-width: 260px;
+  --member-list-width: 240px;
+}

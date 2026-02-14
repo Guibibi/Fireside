@@ -1,0 +1,94 @@
+/* ==========================================================================
+   Member List Styles
+   ========================================================================== */
+
+.member-list {
+  width: var(--member-list-width);
+  background: linear-gradient(180deg, var(--nebula-light) 0%, var(--nebula) 100%);
+  border: 1px solid var(--cloud-dark);
+  border-radius: var(--radius-xl);
+  padding: var(--space-xl);
+  flex-shrink: 0;
+  overflow-y: auto;
+  position: relative;
+  z-index: 1;
+}
+
+.member-list h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--snow);
+  margin-bottom: var(--space-lg);
+}
+
+.member-section-title {
+  margin: var(--space-lg) 0 var(--space-sm);
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--mist);
+}
+
+.member-items {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.member-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.02);
+  font-size: 0.85rem;
+  color: var(--pearl);
+  transition: all 0.15s var(--ease-soft);
+}
+
+.member-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.member-name {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+  min-width: 0;
+}
+
+.member-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full);
+  flex-shrink: 0;
+}
+
+.member-status-dot-online {
+  background: var(--mint);
+  box-shadow: 0 0 6px var(--mint-glow);
+}
+
+.member-status-dot-offline {
+  background: var(--cloud);
+}
+
+.member-voice-indicator {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  color: var(--lavender);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: var(--space-xs) var(--space-sm);
+  background: var(--lavender-soft);
+  border-radius: var(--radius-full);
+}
+
+.member-item-offline {
+  color: var(--mist);
+  opacity: 0.7;
+}

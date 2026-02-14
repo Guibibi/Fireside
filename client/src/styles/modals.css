@@ -1,0 +1,225 @@
+/* ==========================================================================
+   Modal Styles
+   ========================================================================== */
+
+.settings-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  background: rgba(19, 17, 28, 0.92); /* Fallback for browsers without backdrop-filter */
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-xl);
+  animation: fadeIn 0.2s var(--ease-soft);
+}
+
+@supports (backdrop-filter: blur(8px)) or (-webkit-backdrop-filter: blur(8px)) {
+  .settings-modal-backdrop {
+    background: rgba(19, 17, 28, 0.8);
+  }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.settings-modal {
+  width: min(480px, calc(100vw - 2rem));
+  max-height: calc(100vh - 2rem);
+  overflow-y: auto;
+  border-radius: var(--radius-xl);
+  background: var(--nebula);
+  border: 1px solid var(--cloud-dark);
+  box-shadow: var(--shadow-lg);
+  padding: var(--space-2xl);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xl);
+  animation: modalPop 0.3s var(--ease-soft);
+}
+
+@keyframes modalPop {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.channel-create-modal-backdrop {
+  z-index: 1180;
+}
+
+.channel-create-modal {
+  width: min(400px, calc(100vw - 2rem));
+}
+
+.channel-create-form {
+  gap: var(--space-md);
+}
+
+.voice-share-modal-backdrop {
+  z-index: 1190;
+}
+
+.voice-share-modal {
+  width: min(440px, calc(100vw - 2rem));
+}
+
+.settings-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.settings-modal-header h4 {
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: var(--snow);
+}
+
+.settings-close {
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  background: var(--cloud-dark);
+  border: none;
+  color: var(--soft);
+  font-size: 1rem;
+  border-radius: var(--radius-full);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: none;
+}
+
+.settings-close:hover:not(:disabled) {
+  background: var(--cloud);
+  color: var(--snow);
+  transform: none;
+  box-shadow: none;
+}
+
+.settings-section {
+  border: 1px solid var(--cloud-dark);
+  border-radius: var(--radius-lg);
+  padding: var(--space-xl);
+  background: var(--nebula-light);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.settings-section h5 {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--lavender);
+  margin-bottom: var(--space-xs);
+}
+
+.settings-label {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--pearl);
+}
+
+.settings-help {
+  font-size: 0.78rem;
+  color: var(--mist);
+}
+
+.settings-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+  font-size: 0.85rem;
+  color: var(--pearl);
+  cursor: pointer;
+}
+
+.settings-checkbox input[type="checkbox"] {
+  width: 1rem;
+  height: 1rem;
+  accent-color: var(--lavender);
+}
+
+.settings-avatar-preview {
+  width: 5rem;
+  height: 5rem;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  border: 2px solid var(--cloud-dark);
+  background: var(--cloud-dark);
+}
+
+.settings-avatar-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.settings-actions {
+  margin-top: var(--space-sm);
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}
+
+.settings-secondary {
+  background: var(--cloud-dark);
+  color: var(--soft);
+  box-shadow: none;
+}
+
+.settings-secondary:hover:not(:disabled) {
+  background: var(--cloud);
+  color: var(--snow);
+  transform: none;
+  box-shadow: none;
+}
+
+.settings-danger {
+  background: var(--coral-soft);
+  color: var(--coral);
+  box-shadow: none;
+}
+
+.settings-danger:hover:not(:disabled) {
+  background: rgba(244, 164, 164, 0.25);
+  box-shadow: none;
+}
+
+.settings-audio-row {
+  display: grid;
+  gap: var(--space-xs);
+}
+
+.voice-share-preview {
+  width: 100%;
+  min-height: 120px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--cloud-dark);
+  background: var(--cloud-dark);
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  padding: var(--space-md);
+}
+
+.voice-share-preview-video {
+  width: 100%;
+  max-height: 180px;
+  border-radius: var(--radius-md);
+  object-fit: contain;
+  background: var(--void);
+}

@@ -1,4 +1,5 @@
 pub mod consumer;
+mod native_codec;
 pub mod producer;
 pub mod router;
 pub mod transport;

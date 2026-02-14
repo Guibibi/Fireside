@@ -1,0 +1,56 @@
+/* ==========================================================================
+   Auth Pages Styles
+   ========================================================================== */
+
+.auth-page {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--void);
+  position: relative;
+}
+
+.auth-page::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 80% 70% at 50% 30%, rgba(180, 167, 214, 0.12) 0%, transparent 55%),
+    radial-gradient(ellipse 60% 50% at 20% 80%, rgba(168, 230, 207, 0.08) 0%, transparent 45%),
+    radial-gradient(ellipse 50% 40% at 80% 70%, rgba(232, 180, 188, 0.08) 0%, transparent 40%);
+  pointer-events: none;
+}
+
+.auth-form {
+  position: relative;
+  background: var(--nebula);
+  border: 1px solid var(--cloud-dark);
+  padding: var(--space-3xl);
+  border-radius: var(--radius-xl);
+  width: 100%;
+  max-width: 380px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+  box-shadow: var(--shadow-lg);
+  animation: modalPop 0.4s var(--ease-soft);
+}
+
+.auth-form h1 {
+  font-size: 1.75rem;
+  font-weight: 700;
+  text-align: center;
+  color: var(--snow);
+  margin-bottom: var(--space-sm);
+  letter-spacing: -0.02em;
+}
+
+.auth-form input {
+  padding: var(--space-md) var(--space-xl);
+}
+
+.auth-form button {
+  padding: var(--space-md) var(--space-2xl);
+  margin-top: var(--space-sm);
+}

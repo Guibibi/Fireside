@@ -1,0 +1,94 @@
+/* ==========================================================================
+   Voice Panel Styles
+   ========================================================================== */
+
+.voice-panel {
+  padding: var(--space-lg);
+  background: var(--nebula-light);
+  border-top: 1px solid var(--cloud-dark);
+}
+
+.voice-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-md);
+}
+
+.voice-panel-header h4 {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--mist);
+}
+
+.voice-status {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--mist);
+}
+
+.voice-status-live {
+  color: var(--mint);
+}
+
+.voice-actions {
+  display: flex;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-md);
+}
+
+.voice-actions button {
+  padding: var(--space-sm) var(--space-lg);
+  font-size: 0.8rem;
+}
+
+.voice-leave {
+  background: var(--cloud-dark);
+  color: var(--soft);
+  box-shadow: none;
+}
+
+.voice-leave:hover:not(:disabled) {
+  background: var(--cloud);
+  color: var(--snow);
+  transform: none;
+  box-shadow: none;
+}
+
+.voice-participants {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.voice-participant {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-md);
+  background: var(--cloud-dark);
+  font-size: 0.85rem;
+  color: var(--pearl);
+}
+
+.voice-you {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--mint);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.voice-note {
+  margin-bottom: var(--space-sm);
+  font-size: 0.8rem;
+  color: var(--mist);
+}
+
+.voice-error {
+  margin-top: var(--space-sm);
+}

@@ -1,0 +1,187 @@
+/* ==========================================================================
+   Voice Dock & Channel Footer Styles
+   ========================================================================== */
+
+.channel-footer {
+  margin-top: auto;
+  position: sticky;
+  bottom: calc(var(--space-xl) * -1);
+  padding-top: var(--space-xl);
+  background: linear-gradient(to bottom, transparent, var(--nebula) 40%);
+}
+
+.channel-footer-banner {
+  margin-bottom: var(--space-md);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  padding: var(--space-md);
+  border-radius: var(--radius-lg);
+  background: var(--coral-soft);
+  border: 1px solid rgba(244, 164, 164, 0.3);
+  color: var(--coral);
+  font-size: 0.8rem;
+  font-weight: 500;
+  animation: slideUp 0.3s var(--ease-soft);
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.channel-footer-banner-dismiss {
+  flex-shrink: 0;
+  padding: var(--space-xs) var(--space-md);
+  font-size: 0.75rem;
+  border-radius: var(--radius-full);
+  background: rgba(244, 164, 164, 0.2);
+  color: var(--snow);
+  border: none;
+  box-shadow: none;
+}
+
+.channel-footer-banner-dismiss:hover:not(:disabled) {
+  background: rgba(244, 164, 164, 0.3);
+  transform: none;
+  box-shadow: none;
+}
+
+.voice-dock {
+  padding: var(--space-lg);
+  background: var(--nebula-light);
+  border: 1px solid var(--cloud-dark);
+  border-radius: var(--radius-lg);
+  animation: slideUp 0.3s var(--ease-soft);
+}
+
+.voice-dock-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+}
+
+.voice-dock-icon {
+  width: 2.25rem;
+  height: 2.25rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border-radius: var(--radius-full);
+  background: var(--cloud-dark);
+  border: none;
+  color: var(--pearl);
+  box-shadow: none;
+  transition: all 0.2s var(--ease-soft);
+}
+
+.voice-dock-icon svg {
+  display: block;
+}
+
+.voice-dock-icon:focus-visible {
+  outline: 2px solid var(--lavender);
+  outline-offset: 2px;
+}
+
+.voice-dock-disconnect {
+  background: linear-gradient(135deg, var(--coral), #e88a8a);
+  color: var(--void);
+}
+
+.voice-dock-disconnect:hover:not(:disabled) {
+  box-shadow: var(--shadow-glow-pink);
+  transform: scale(1.05);
+}
+
+.voice-dock-toggle {
+  background: var(--cloud-dark);
+  color: var(--soft);
+}
+
+.voice-dock-toggle:hover:not(:disabled) {
+  background: var(--cloud);
+  color: var(--snow);
+  transform: none;
+}
+
+.voice-dock-camera,
+.voice-dock-screen {
+  background: var(--cloud-dark);
+}
+
+.voice-dock-camera:hover:not(:disabled),
+.voice-dock-screen:hover:not(:disabled) {
+  background: var(--lavender-soft);
+  color: var(--lavender);
+}
+
+.voice-dock-camera.is-active,
+.voice-dock-screen.is-active {
+  background: linear-gradient(135deg, var(--mint), #8ed9ba);
+  color: var(--void);
+  box-shadow: var(--shadow-glow-mint);
+}
+
+.voice-dock-camera:disabled,
+.voice-dock-screen:disabled {
+  opacity: 0.5;
+}
+
+.voice-dock-channel {
+  margin-top: var(--space-sm);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--mist);
+}
+
+.voice-dock-channel-alert {
+  color: var(--coral);
+}
+
+.voice-dock-error {
+  margin-top: var(--space-xs);
+  font-size: 0.75rem;
+  color: var(--coral);
+}
+
+.voice-dock-native-debug {
+  margin-top: var(--space-md);
+  padding: var(--space-md);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--sky-soft);
+  background: rgba(167, 197, 235, 0.05);
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+}
+
+.voice-dock-native-debug-title {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--sky);
+  margin-bottom: var(--space-sm);
+}
+
+.voice-dock-screen-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.voice-dock-screen-mode {
+  min-width: 4rem;
+  padding: var(--space-xs) var(--space-sm);
+  font-size: 0.7rem;
+  border-radius: var(--radius-full);
+  background: var(--cloud-dark);
+}

@@ -1,0 +1,36 @@
+/* ==========================================================================
+   Layout Styles
+   ========================================================================== */
+
+.app-root {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  animation: softFadeIn 0.5s var(--ease-soft);
+}
+
+@keyframes softFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.chat-view {
+  display: flex;
+  height: 100%;
+  gap: var(--space-lg);
+  padding: var(--space-lg);
+  isolation: isolate;
+}
+
+.main-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--nebula-deep);
+  border: 1px solid var(--cloud-dark);
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+  position: relative;
+  z-index: 1;
+}

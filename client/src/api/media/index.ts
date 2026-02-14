@@ -1,6 +1,4 @@
-// This file re-exports from the media/ module directory for backward compatibility.
-// New code should import from "./media" or "./media/index" directly.
-
+// Re-export public types
 export type {
   AudioDeviceInventory,
   AudioDeviceOption,
@@ -11,32 +9,45 @@ export type {
   RoutingMode,
   ScreenShareStartOptions,
   ScreenShareStateSnapshot,
-} from "./media/index";
+} from "./types";
 
+// Re-export device functions
 export {
-  cleanupMediaTransports,
-  initializeMediaTransports,
   isSpeakerSelectionSupported,
   listAudioDevices,
   listCameraDevices,
+  resetPreferredAudioDevices,
+  setPreferredCameraDevice,
+  setPreferredMicrophoneDevice,
+  setPreferredSpeakerDevice,
+} from "./devices";
+
+// Re-export producer functions
+export {
   localCameraEnabled,
   localCameraError,
   localCameraStream,
   localScreenShareEnabled,
   localScreenShareError,
   localScreenShareStream,
-  remoteVideoTiles,
-  resetPreferredAudioDevices,
-  setMicrophoneMuted,
-  setPreferredCameraDevice,
-  setPreferredMicrophoneDevice,
-  setPreferredSpeakerDevice,
-  setSpeakersMuted,
   startLocalCameraProducer,
   startLocalScreenProducer,
   stopLocalCameraProducer,
   stopLocalScreenProducer,
+} from "./producers";
+
+// Re-export subscription functions
+export {
+  remoteVideoTiles,
   subscribeCameraState,
   subscribeScreenState,
   subscribeVideoTiles,
-} from "./media/index";
+} from "./subscriptions";
+
+// Re-export transport functions
+export {
+  cleanupMediaTransports,
+  initializeMediaTransports,
+  setMicrophoneMuted,
+  setSpeakersMuted,
+} from "./transports";

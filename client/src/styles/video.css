@@ -1,0 +1,75 @@
+/* ==========================================================================
+   Video Stage Styles
+   ========================================================================== */
+
+.video-stage {
+  border-top: 1px solid var(--cloud-dark);
+  padding: var(--space-xl);
+  background: rgba(0, 0, 0, 0.1);
+  flex-shrink: 0;
+}
+
+.video-stage-empty {
+  font-size: 0.85rem;
+  color: var(--mist);
+  font-style: italic;
+}
+
+.video-stage-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--space-md);
+}
+
+.video-stage-tile {
+  position: relative;
+  background: var(--void);
+  border: 1px solid var(--cloud-dark);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  min-height: 120px;
+  transition: all 0.2s var(--ease-soft);
+}
+
+.video-stage-tile:hover {
+  border-color: var(--cloud);
+}
+
+.video-stage-tile.is-local {
+  border-color: var(--lavender);
+  box-shadow: 0 0 16px var(--lavender-glow);
+}
+
+.video-stage-tile.is-screen-share {
+  border-color: var(--peach);
+  box-shadow: 0 0 16px var(--peach-glow);
+}
+
+.video-stage-stream {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  display: block;
+  background: var(--void);
+}
+
+.video-stage-label {
+  position: absolute;
+  left: var(--space-sm);
+  bottom: var(--space-sm);
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: var(--snow);
+  background: rgba(19, 17, 28, 0.92); /* Fallback */
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  padding: var(--space-xs) var(--space-sm);
+  border-radius: var(--radius-full);
+}
+
+@supports (backdrop-filter: blur(8px)) or (-webkit-backdrop-filter: blur(8px)) {
+  .video-stage-label {
+    background: rgba(19, 17, 28, 0.8);
+  }
+}
