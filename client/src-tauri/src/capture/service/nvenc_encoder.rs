@@ -14,7 +14,6 @@ mod imp {
     use std::sync::atomic::Ordering;
     use std::sync::mpsc::{self, Receiver, TryRecvError};
     use std::thread::{self, JoinHandle};
-    use std::time::{Duration, Instant};
 
     use super::{CodecDescriptor, NativeSenderSharedMetrics, VideoEncoderBackend};
 
@@ -22,7 +21,6 @@ mod imp {
     const DEFAULT_NVENC_PRESET: &str = "p4";
     const DEFAULT_TARGET_FPS: u32 = 30;
     const DEFAULT_TARGET_BITRATE_KBPS: u32 = 8_000;
-    const FRAME_ENCODE_TIMEOUT_MS: u64 = 1_500;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
     /// Maximum frames NVENC can buffer internally before producing output.
@@ -64,42 +62,15 @@ mod imp {
             }
         }
 
-        fn wait_for_frame_output(&mut self) -> Result<Vec<u8>, String> {
-            // NVENC uses a streaming model - output lags behind input by several frames.
-            // Instead of waiting for exact frame sync, we:
-            // 1. Give FFmpeg a brief moment to produce output
-            // 2. Return whatever output is available
-            // 3. Only fail if encoder appears completely stalled
+        fn collect_available_output(&mut self) -> Result<Vec<u8>, String> {
+            // Non-blocking: drain channels and return whatever is available.
+            // For real-time SFU streaming, we can't block waiting for output.
+            // Output naturally lags input by NVENC_PIPELINE_DEPTH frames - that's fine.
+            self.drain_channels();
 
-            let brief_wait = Duration::from_millis(100);
-            let stall_timeout = Duration::from_millis(FRAME_ENCODE_TIMEOUT_MS);
-            let started = Instant::now();
-
-            // Brief wait for output to arrive
-            while started.elapsed() < brief_wait {
-                self.drain_channels();
-                if !self.pending_output.is_empty() {
-                    return Ok(std::mem::take(&mut self.pending_output));
-                }
-                thread::sleep(Duration::from_millis(5));
-            }
-
-            // If we're in ramp-up phase (pipeline not yet primed), keep waiting longer
-            // but with a reasonable timeout
-            let in_ramp_up = self.submitted_frames <= NVENC_PIPELINE_DEPTH;
-            if in_ramp_up {
-                while started.elapsed() < stall_timeout {
-                    self.drain_channels();
-                    if !self.pending_output.is_empty() {
-                        return Ok(std::mem::take(&mut self.pending_output));
-                    }
-                    thread::sleep(Duration::from_millis(10));
-                }
-            }
-
-            // Check for stall: if we've submitted many frames but got no output at all
+            // Check for stall: if we've submitted many frames but encoder isn't keeping up
             let lag = self.submitted_frames.saturating_sub(self.reported_frames);
-            let stalled = lag > NVENC_PIPELINE_DEPTH * 2 && self.pending_output.is_empty();
+            let stalled = lag > NVENC_PIPELINE_DEPTH * 3 && self.reported_frames > 0;
 
             if stalled {
                 return Err(format!(
@@ -108,7 +79,6 @@ mod imp {
                 ));
             }
 
-            // Return whatever we have, even if empty (caller will handle)
             Ok(std::mem::take(&mut self.pending_output))
         }
 
@@ -209,7 +179,7 @@ mod imp {
                 .map_err(|error| format!("failed to flush NVENC stdin: {error}"))?;
 
             process.submitted_frames = process.submitted_frames.saturating_add(1);
-            let encoded = process.wait_for_frame_output()?;
+            let encoded = process.collect_available_output()?;
             let nals = split_annex_b_nals(&encoded);
 
             // During ramp-up, empty output is expected (pipeline not yet primed)
