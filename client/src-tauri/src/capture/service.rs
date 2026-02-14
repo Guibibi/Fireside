@@ -1,3 +1,4 @@
+mod av1_encoder;
 mod encoder_backend;
 mod h264_encoder;
 mod metrics;
@@ -19,6 +20,7 @@ use super::windows_capture::{
     self, NativeCaptureSource, NativeCaptureSourceKind, NativeCaptureStartRequest,
     NativeFramePacket,
 };
+use encoder_backend::{create_encoder_backend_for_codec, NativeCodecTarget};
 use metrics::{NativeSenderMetrics, NativeSenderSharedMetrics, NativeSenderSnapshotInput};
 use native_sender::{run_native_sender_worker, NativeSenderRuntimeConfig};
 
@@ -73,6 +75,48 @@ pub struct StartNativeCaptureRequest {
     pub rtp_target: Option<String>,
     pub payload_type: Option<u8>,
     pub ssrc: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct NativeCodecCapability {
+    pub mime_type: String,
+    pub available: bool,
+    pub detail: Option<String>,
+}
+
+fn probe_native_codec_support(codec: NativeCodecTarget) -> Result<(), String> {
+    let preference_override = if codec == NativeCodecTarget::H264 {
+        Some("openh264")
+    } else {
+        None
+    };
+
+    create_encoder_backend_for_codec(codec, None, None, preference_override).map(|_| ())
+}
+
+fn native_codec_capabilities_snapshot() -> Vec<NativeCodecCapability> {
+    [
+        (NativeCodecTarget::H264, "video/H264"),
+        (NativeCodecTarget::Vp8, "video/VP8"),
+        (NativeCodecTarget::Vp9, "video/VP9"),
+        (NativeCodecTarget::Av1, "video/AV1"),
+    ]
+    .into_iter()
+    .map(
+        |(codec, mime_type)| match probe_native_codec_support(codec) {
+            Ok(()) => NativeCodecCapability {
+                mime_type: mime_type.to_string(),
+                available: true,
+                detail: None,
+            },
+            Err(error) => NativeCodecCapability {
+                mime_type: mime_type.to_string(),
+                available: false,
+                detail: Some(error),
+            },
+        },
+    )
+    .collect()
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -478,6 +522,11 @@ fn normalize_ssrc(ssrc: Option<u32>) -> Result<u32, String> {
 #[tauri::command]
 pub fn list_native_capture_sources(window: Window) -> Result<Vec<NativeCaptureSource>, String> {
     windows_capture::list_sources(&window)
+}
+
+#[tauri::command]
+pub fn native_codec_capabilities() -> Vec<NativeCodecCapability> {
+    native_codec_capabilities_snapshot()
 }
 
 #[tauri::command]

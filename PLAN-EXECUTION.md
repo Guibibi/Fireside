@@ -26,14 +26,16 @@ This file consolidates active execution plans.
 - [x] Native RTP packetizer abstraction now supports codec-specific packetizers (H264 + VP8), while preserving H264 behavior.
 - [x] VP9 native encoder + RTP packetizer path is implemented but kept negotiation-planned for controlled rollout.
 - [x] Codec catalog/negotiation now advertises `VP8` as `ready` and keeps `VP9`/`AV1` as `planned`.
-- [ ] Codec expansion complete for AV1 native encoder + packetizer path.
+- [x] Codec expansion complete for AV1 native encoder + packetizer path.
 - [x] Native sender codec negotiation is additive and codec-aware (`codec`, `available_codecs`) with H264-compatible legacy fields.
 
 ### Near-Term Next Steps
 
-1. Implement AV1 native encoder backend + RTP packetizer path.
+1. Implement AV1 native encoder backend + RTP packetizer path. (completed)
+2. Add manual client screen-share codec selection (Auto/AV1/VP9/VP8/H264) and thread it through native + browser codec preference paths. (completed)
 3. Keep backwards compatibility: default to H264 when codec fields are absent.
 4. Keep web/browser flows unchanged.
+5. Add client codec capability checks and disable unsupported manual codec selections in the native screen-share UI. (completed)
 
 ### Validation
 

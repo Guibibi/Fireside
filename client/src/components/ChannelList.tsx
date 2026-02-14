@@ -13,7 +13,9 @@ import {
 } from "../api/media";
 import {
   listNativeCaptureSources,
+  nativeCodecCapabilities,
   nativeCaptureStatus,
+  type NativeCodecCapability,
   type NativeCaptureStatus,
   type NativeCaptureSource,
 } from "../api/nativeCapture";
@@ -36,14 +38,17 @@ import {
   savePreferredScreenShareBitrateMode,
   savePreferredScreenShareCustomBitrateKbps,
   savePreferredScreenShareEncoderBackend,
+  savePreferredScreenShareCodecPreference,
   savePreferredScreenShareFps,
   savePreferredScreenShareResolution,
   savePreferredScreenShareSourceKind,
   type ScreenShareBitrateMode,
+  type ScreenShareCodecPreference,
   type ScreenShareEncoderBackend,
   type ScreenShareFps,
   type ScreenShareResolution,
   preferredScreenShareEncoderBackend,
+  preferredScreenShareCodecPreference,
 } from "../stores/settings";
 import { isTauriRuntime } from "../utils/platform";
 import {
@@ -103,6 +108,7 @@ export default function ChannelList() {
   const [selectedNativeSourceId, setSelectedNativeSourceId] = createSignal<string | null>(null);
   const [screenSharePreviewStream, setScreenSharePreviewStream] = createSignal<MediaStream | null>(null);
   const [screenSharePreviewError, setScreenSharePreviewError] = createSignal("");
+  const [nativeCodecSupport, setNativeCodecSupport] = createSignal<Record<string, NativeCodecCapability> | null>(null);
   const [nativeSenderMetrics, setNativeSenderMetrics] = createSignal<NativeCaptureStatus["native_sender"] | null>(null);
   const [pulsingByChannel, setPulsingByChannel] = createSignal<Record<string, boolean>>({});
   const pulseTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -131,6 +137,85 @@ export default function ChannelList() {
     }
 
     setScreenSharePreviewError("");
+  }
+
+  function supportsSelectedCodecPreference(): boolean {
+    const preference = preferredScreenShareCodecPreference();
+    if (preference === "auto") {
+      return true;
+    }
+
+    const capabilities = nativeCodecSupport();
+    if (!capabilities) {
+      return true;
+    }
+
+    const capability = capabilities[`video/${preference.toUpperCase()}`] ?? null;
+    return capability?.available ?? false;
+  }
+
+  function codecPreferenceDisabled(preference: ScreenShareCodecPreference): boolean {
+    if (preference === "auto") {
+      return false;
+    }
+
+    const capabilities = nativeCodecSupport();
+    if (!capabilities) {
+      return false;
+    }
+
+    const capability = capabilities[`video/${preference.toUpperCase()}`] ?? null;
+    return !(capability?.available ?? false);
+  }
+
+  function codecPreferenceUnavailableReason(preference: ScreenShareCodecPreference): string | undefined {
+    if (preference === "auto") {
+      return undefined;
+    }
+
+    const capabilities = nativeCodecSupport();
+    if (!capabilities) {
+      return undefined;
+    }
+
+    const capability = capabilities[`video/${preference.toUpperCase()}`] ?? null;
+    if (capability?.available) {
+      return undefined;
+    }
+
+    return friendlyCodecUnavailableReason(capability?.detail, preference);
+  }
+
+  function friendlyCodecUnavailableReason(
+    detail: string | null | undefined,
+    preference: ScreenShareCodecPreference,
+  ): string {
+    const codecLabel = preference.toUpperCase();
+    if (!detail) {
+      return `${codecLabel} unavailable on this client`;
+    }
+
+    const normalized = detail.toLowerCase();
+    if (normalized.includes("failed to execute ffmpeg encoder probe") || normalized.includes("failed to spawn ffmpeg")) {
+      return `${codecLabel} unavailable: FFmpeg is missing or not executable`;
+    }
+    if (normalized.includes("libaom-av1 encoder is missing")) {
+      return "AV1 unavailable: FFmpeg is missing libaom-av1";
+    }
+    if (normalized.includes("libvpx-vp9 encoder is missing")) {
+      return "VP9 unavailable: FFmpeg is missing libvpx-vp9";
+    }
+    if (normalized.includes("libvpx vp8 encoder is missing")) {
+      return "VP8 unavailable: FFmpeg is missing libvpx";
+    }
+    if (normalized.includes("h264_nvenc encoder is missing")) {
+      return "H264 NVENC unavailable: GPU/driver/FFmpeg support missing";
+    }
+    if (normalized.includes("native-nvenc feature")) {
+      return "H264 NVENC unavailable: build missing native-nvenc feature";
+    }
+
+    return `${codecLabel} unavailable on this client`;
   }
 
   function previewResolutionConstraints() {
@@ -270,6 +355,7 @@ export default function ChannelList() {
       bitrateKbps: selectedScreenShareBitrateKbps(),
       sourceKind,
       encoderBackend: preferredScreenShareEncoderBackend(),
+      codecPreference: preferredScreenShareCodecPreference(),
       sourceId: selected?.id,
       sourceTitle: selected?.title,
     };
@@ -301,6 +387,23 @@ export default function ChannelList() {
       setNativeSourcesError(error instanceof Error ? error.message : "Failed to load native capture sources");
     } finally {
       setNativeSourcesLoading(false);
+    }
+  }
+
+  async function loadNativeCodecSupport() {
+    if (!tauriRuntime) {
+      return;
+    }
+
+    try {
+      const capabilities = await nativeCodecCapabilities();
+      const indexed = capabilities.reduce<Record<string, NativeCodecCapability>>((acc, capability) => {
+        acc[capability.mime_type] = capability;
+        return acc;
+      }, {});
+      setNativeCodecSupport(indexed);
+    } catch {
+      setNativeCodecSupport(null);
     }
   }
 
@@ -455,6 +558,7 @@ export default function ChannelList() {
 
       if (tauriRuntime) {
         await loadNativeCaptureSources();
+        await loadNativeCodecSupport();
         setScreenShareModalOpen(true);
         return;
       }
@@ -810,6 +914,13 @@ export default function ChannelList() {
     const value = (event.currentTarget as HTMLSelectElement).value;
     if (value === "auto" || value === "openh264" || value === "nvenc") {
       savePreferredScreenShareEncoderBackend(value as ScreenShareEncoderBackend);
+    }
+  }
+
+  function handleScreenShareCodecPreferenceInput(event: Event) {
+    const value = (event.currentTarget as HTMLSelectElement).value;
+    if (value === "auto" || value === "av1" || value === "vp9" || value === "vp8" || value === "h264") {
+      savePreferredScreenShareCodecPreference(value as ScreenShareCodecPreference);
     }
   }
 
@@ -1169,7 +1280,11 @@ export default function ChannelList() {
                   </Show>
 
                   <div class="settings-actions">
-                    <button type="button" class="settings-secondary" onClick={() => void loadNativeCaptureSources()}>
+                    <button
+                      type="button"
+                      class="settings-secondary"
+                      onClick={() => void Promise.all([loadNativeCaptureSources(), loadNativeCodecSupport()])}
+                    >
                       Refresh sources
                     </button>
                   </div>
@@ -1259,6 +1374,47 @@ export default function ChannelList() {
                     <option value="openh264">OpenH264 only</option>
                   </select>
 
+                  <label class="settings-label" for="voice-share-codec">Codec</label>
+                  <select
+                    id="voice-share-codec"
+                    value={preferredScreenShareCodecPreference()}
+                    onInput={handleScreenShareCodecPreferenceInput}
+                  >
+                    <option value="auto">Auto</option>
+                    <option
+                      value="av1"
+                      disabled={codecPreferenceDisabled("av1")}
+                      title={codecPreferenceUnavailableReason("av1")}
+                    >
+                      AV1
+                    </option>
+                    <option
+                      value="vp9"
+                      disabled={codecPreferenceDisabled("vp9")}
+                      title={codecPreferenceUnavailableReason("vp9")}
+                    >
+                      VP9
+                    </option>
+                    <option
+                      value="vp8"
+                      disabled={codecPreferenceDisabled("vp8")}
+                      title={codecPreferenceUnavailableReason("vp8")}
+                    >
+                      VP8
+                    </option>
+                    <option
+                      value="h264"
+                      disabled={codecPreferenceDisabled("h264")}
+                      title={codecPreferenceUnavailableReason("h264")}
+                    >
+                      H264
+                    </option>
+                  </select>
+
+                  <Show when={!supportsSelectedCodecPreference()}>
+                    <p class="voice-dock-error">Selected codec is unavailable on this client. Pick a different codec or Auto.</p>
+                  </Show>
+
                   <p class="settings-help">Estimated target bitrate: {effectiveScreenShareBitrateLabel()}</p>
 
                   <div class="settings-actions">
@@ -1287,7 +1443,7 @@ export default function ChannelList() {
                     <button
                       type="button"
                       onClick={() => void handleConfirmTauriScreenShare()}
-                      disabled={screenActionPending() || voiceActionState() !== "idle"}
+                      disabled={screenActionPending() || voiceActionState() !== "idle" || !supportsSelectedCodecPreference()}
                     >
                       {screenActionPending() ? "Starting..." : "Start sharing"}
                     </button>

@@ -11,6 +11,7 @@ import {
   savePreferredAudioInputDeviceId,
   savePreferredAudioOutputDeviceId,
   type ScreenShareFps,
+  type ScreenShareCodecPreference,
   type ScreenShareResolution,
   type ScreenShareSourceKind,
 } from "../stores/settings";
@@ -151,6 +152,7 @@ export interface ScreenShareStartOptions {
   bitrateKbps: number;
   sourceKind: ScreenShareSourceKind;
   encoderBackend?: "auto" | "openh264" | "nvenc";
+  codecPreference?: ScreenShareCodecPreference;
   sourceId?: string;
   sourceTitle?: string;
 }
@@ -1080,8 +1082,38 @@ function codecMimeType(codec: unknown): string | null {
   return typeof mimeType === "string" && mimeType.length > 0 ? mimeType : null;
 }
 
-function selectScreenShareCodecForPlatform(): ProduceCodec | undefined {
-  if (!isWindowsPlatform() || !device) {
+function codecPreferenceMimeType(preference: ScreenShareCodecPreference): string | null {
+  if (preference === "av1") {
+    return "video/av1";
+  }
+  if (preference === "vp9") {
+    return "video/vp9";
+  }
+  if (preference === "vp8") {
+    return "video/vp8";
+  }
+  if (preference === "h264") {
+    return "video/h264";
+  }
+
+  return null;
+}
+
+function preferredScreenShareCodecOrder(preference: ScreenShareCodecPreference): string[] {
+  const baseOrder = ["video/av1", "video/vp9", "video/vp8", "video/h264"];
+  const preferredMimeType = codecPreferenceMimeType(preference);
+  if (!preferredMimeType) {
+    return baseOrder;
+  }
+
+  return [
+    preferredMimeType,
+    ...baseOrder.filter((mimeType) => mimeType !== preferredMimeType),
+  ];
+}
+
+function selectScreenShareCodecForPlatform(preference: ScreenShareCodecPreference = "auto"): ProduceCodec | undefined {
+  if (!device) {
     return undefined;
   }
 
@@ -1091,18 +1123,43 @@ function selectScreenShareCodecForPlatform(): ProduceCodec | undefined {
     return undefined;
   }
 
-  const preferredOrder = ["video/av1", "video/vp9", "video/h264"];
+  if (!isWindowsPlatform() && preference === "auto") {
+    return undefined;
+  }
+
+  const preferredOrder = preference === "auto"
+    ? ["video/av1", "video/vp9", "video/h264"]
+    : preferredScreenShareCodecOrder(preference);
   for (const preferredMimeType of preferredOrder) {
     const match = codecs.find((codec) => codecMimeType(codec)?.toLowerCase() === preferredMimeType);
     if (match) {
       const selectedMimeType = codecMimeType(match) ?? preferredMimeType;
-      console.debug("[media] Selected screen share codec", { mimeType: selectedMimeType, platform: "windows" });
+      console.debug("[media] Selected screen share codec", {
+        mimeType: selectedMimeType,
+        platform: isWindowsPlatform() ? "windows" : "other",
+        preference,
+      });
       return match as ProduceCodec;
     }
   }
 
-  console.debug("[media] No preferred Windows screen codec available; using runtime default");
+  console.debug("[media] Preferred screen codec unavailable; using runtime default", { preference });
   return undefined;
+}
+
+function nativePreferredCodecsFor(preference: ScreenShareCodecPreference = "auto"): string[] {
+  return preferredScreenShareCodecOrder(preference).map((mimeType) => {
+    if (mimeType === "video/av1") {
+      return "video/AV1";
+    }
+    if (mimeType === "video/vp9") {
+      return "video/VP9";
+    }
+    if (mimeType === "video/vp8") {
+      return "video/VP8";
+    }
+    return "video/H264";
+  });
 }
 
 function isMissingDeviceError(error: unknown): boolean {
@@ -1378,7 +1435,7 @@ async function startBrowserScreenProducer(
       },
     };
 
-    const preferredCodec = selectScreenShareCodecForPlatform();
+    const preferredCodec = selectScreenShareCodecForPlatform(options?.codecPreference ?? "auto");
     if (preferredCodec) {
       produceOptions.codec = preferredCodec;
     }
@@ -1447,7 +1504,7 @@ async function startNativeScreenProducer(
   options: ScreenShareStartOptions,
 ): Promise<CameraActionResult> {
   const response = await requestMediaSignal(channelId, "create_native_sender_session", {
-    preferred_codecs: ["video/AV1", "video/VP9", "video/VP8", "video/H264"],
+    preferred_codecs: nativePreferredCodecsFor(options.codecPreference),
   });
   if (
     response.action !== "native_sender_session_created"
@@ -1488,7 +1545,12 @@ async function startNativeScreenProducer(
   }
 
   const negotiatedMimeTypeNormalized = negotiatedMimeType.toLowerCase();
-  if (negotiatedMimeTypeNormalized !== "video/h264" && negotiatedMimeTypeNormalized !== "video/vp8") {
+  if (
+    negotiatedMimeTypeNormalized !== "video/h264"
+    && negotiatedMimeTypeNormalized !== "video/vp8"
+    && negotiatedMimeTypeNormalized !== "video/vp9"
+    && negotiatedMimeTypeNormalized !== "video/av1"
+  ) {
     reportNativeSenderDiagnostic(
       channelId,
       "native_sender_unsupported_codec",

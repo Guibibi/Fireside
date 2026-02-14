@@ -1,3 +1,4 @@
+use super::av1_encoder::try_build_av1_backend;
 use super::h264_encoder::{
     build_h264_encoder_state, encode_bgra_frame, force_intra_frame, H264EncoderState,
 };
@@ -187,9 +188,21 @@ pub fn create_encoder_backend_for_codec(
                 },
             ))
         }
-        NativeCodecTarget::Av1 => Err(
-            "native_sender_encoder_not_available: AV1 encoder backend not implemented".to_string(),
-        ),
+        NativeCodecTarget::Av1 => {
+            let backend = try_build_av1_backend(target_fps, target_bitrate_kbps)
+                .map_err(|error| format!("native_sender_encoder_not_available: {error}"))?;
+            Ok((
+                backend,
+                EncoderBackendSelection {
+                    requested_backend: preference_override
+                        .map(EncoderPreference::from_label)
+                        .unwrap_or_else(EncoderPreference::from_env)
+                        .as_label(),
+                    selected_backend: "ffmpeg-av1",
+                    fallback_reason: None,
+                },
+            ))
+        }
     }
 }
 

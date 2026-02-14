@@ -87,6 +87,17 @@ impl NativeRtpSender {
         sent
     }
 
+    pub fn send_av1_frames(&mut self, frames: &[Vec<u8>], timestamp_ms: u64) -> usize {
+        let mut sent = 0usize;
+        let rtp_timestamp = timestamp_ms.wrapping_mul(90) as u32;
+
+        for frame in frames {
+            sent = sent.saturating_add(self.send_av1_frame(frame, rtp_timestamp));
+        }
+
+        sent
+    }
+
     pub fn poll_feedback(&mut self) -> FeedbackPollResult {
         let Some(socket) = self.socket.as_ref() else {
             return FeedbackPollResult::default();
@@ -243,6 +254,61 @@ impl NativeRtpSender {
         packets
     }
 
+    fn send_av1_frame(&mut self, frame: &[u8], rtp_timestamp: u32) -> usize {
+        if frame.is_empty() {
+            return 0;
+        }
+
+        let max_payload = self.mtu.saturating_sub(12);
+        if max_payload <= 2 {
+            return 0;
+        }
+
+        let max_fragment_len = max_payload.saturating_sub(2);
+        let mut offset = 0usize;
+        let mut packets = 0usize;
+
+        while offset < frame.len() {
+            let remaining = frame.len() - offset;
+            let mut fragment_len = remaining.min(max_fragment_len);
+
+            while fragment_len > 0 {
+                let leb_len = leb128_len(fragment_len);
+                if 1 + leb_len + fragment_len <= max_payload {
+                    break;
+                }
+                fragment_len = fragment_len.saturating_sub(1);
+            }
+
+            if fragment_len == 0 {
+                break;
+            }
+
+            let is_first = offset == 0;
+            let is_last = offset + fragment_len >= frame.len();
+
+            let mut packet = Vec::with_capacity(13 + leb128_len(fragment_len) + fragment_len);
+            packet.extend_from_slice(&self.build_rtp_header(rtp_timestamp, is_last));
+
+            let mut aggregation_header = 0u8;
+            if !is_first {
+                aggregation_header |= 0x80;
+            }
+            if !is_last {
+                aggregation_header |= 0x40;
+            }
+            packet.push(aggregation_header);
+            write_leb128(fragment_len, &mut packet);
+            packet.extend_from_slice(&frame[offset..offset + fragment_len]);
+            self.write_packet(&packet);
+
+            offset += fragment_len;
+            packets += 1;
+        }
+
+        packets
+    }
+
     fn build_rtp_header(&mut self, timestamp: u32, marker: bool) -> [u8; 12] {
         let mut header = [0u8; 12];
         header[0] = 0x80;
@@ -292,6 +358,29 @@ impl NativeRtpSender {
         let had_error = self.had_send_error;
         self.had_send_error = false;
         had_error
+    }
+}
+
+fn leb128_len(mut value: usize) -> usize {
+    let mut len = 1usize;
+    while value >= 0x80 {
+        value >>= 7;
+        len += 1;
+    }
+    len
+}
+
+fn write_leb128(mut value: usize, output: &mut Vec<u8>) {
+    loop {
+        let mut byte = (value & 0x7F) as u8;
+        value >>= 7;
+        if value != 0 {
+            byte |= 0x80;
+        }
+        output.push(byte);
+        if value == 0 {
+            break;
+        }
     }
 }
 

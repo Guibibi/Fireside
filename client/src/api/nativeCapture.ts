@@ -76,9 +76,20 @@ export interface NativeCaptureStatus {
   };
 }
 
+export interface NativeCodecCapability {
+  mime_type: string;
+  available: boolean;
+  detail: string | null;
+}
+
 export async function listNativeCaptureSources(): Promise<NativeCaptureSource[]> {
   const sources = await invoke<NativeCaptureSource[]>("list_native_capture_sources");
   return sources;
+}
+
+export async function nativeCodecCapabilities(): Promise<NativeCodecCapability[]> {
+  const capabilities = await invoke<NativeCodecCapability[]>("native_codec_capabilities");
+  return capabilities;
 }
 
 export async function startNativeCapture(request: StartNativeCaptureRequest): Promise<NativeCaptureStatus> {

@@ -7,6 +7,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             capture::service::list_native_capture_sources,
+            capture::service::native_codec_capabilities,
             capture::service::start_native_capture,
             capture::service::stop_native_capture,
             capture::service::native_capture_status
