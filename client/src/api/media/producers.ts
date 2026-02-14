@@ -4,11 +4,8 @@ import { isTauriRuntime } from "../../utils/platform";
 import { audioInputConstraint, screenContentHintFor, screenShareVideoConstraints } from "./constraints";
 import {
   codecMimeType,
-  codecPreferenceMimeType,
   nativePreferredCodecsFor,
-  requestedCodecMimeType,
   selectScreenShareCodecForPlatform,
-  strictCodecModeEnabled,
 } from "./codecs";
 import { openCameraStreamWithFallback, stopAndReleaseCameraTracks } from "./devices";
 import { normalizeCameraError, normalizeScreenShareError } from "./errors";
@@ -374,22 +371,13 @@ export async function startBrowserScreenProducer(
       },
     };
 
-    const codecPreference = options?.codecPreference ?? "auto";
-    const preferredCodec = selectScreenShareCodecForPlatform(codecPreference);
-    const codecRequested = requestedCodecMimeType(codecPreference);
-    let codecNegotiated = preferredCodec
-      ? (codecMimeType(preferredCodec) ?? codecRequested)
+    // Always prefer H264 for maximum compatibility and NVENC hardware acceleration
+    const preferredCodec = selectScreenShareCodecForPlatform();
+    const codecNegotiated = preferredCodec
+      ? (codecMimeType(preferredCodec) ?? "video/h264")
       : "runtime-default";
-    let codecFallbackReason = "none";
-    if (codecPreference !== "auto" && !preferredCodec) {
-      codecFallbackReason = "preferred_codec_unavailable";
-      if (strictCodecModeEnabled(options)) {
-        reportCodecDecision(channelId, codecRequested, codecNegotiated, "strict_unavailable");
-        throw new Error(`Strict codec mode: ${codecPreference.toUpperCase()} is unavailable for browser screen capture.`);
-      }
-    }
 
-    reportCodecDecision(channelId, codecRequested, codecNegotiated, codecFallbackReason);
+    reportCodecDecision(channelId, "video/h264", codecNegotiated, "none");
 
     if (preferredCodec) {
       produceOptions.codec = preferredCodec;
@@ -458,8 +446,9 @@ async function startNativeScreenProducer(
   channelId: string,
   options: ScreenShareStartOptions,
 ): Promise<CameraActionResult> {
+  // Always use H264 for native capture - universal hardware decode support
   const response = await requestMediaSignal(channelId, "create_native_sender_session", {
-    preferred_codecs: nativePreferredCodecsFor(options.codecPreference),
+    preferred_codecs: nativePreferredCodecsFor(),
   });
   if (
     response.action !== "native_sender_session_created"
@@ -491,9 +480,8 @@ async function startNativeScreenProducer(
     }
 
     const negotiatedMimeType = response.codec?.mime_type ?? response.mime_type;
-    const codecRequested = requestedCodecMimeType(options.codecPreference);
     if (typeof negotiatedMimeType !== "string" || negotiatedMimeType.trim().length === 0) {
-      reportCodecDecision(channelId, codecRequested, "unknown", "missing_codec_metadata");
+      reportCodecDecision(channelId, "video/h264", "unknown", "missing_codec_metadata");
       reportNativeSenderDiagnostic(
         channelId,
         "native_sender_codec_missing",
@@ -509,7 +497,7 @@ async function startNativeScreenProducer(
       && negotiatedMimeTypeNormalized !== "video/vp9"
       && negotiatedMimeTypeNormalized !== "video/av1"
     ) {
-      reportCodecDecision(channelId, codecRequested, negotiatedMimeType, "unsupported_codec");
+      reportCodecDecision(channelId, "video/h264", negotiatedMimeType, "unsupported_codec");
       reportNativeSenderDiagnostic(
         channelId,
         "native_sender_unsupported_codec",
@@ -518,17 +506,7 @@ async function startNativeScreenProducer(
       throw new Error(`Native sender negotiation failed: unsupported codec (${negotiatedMimeType}).`);
     }
 
-    const strictMode = strictCodecModeEnabled(options);
-    const requestedManualMimeType = codecPreferenceMimeType(options.codecPreference ?? "auto");
-    const codecFallbackReason = requestedManualMimeType && requestedManualMimeType !== negotiatedMimeTypeNormalized
-      ? "server_negotiated_different_codec"
-      : "none";
-    reportCodecDecision(channelId, codecRequested, negotiatedMimeTypeNormalized, codecFallbackReason);
-    if (strictMode && codecFallbackReason !== "none") {
-      throw new Error(
-        `Strict codec mode: requested ${requestedManualMimeType?.toUpperCase()} but negotiated ${negotiatedMimeTypeNormalized.toUpperCase()}.`,
-      );
-    }
+    reportCodecDecision(channelId, "video/h264", negotiatedMimeTypeNormalized, "none");
 
     const advertisedCodecSummary = Array.isArray(response.available_codecs)
       ? response.available_codecs

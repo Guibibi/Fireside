@@ -16,7 +16,6 @@ export interface StartNativeCaptureRequest {
   resolution?: "720p" | "1080p" | "1440p" | "4k";
   fps?: 30 | 60;
   bitrate_kbps?: number;
-  encoder_backend?: "auto" | "openh264" | "nvenc";
   codec_mime_type?: string;
   rtp_target?: string;
   payload_type?: number;

@@ -1,37 +1,26 @@
 import { For, Show, type JSX, type Accessor } from "solid-js";
-import type { NativeCaptureSource, NativeCodecCapability } from "../../api/nativeCapture";
+import type { NativeCaptureSource } from "../../api/nativeCapture";
 import {
   preferredScreenShareBitrateMode,
-  preferredScreenShareCodecPreference,
-  preferredScreenShareCodecStrictMode,
-  preferredScreenShareEncoderBackend,
   preferredScreenShareFps,
   preferredScreenShareResolution,
   preferredScreenShareSourceKind,
   savePreferredScreenShareBitrateMode,
-  savePreferredScreenShareCodecPreference,
-  savePreferredScreenShareCodecStrictMode,
   savePreferredScreenShareCustomBitrateKbps,
-  savePreferredScreenShareEncoderBackend,
   savePreferredScreenShareFps,
   savePreferredScreenShareResolution,
   savePreferredScreenShareSourceKind,
   preferredScreenShareCustomBitrateKbps,
   type ScreenShareBitrateMode,
-  type ScreenShareCodecPreference,
-  type ScreenShareEncoderBackend,
   type ScreenShareFps,
 } from "../../stores/settings";
 import { voiceActionState } from "../../stores/voice";
 import Modal from "../Modal";
 import {
   autoBitrateKbps,
-  codecPreferenceDisabled,
-  codecPreferenceUnavailableReason,
   effectiveScreenShareBitrateLabel,
   manualBitrateKbps,
   nativeSourceLabel,
-  supportsSelectedCodecPreference,
 } from "./helpers";
 
 export interface ScreenShareModalProps {
@@ -42,7 +31,6 @@ export interface ScreenShareModalProps {
   nativeSources: NativeCaptureSource[];
   selectedNativeSourceId: string | null;
   onSelectNativeSource: (id: string) => void;
-  nativeCodecSupport: Record<string, NativeCodecCapability> | null;
   screenSharePreviewStream: MediaStream | null;
   screenSharePreviewError: string;
   screenSharePreviewVideoRef: Accessor<HTMLVideoElement | undefined>;
@@ -120,30 +108,6 @@ export default function ScreenShareModal(props: ScreenShareModalProps): JSX.Elem
 
     savePreferredScreenShareCustomBitrateKbps(value);
   }
-
-  function handleScreenShareEncoderBackendInput(event: Event) {
-    const value = (event.currentTarget as HTMLSelectElement).value;
-    if (value === "auto" || value === "openh264" || value === "nvenc") {
-      savePreferredScreenShareEncoderBackend(value as ScreenShareEncoderBackend);
-    }
-  }
-
-  function handleScreenShareCodecPreferenceInput(event: Event) {
-    const value = (event.currentTarget as HTMLSelectElement).value;
-    if (value === "auto" || value === "av1" || value === "vp9" || value === "vp8" || value === "h264") {
-      savePreferredScreenShareCodecPreference(value as ScreenShareCodecPreference);
-    }
-  }
-
-  function handleScreenShareCodecStrictModeInput(event: Event) {
-    const checked = (event.currentTarget as HTMLInputElement).checked;
-    savePreferredScreenShareCodecStrictMode(checked);
-  }
-
-  const supportsCodec = () => supportsSelectedCodecPreference(
-    preferredScreenShareCodecPreference(),
-    props.nativeCodecSupport,
-  );
 
   return (
     <Modal
@@ -274,69 +238,6 @@ export default function ScreenShareModal(props: ScreenShareModalProps): JSX.Elem
           />
         </Show>
 
-        <label class="settings-label" for="voice-share-encoder-backend">Encoder backend</label>
-        <select
-          id="voice-share-encoder-backend"
-          value={preferredScreenShareEncoderBackend()}
-          onInput={handleScreenShareEncoderBackendInput}
-        >
-          <option value="auto">Auto (prefer NVENC)</option>
-          <option value="nvenc">NVENC only</option>
-          <option value="openh264">OpenH264 only</option>
-        </select>
-
-        <label class="settings-label" for="voice-share-codec">Codec</label>
-        <select
-          id="voice-share-codec"
-          value={preferredScreenShareCodecPreference()}
-          onInput={handleScreenShareCodecPreferenceInput}
-        >
-          <option value="auto">Auto</option>
-          <option
-            value="av1"
-            disabled={codecPreferenceDisabled("av1", props.nativeCodecSupport)}
-            title={codecPreferenceUnavailableReason("av1", props.nativeCodecSupport)}
-          >
-            AV1
-          </option>
-          <option
-            value="vp9"
-            disabled={codecPreferenceDisabled("vp9", props.nativeCodecSupport)}
-            title={codecPreferenceUnavailableReason("vp9", props.nativeCodecSupport)}
-          >
-            VP9
-          </option>
-          <option
-            value="vp8"
-            disabled={codecPreferenceDisabled("vp8", props.nativeCodecSupport)}
-            title={codecPreferenceUnavailableReason("vp8", props.nativeCodecSupport)}
-          >
-            VP8
-          </option>
-          <option
-            value="h264"
-            disabled={codecPreferenceDisabled("h264", props.nativeCodecSupport)}
-            title={codecPreferenceUnavailableReason("h264", props.nativeCodecSupport)}
-          >
-            H264
-          </option>
-        </select>
-
-        <Show when={!supportsCodec()}>
-          <p class="voice-dock-error">Selected codec is unavailable on this client. Pick a different codec or Auto.</p>
-        </Show>
-
-        <label class="settings-checkbox" for="voice-share-codec-strict-mode">
-          <input
-            id="voice-share-codec-strict-mode"
-            type="checkbox"
-            checked={preferredScreenShareCodecStrictMode()}
-            onInput={handleScreenShareCodecStrictModeInput}
-          />
-          Strict codec mode (no codec fallback)
-        </label>
-        <p class="settings-help">When enabled, manual codec selection fails if the requested codec cannot be negotiated.</p>
-
         <p class="settings-help">Estimated target bitrate: {effectiveScreenShareBitrateLabel(selectedScreenShareBitrateKbps())}</p>
 
         <div class="settings-actions">
@@ -365,7 +266,7 @@ export default function ScreenShareModal(props: ScreenShareModalProps): JSX.Elem
           <button
             type="button"
             onClick={props.onConfirm}
-            disabled={props.screenActionPending || voiceActionState() !== "idle" || !supportsCodec()}
+            disabled={props.screenActionPending || voiceActionState() !== "idle"}
           >
             {props.screenActionPending ? "Starting..." : "Start sharing"}
           </button>

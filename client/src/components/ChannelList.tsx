@@ -21,9 +21,7 @@ import {
 } from "../api/media";
 import {
     listNativeCaptureSources,
-    nativeCodecCapabilities,
     nativeCaptureStatus,
-    type NativeCodecCapability,
     type NativeCaptureStatus,
     type NativeCaptureSource,
 } from "../api/nativeCapture";
@@ -44,9 +42,6 @@ import {
     preferredScreenShareResolution,
     preferredScreenShareSourceKind,
     savePreferredScreenShareSourceKind,
-    preferredScreenShareEncoderBackend,
-    preferredScreenShareCodecPreference,
-    preferredScreenShareCodecStrictMode,
 } from "../stores/settings";
 import { errorMessage } from "../utils/error";
 import { isTauriRuntime } from "../utils/platform";
@@ -129,10 +124,6 @@ export default function ChannelList() {
         createSignal<MediaStream | null>(null);
     const [screenSharePreviewError, setScreenSharePreviewError] =
         createSignal("");
-    const [nativeCodecSupport, setNativeCodecSupport] = createSignal<Record<
-        string,
-        NativeCodecCapability
-    > | null>(null);
     const [nativeSenderMetrics, setNativeSenderMetrics] = createSignal<
         NativeCaptureStatus["native_sender"] | null
     >(null);
@@ -251,9 +242,6 @@ export default function ChannelList() {
             fps: preferredScreenShareFps(),
             bitrateKbps: selectedScreenShareBitrateKbps(),
             sourceKind,
-            encoderBackend: preferredScreenShareEncoderBackend(),
-            codecPreference: preferredScreenShareCodecPreference(),
-            strictCodec: preferredScreenShareCodecStrictMode(),
             sourceId: selected?.id,
             sourceTitle: selected?.title,
         };
@@ -294,25 +282,6 @@ export default function ChannelList() {
             );
         } finally {
             setNativeSourcesLoading(false);
-        }
-    }
-
-    async function loadNativeCodecSupport() {
-        if (!tauriRuntime) {
-            return;
-        }
-
-        try {
-            const capabilities = await nativeCodecCapabilities();
-            const indexed = capabilities.reduce<
-                Record<string, NativeCodecCapability>
-            >((acc, capability) => {
-                acc[capability.mime_type] = capability;
-                return acc;
-            }, {});
-            setNativeCodecSupport(indexed);
-        } catch {
-            setNativeCodecSupport(null);
         }
     }
 
@@ -467,7 +436,6 @@ export default function ChannelList() {
 
             if (tauriRuntime) {
                 await loadNativeCaptureSources();
-                await loadNativeCodecSupport();
                 setScreenShareModalOpen(true);
                 return;
             }
@@ -1143,17 +1111,13 @@ export default function ChannelList() {
                         nativeSources={nativeSources()}
                         selectedNativeSourceId={selectedNativeSourceId()}
                         onSelectNativeSource={setSelectedNativeSourceId}
-                        nativeCodecSupport={nativeCodecSupport()}
                         screenSharePreviewStream={screenSharePreviewStream()}
                         screenSharePreviewError={screenSharePreviewError()}
                         screenSharePreviewVideoRef={() =>
                             screenSharePreviewVideoRef
                         }
                         onRefreshSources={() =>
-                            void Promise.all([
-                                loadNativeCaptureSources(),
-                                loadNativeCodecSupport(),
-                            ])
+                            void loadNativeCaptureSources()
                         }
                         onStartPreview={() => void startScreenSharePreview()}
                         onStopPreview={stopScreenSharePreview}

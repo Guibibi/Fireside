@@ -1,7 +1,5 @@
 import type { ProducerOptions } from "mediasoup-client/types";
-import type { ScreenShareCodecPreference } from "../../stores/settings";
 import { device } from "./state";
-import type { ScreenShareStartOptions } from "./types";
 
 type ProduceCodec = NonNullable<ProducerOptions["codec"]>;
 
@@ -18,46 +16,6 @@ export function codecMimeType(codec: unknown): string | null {
   return typeof mimeType === "string" && mimeType.length > 0 ? mimeType : null;
 }
 
-export function codecPreferenceMimeType(preference: ScreenShareCodecPreference): string | null {
-  if (preference === "av1") {
-    return "video/av1";
-  }
-  if (preference === "vp9") {
-    return "video/vp9";
-  }
-  if (preference === "vp8") {
-    return "video/vp8";
-  }
-  if (preference === "h264") {
-    return "video/h264";
-  }
-
-  return null;
-}
-
-export function requestedCodecMimeType(preference: ScreenShareCodecPreference | undefined): string {
-  const preferredMimeType = codecPreferenceMimeType(preference ?? "auto");
-  return preferredMimeType ?? "auto";
-}
-
-export function strictCodecModeEnabled(options?: ScreenShareStartOptions): boolean {
-  return options?.strictCodec === true && (options.codecPreference ?? "auto") !== "auto";
-}
-
-export function preferredScreenShareCodecOrder(preference: ScreenShareCodecPreference): string[] {
-  // H264 first for maximum compatibility (universal WebRTC support, NVENC hardware acceleration)
-  const baseOrder = ["video/h264", "video/vp8", "video/vp9", "video/av1"];
-  const preferredMimeType = codecPreferenceMimeType(preference);
-  if (!preferredMimeType) {
-    return baseOrder;
-  }
-
-  return [
-    preferredMimeType,
-    ...baseOrder.filter((mimeType) => mimeType !== preferredMimeType),
-  ];
-}
-
 export function isWindowsPlatform(): boolean {
   if (typeof navigator === "undefined") {
     return false;
@@ -68,24 +26,19 @@ export function isWindowsPlatform(): boolean {
   return platform.toLowerCase().includes("win");
 }
 
-export function selectScreenShareCodecForPlatform(preference: ScreenShareCodecPreference = "auto"): ProduceCodec | undefined {
+export function selectScreenShareCodecForPlatform(): ProduceCodec | undefined {
   if (!device) {
     return undefined;
   }
 
   const codecs = device.rtpCapabilities.codecs;
   if (!Array.isArray(codecs) || codecs.length === 0) {
-    console.debug("[media] No router codecs available for screen share preference");
+    console.debug("[media] No router codecs available for screen share");
     return undefined;
   }
 
-  if (!isWindowsPlatform() && preference === "auto") {
-    return undefined;
-  }
-
-  const preferredOrder = preference === "auto"
-    ? ["video/h264", "video/vp8", "video/vp9"]
-    : preferredScreenShareCodecOrder(preference);
+  // Always prefer H264 for maximum compatibility and NVENC hardware acceleration
+  const preferredOrder = ["video/h264", "video/vp8", "video/vp9"];
   for (const preferredMimeType of preferredOrder) {
     const match = codecs.find((codec) => codecMimeType(codec)?.toLowerCase() === preferredMimeType);
     if (match) {
@@ -93,27 +46,16 @@ export function selectScreenShareCodecForPlatform(preference: ScreenShareCodecPr
       console.debug("[media] Selected screen share codec", {
         mimeType: selectedMimeType,
         platform: isWindowsPlatform() ? "windows" : "other",
-        preference,
       });
       return match as ProduceCodec;
     }
   }
 
-  console.debug("[media] Preferred screen codec unavailable; using runtime default", { preference });
+  console.debug("[media] Preferred screen codec unavailable; using runtime default");
   return undefined;
 }
 
-export function nativePreferredCodecsFor(preference: ScreenShareCodecPreference = "auto"): string[] {
-  return preferredScreenShareCodecOrder(preference).map((mimeType) => {
-    if (mimeType === "video/av1") {
-      return "video/AV1";
-    }
-    if (mimeType === "video/vp9") {
-      return "video/VP9";
-    }
-    if (mimeType === "video/vp8") {
-      return "video/VP8";
-    }
-    return "video/H264";
-  });
+export function nativePreferredCodecsFor(): string[] {
+  // Always use H264 for native capture - universal hardware decode support
+  return ["video/H264"];
 }

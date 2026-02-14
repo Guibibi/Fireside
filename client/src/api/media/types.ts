@@ -1,4 +1,4 @@
-import type { ScreenShareFps, ScreenShareResolution, ScreenShareSourceKind, ScreenShareCodecPreference } from "../../stores/settings";
+import type { ScreenShareFps, ScreenShareResolution, ScreenShareSourceKind } from "../../stores/settings";
 
 export interface IceParameters {
   usernameFragment: string;
@@ -134,9 +134,6 @@ export interface ScreenShareStartOptions {
   fps: ScreenShareFps;
   bitrateKbps: number;
   sourceKind: ScreenShareSourceKind;
-  encoderBackend?: "auto" | "openh264" | "nvenc";
-  codecPreference?: ScreenShareCodecPreference;
-  strictCodec?: boolean;
   sourceId?: string;
   sourceTitle?: string;
 }

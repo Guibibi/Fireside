@@ -1,7 +1,6 @@
-import type { NativeCaptureSource, NativeCodecCapability } from "../../api/nativeCapture";
+import type { NativeCaptureSource } from "../../api/nativeCapture";
 import type {
   ScreenShareBitrateMode,
-  ScreenShareCodecPreference,
   ScreenShareFps,
   ScreenShareResolution,
 } from "../../stores/settings";
@@ -95,38 +94,6 @@ export function nativeSourceLabel(source: NativeCaptureSource): string {
   return source.title;
 }
 
-export function friendlyCodecUnavailableReason(
-  detail: string | null | undefined,
-  preference: ScreenShareCodecPreference,
-): string {
-  const codecLabel = preference.toUpperCase();
-  if (!detail) {
-    return `${codecLabel} unavailable on this client`;
-  }
-
-  const normalized = detail.toLowerCase();
-  if (normalized.includes("failed to execute ffmpeg encoder probe") || normalized.includes("failed to spawn ffmpeg")) {
-    return `${codecLabel} unavailable: FFmpeg is missing or not executable`;
-  }
-  if (normalized.includes("libaom-av1 encoder is missing")) {
-    return "AV1 unavailable: FFmpeg is missing libaom-av1";
-  }
-  if (normalized.includes("libvpx-vp9 encoder is missing")) {
-    return "VP9 unavailable: FFmpeg is missing libvpx-vp9";
-  }
-  if (normalized.includes("libvpx vp8 encoder is missing")) {
-    return "VP8 unavailable: FFmpeg is missing libvpx";
-  }
-  if (normalized.includes("h264_nvenc encoder is missing")) {
-    return "H264 NVENC unavailable: GPU/driver/FFmpeg support missing";
-  }
-  if (normalized.includes("native-nvenc feature")) {
-    return "H264 NVENC unavailable: build missing native-nvenc feature";
-  }
-
-  return `${codecLabel} unavailable on this client`;
-}
-
 export function previewResolutionConstraints(resolution: ScreenShareResolution): { width: { ideal: number }; height: { ideal: number } } {
   if (resolution === "720p") {
     return { width: { ideal: 1280 }, height: { ideal: 720 } };
@@ -139,58 +106,6 @@ export function previewResolutionConstraints(resolution: ScreenShareResolution):
   }
 
   return { width: { ideal: 3840 }, height: { ideal: 2160 } };
-}
-
-export function codecPreferenceDisabled(
-  preference: ScreenShareCodecPreference,
-  capabilities: Record<string, NativeCodecCapability> | null,
-): boolean {
-  if (preference === "auto") {
-    return false;
-  }
-
-  if (!capabilities) {
-    return false;
-  }
-
-  const capability = capabilities[`video/${preference.toUpperCase()}`] ?? null;
-  return !(capability?.available ?? false);
-}
-
-export function codecPreferenceUnavailableReason(
-  preference: ScreenShareCodecPreference,
-  capabilities: Record<string, NativeCodecCapability> | null,
-): string | undefined {
-  if (preference === "auto") {
-    return undefined;
-  }
-
-  if (!capabilities) {
-    return undefined;
-  }
-
-  const capability = capabilities[`video/${preference.toUpperCase()}`] ?? null;
-  if (capability?.available) {
-    return undefined;
-  }
-
-  return friendlyCodecUnavailableReason(capability?.detail, preference);
-}
-
-export function supportsSelectedCodecPreference(
-  preference: ScreenShareCodecPreference,
-  capabilities: Record<string, NativeCodecCapability> | null,
-): boolean {
-  if (preference === "auto") {
-    return true;
-  }
-
-  if (!capabilities) {
-    return true;
-  }
-
-  const capability = capabilities[`video/${preference.toUpperCase()}`] ?? null;
-  return capability?.available ?? false;
 }
 
 export function formatNativeSenderRate(value: number): string {
