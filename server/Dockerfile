@@ -11,7 +11,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   libssl-dev \
   pkg-config \
   python3 \
-  && rm -rf /var/lib/apt/lists/*
+  python3-pip \
+  && rm -rf /var/lib/apt/lists/* \
+  && pip3 install --break-system-packages invoke meson ninja
 
 COPY server/Cargo.toml server/Cargo.lock ./server/
 COPY server/src ./server/src
