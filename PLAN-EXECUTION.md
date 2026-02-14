@@ -5,60 +5,57 @@ Long-term roadmap and completed milestone tracking live in `PLAN.md`.
 
 ## Active Phase
 
-- Phase 5.2: Native-style context menus
+- Phase 5.3: Media storage + optimization foundation
 
 ## Objective
 
-- Introduce consistent context menus for channels, users, messages, and member entries.
-- Keep role/permission enforcement server-authoritative while improving client affordance.
-- Preserve existing REST/WS contracts unless an explicit action needs extension.
+- Add a self-hosted media pipeline with local storage first and optional S3-compatible backend later.
+- Store media metadata in Postgres and process uploads into optimized derivatives.
+- Track lifecycle states and add cleanup jobs for orphaned/failed derivatives.
 
 ## Scope
 
 ### In scope
 
-- Shared context menu primitives (state, positioning, dismissal, keyboard support).
-- Target-specific menu entry wiring for `channel`, `user`, `message`, and `member` surfaces.
-- Accessibility and fallback behavior (right-click, keyboard context key, long-press).
-- Permission-aware menu item visibility/disabled state based on existing capabilities.
+- Server-side storage abstraction (`local` backend default, `s3`/MinIO optional via config).
+- Media metadata model in Postgres (`owner_id`, `mime_type`, `bytes`, `checksum`, `storage_key`, timestamps, processing status).
+- Upload processing into optimized derivatives with lifecycle tracking.
+- Cleanup job for orphaned/failed derivatives.
 
 ### Out of scope
 
-- New moderation features or role model changes.
-- New backend permission semantics beyond existing server checks.
-- Broad visual redesign outside context-menu UI.
-- Per-platform native OS menu integrations in Tauri host.
+- Client-side image picker/display implementation (Phase 5.4+).
+- Custom emoji/GIF support (Phase 5.5+).
+- Frontend upload progress UI (later phase).
 
 ## Implementation Checklist
 
-1. Audit current action entry points in channel list, message list, and member list.
-2. Create reusable context menu state/controller and anchor-positioning behavior.
-3. Add `channel` target menu with existing channel actions.
-4. Add `message` target menu with existing message actions.
-5. Add `user`/`member` target menu stubs wired to currently supported actions.
-6. Add keyboard invocation and escape/outside-click dismissal behavior.
-7. Add long-press fallback for touch/narrow viewports.
-8. Ensure disabled/hidden action states align with current permission and ownership rules.
-9. Validate tab order/focus restoration after menu close.
-10. Update `PLAN.md` once implementation and validation are complete.
+1. Add storage config to server config module.
+2. Create storage abstraction traits and `local` backend.
+3. Add media metadata table migration.
+4. Implement upload endpoint with storage backend.
+5. Add derivative processing (thumbnails, etc.).
+6. Add cleanup background job.
+7. Validate with backend tests.
+8. Update `PLAN.md` once implementation and validation are complete.
 
 ## Primary Touch Points
 
-- `client/src/components/ChannelList.tsx`
-- `client/src/components/MessageArea.tsx`
-- `client/src/components/MemberList.tsx`
-- `client/src/styles/global.css` (or new context-menu styles module)
+- `server/src/config.rs`
+- `server/src/storage/` (new module)
+- `server/migrations/`
 
 ## Validation
 
-- `npm --prefix client run typecheck`
-- `npm --prefix client run build`
+- Backend: `cargo fmt --all --manifest-path server/Cargo.toml -- --check`
+- Backend: `cargo clippy --manifest-path server/Cargo.toml --all-targets -- -D warnings`
+- Backend: `cargo test --manifest-path server/Cargo.toml`
 
 ## Done Criteria
 
-- Context menus are available on channel, message, and member/user targets.
-- Existing actions remain functional and permission-safe.
-- Keyboard and pointer interactions are predictable and dismiss cleanly.
-- No unintended protocol changes are required.
+- Storage backend abstraction is in place with local default.
+- Media uploads are persisted with metadata in Postgres.
+- Derivatives are generated and tracked.
+- Cleanup job removes orphaned files.
 - Validation commands pass.
-- `PLAN.md` updated to reflect completion of Phase 5.2.
+- `PLAN.md` updated to reflect completion of Phase 5.3.

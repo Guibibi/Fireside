@@ -3,6 +3,7 @@ import { get } from "../api/http";
 import { connect, onMessage } from "../api/ws";
 import { activeChannelId } from "../stores/chat";
 import { participantsInChannel } from "../stores/voice";
+import { openContextMenu, registerContextMenuHandlers, handleLongPressStart, handleLongPressEnd, setContextMenuTarget } from "../stores/contextMenu";
 
 interface UsersResponse {
   usernames: string[];
@@ -19,6 +20,18 @@ export default function MemberList() {
 
   onMount(() => {
     connect();
+
+    // TODO: Implement profile viewing and DM features
+    registerContextMenuHandlers({
+      member: {
+        onViewProfile: (_member) => {
+          // TODO: Open profile modal/panel
+        },
+        onSendMessage: (_member) => {
+          // TODO: Open DM channel or create one
+        },
+      },
+    });
 
     void get<UsersResponse>("/users")
       .then((response) => {
@@ -70,7 +83,19 @@ export default function MemberList() {
           <ul class="member-items">
             <For each={onlineMembers()}>
               {(member) => (
-                <li class="member-item">
+                <li
+                  class="member-item"
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    openContextMenu(e.clientX, e.clientY, "member", member, { username: member });
+                  }}
+                  onFocus={() => setContextMenuTarget("member", member, { username: member })}
+                  onTouchStart={(e) => {
+                    const touch = e.touches[0];
+                    handleLongPressStart(touch.clientX, touch.clientY, "member", member, { username: member });
+                  }}
+                  onTouchEnd={handleLongPressEnd}
+                >
                   <span class="member-name">
                     <span class="member-status-dot member-status-dot-online" aria-hidden="true" />
                     <span>{member}</span>
@@ -89,7 +114,19 @@ export default function MemberList() {
           <ul class="member-items">
             <For each={offlineMembers()}>
               {(member) => (
-                <li class="member-item member-item-offline">
+                <li
+                  class="member-item member-item-offline"
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    openContextMenu(e.clientX, e.clientY, "member", member, { username: member });
+                  }}
+                  onFocus={() => setContextMenuTarget("member", member, { username: member })}
+                  onTouchStart={(e) => {
+                    const touch = e.touches[0];
+                    handleLongPressStart(touch.clientX, touch.clientY, "member", member, { username: member });
+                  }}
+                  onTouchEnd={handleLongPressEnd}
+                >
                   <span class="member-name">
                     <span class="member-status-dot member-status-dot-offline" aria-hidden="true" />
                     <span>{member}</span>

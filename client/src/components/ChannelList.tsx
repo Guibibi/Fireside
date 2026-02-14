@@ -1,927 +1,1153 @@
-import { For, Show, createEffect, createSignal, onCleanup, onMount, untrack } from "solid-js";
+import {
+    For,
+    Show,
+    createEffect,
+    createSignal,
+    onCleanup,
+    onMount,
+    untrack,
+} from "solid-js";
 import { del, get, post } from "../api/http";
 import {
-  cleanupMediaTransports,
-  initializeMediaTransports,
-  type ScreenShareStartOptions,
-  startLocalCameraProducer,
-  startLocalScreenProducer,
-  stopLocalCameraProducer,
-  stopLocalScreenProducer,
-  setMicrophoneMuted,
-  setSpeakersMuted,
+    cleanupMediaTransports,
+    initializeMediaTransports,
+    type ScreenShareStartOptions,
+    startLocalCameraProducer,
+    startLocalScreenProducer,
+    stopLocalCameraProducer,
+    stopLocalScreenProducer,
+    setMicrophoneMuted,
+    setSpeakersMuted,
 } from "../api/media";
 import {
-  listNativeCaptureSources,
-  nativeCodecCapabilities,
-  nativeCaptureStatus,
-  type NativeCodecCapability,
-  type NativeCaptureStatus,
-  type NativeCaptureSource,
+    listNativeCaptureSources,
+    nativeCodecCapabilities,
+    nativeCaptureStatus,
+    type NativeCodecCapability,
+    type NativeCaptureStatus,
+    type NativeCaptureSource,
 } from "../api/nativeCapture";
 import { connect, onClose, onMessage, send } from "../api/ws";
 import {
-  activeChannelId,
-  Channel,
-  clearUnread,
-  incrementUnread,
-  removeUnreadChannel,
-  setActiveChannelId,
-  unreadCount,
+    activeChannelId,
+    Channel,
+    clearUnread,
+    incrementUnread,
+    removeUnreadChannel,
+    setActiveChannelId,
+    unreadCount,
 } from "../stores/chat";
 import {
-  preferredScreenShareBitrateMode,
-  preferredScreenShareCustomBitrateKbps,
-  preferredScreenShareFps,
-  preferredScreenShareResolution,
-  preferredScreenShareSourceKind,
-  savePreferredScreenShareSourceKind,
-  preferredScreenShareEncoderBackend,
-  preferredScreenShareCodecPreference,
-  preferredScreenShareCodecStrictMode,
+    preferredScreenShareBitrateMode,
+    preferredScreenShareCustomBitrateKbps,
+    preferredScreenShareFps,
+    preferredScreenShareResolution,
+    preferredScreenShareSourceKind,
+    savePreferredScreenShareSourceKind,
+    preferredScreenShareEncoderBackend,
+    preferredScreenShareCodecPreference,
+    preferredScreenShareCodecStrictMode,
 } from "../stores/settings";
 import { errorMessage } from "../utils/error";
 import { isTauriRuntime } from "../utils/platform";
 import {
-  applyVoiceJoined,
-  applyVoiceLeft,
-  applyVoiceSpeaking,
-  applyVoiceSnapshot,
-  clearVoiceRejoinNotice,
-  clearVoiceCameraError,
-  cameraEnabled,
-  isVoiceMemberSpeaking,
-  joinedVoiceChannelId,
-  micMuted,
-  participantsByChannel,
-  resetVoiceMediaState,
-  removeVoiceChannelState,
-  setJoinedVoiceChannel,
-  setVoiceCameraError,
-  setVoiceActionState,
-  speakerMuted,
-  startCameraStateSubscription,
-  startConnectionStatusSubscription,
-  startScreenStateSubscription,
-  startVideoTilesSubscription,
-  stopConnectionStatusSubscription,
-  screenShareEnabled,
-  showVoiceRejoinNotice,
-  toggleMicMuted,
-  toggleSpeakerMuted,
-  voiceRejoinNotice,
-  voiceActionState,
+    applyVoiceJoined,
+    applyVoiceLeft,
+    applyVoiceSpeaking,
+    applyVoiceSnapshot,
+    clearVoiceRejoinNotice,
+    clearVoiceCameraError,
+    cameraEnabled,
+    isVoiceMemberSpeaking,
+    joinedVoiceChannelId,
+    micMuted,
+    participantsByChannel,
+    resetVoiceMediaState,
+    removeVoiceChannelState,
+    setJoinedVoiceChannel,
+    setVoiceCameraError,
+    setVoiceActionState,
+    speakerMuted,
+    startCameraStateSubscription,
+    startConnectionStatusSubscription,
+    startScreenStateSubscription,
+    startVideoTilesSubscription,
+    stopConnectionStatusSubscription,
+    screenShareEnabled,
+    showVoiceRejoinNotice,
+    toggleMicMuted,
+    toggleSpeakerMuted,
+    voiceRejoinNotice,
+    voiceActionState,
 } from "../stores/voice";
 import AsyncContent from "./AsyncContent";
 import UserSettingsDock from "./UserSettingsDock";
 import {
-  ChannelRow,
-  CreateChannelModal,
-  ScreenShareModal,
-  VoiceDock,
-  autoBitrateKbps,
-  manualBitrateKbps,
-  previewResolutionConstraints,
+    ChannelRow,
+    CreateChannelModal,
+    ScreenShareModal,
+    VoiceDock,
+    autoBitrateKbps,
+    manualBitrateKbps,
+    previewResolutionConstraints,
 } from "./channel-list";
+import { registerContextMenuHandlers } from "../stores/contextMenu";
 
 async function fetchChannels() {
-  return get<Channel[]>("/channels");
+    return get<Channel[]>("/channels");
 }
 
 export default function ChannelList() {
-  const [channels, setChannels] = createSignal<Channel[]>([]);
-  const [isLoading, setIsLoading] = createSignal(true);
-  const [isSaving, setIsSaving] = createSignal(false);
-  const [channelCreateOpenKind, setChannelCreateOpenKind] = createSignal<Channel["kind"] | null>(null);
-  const [channelCreateName, setChannelCreateName] = createSignal("");
-  const [channelCreateDescription, setChannelCreateDescription] = createSignal("");
-  const [loadError, setLoadError] = createSignal("");
-  const [toastError, setToastError] = createSignal("");
-  const [cameraActionPending, setCameraActionPending] = createSignal(false);
-  const [screenActionPending, setScreenActionPending] = createSignal(false);
-  const [screenShareModalOpen, setScreenShareModalOpen] = createSignal(false);
-  const [nativeSourcesLoading, setNativeSourcesLoading] = createSignal(false);
-  const [nativeSourcesError, setNativeSourcesError] = createSignal("");
-  const [nativeSources, setNativeSources] = createSignal<NativeCaptureSource[]>([]);
-  const [selectedNativeSourceId, setSelectedNativeSourceId] = createSignal<string | null>(null);
-  const [screenSharePreviewStream, setScreenSharePreviewStream] = createSignal<MediaStream | null>(null);
-  const [screenSharePreviewError, setScreenSharePreviewError] = createSignal("");
-  const [nativeCodecSupport, setNativeCodecSupport] = createSignal<Record<string, NativeCodecCapability> | null>(null);
-  const [nativeSenderMetrics, setNativeSenderMetrics] = createSignal<NativeCaptureStatus["native_sender"] | null>(null);
-  const [pulsingByChannel, setPulsingByChannel] = createSignal<Record<string, boolean>>({});
-  const pulseTimers = new Map<string, ReturnType<typeof setTimeout>>();
-  const tauriRuntime = isTauriRuntime();
-  const nativeDebugEnabled = tauriRuntime && (
-    import.meta.env.DEV
-    || window.localStorage.getItem("yankcord_debug_native_sender") === "1"
-  );
-  let toastTimer: ReturnType<typeof setTimeout> | null = null;
-  let screenSharePreviewVideoRef: HTMLVideoElement | undefined;
-  let channelCreateNameInputRef: HTMLInputElement | undefined;
+    const [channels, setChannels] = createSignal<Channel[]>([]);
+    const [isLoading, setIsLoading] = createSignal(true);
+    const [isSaving, setIsSaving] = createSignal(false);
+    const [channelCreateOpenKind, setChannelCreateOpenKind] = createSignal<
+        Channel["kind"] | null
+    >(null);
+    const [channelCreateName, setChannelCreateName] = createSignal("");
+    const [channelCreateDescription, setChannelCreateDescription] =
+        createSignal("");
+    const [loadError, setLoadError] = createSignal("");
+    const [toastError, setToastError] = createSignal("");
+    const [cameraActionPending, setCameraActionPending] = createSignal(false);
+    const [screenActionPending, setScreenActionPending] = createSignal(false);
+    const [screenShareModalOpen, setScreenShareModalOpen] = createSignal(false);
+    const [nativeSourcesLoading, setNativeSourcesLoading] = createSignal(false);
+    const [nativeSourcesError, setNativeSourcesError] = createSignal("");
+    const [nativeSources, setNativeSources] = createSignal<
+        NativeCaptureSource[]
+    >([]);
+    const [selectedNativeSourceId, setSelectedNativeSourceId] = createSignal<
+        string | null
+    >(null);
+    const [screenSharePreviewStream, setScreenSharePreviewStream] =
+        createSignal<MediaStream | null>(null);
+    const [screenSharePreviewError, setScreenSharePreviewError] =
+        createSignal("");
+    const [nativeCodecSupport, setNativeCodecSupport] = createSignal<Record<
+        string,
+        NativeCodecCapability
+    > | null>(null);
+    const [nativeSenderMetrics, setNativeSenderMetrics] = createSignal<
+        NativeCaptureStatus["native_sender"] | null
+    >(null);
+    const [pulsingByChannel, setPulsingByChannel] = createSignal<
+        Record<string, boolean>
+    >({});
+    const pulseTimers = new Map<string, ReturnType<typeof setTimeout>>();
+    const tauriRuntime = isTauriRuntime();
+    const nativeDebugEnabled =
+        tauriRuntime &&
+        (import.meta.env.DEV ||
+            window.localStorage.getItem("yankcord_debug_native_sender") ===
+                "1");
+    let toastTimer: ReturnType<typeof setTimeout> | null = null;
+    let screenSharePreviewVideoRef: HTMLVideoElement | undefined;
+    let channelCreateNameInputRef: HTMLInputElement | undefined;
 
-  function selectedScreenShareSourceKind(): "screen" | "window" | "application" {
-    const selected = nativeSources().find((source) => source.id === selectedNativeSourceId()) ?? null;
-    if (selected) {
-      return selected.kind === "screen" ? "screen" : selected.kind === "application" ? "application" : "window";
+    function selectedScreenShareSourceKind():
+        | "screen"
+        | "window"
+        | "application" {
+        const selected =
+            nativeSources().find(
+                (source) => source.id === selectedNativeSourceId(),
+            ) ?? null;
+        if (selected) {
+            return selected.kind === "screen"
+                ? "screen"
+                : selected.kind === "application"
+                  ? "application"
+                  : "window";
+        }
+
+        return preferredScreenShareSourceKind();
     }
 
-    return preferredScreenShareSourceKind();
-  }
+    function stopScreenSharePreview() {
+        const stream = screenSharePreviewStream();
+        if (stream) {
+            stream.getTracks().forEach((track) => track.stop());
+            setScreenSharePreviewStream(null);
+        }
 
-  function stopScreenSharePreview() {
-    const stream = screenSharePreviewStream();
-    if (stream) {
-      stream.getTracks().forEach((track) => track.stop());
-      setScreenSharePreviewStream(null);
+        setScreenSharePreviewError("");
     }
 
-    setScreenSharePreviewError("");
-  }
+    async function startScreenSharePreview() {
+        setScreenSharePreviewError("");
+        stopScreenSharePreview();
 
-  async function startScreenSharePreview() {
-    setScreenSharePreviewError("");
-    stopScreenSharePreview();
+        const sourceKind = selectedScreenShareSourceKind();
+        const displaySurface = sourceKind === "screen" ? "monitor" : "window";
 
-    const sourceKind = selectedScreenShareSourceKind();
-    const displaySurface = sourceKind === "screen" ? "monitor" : "window";
+        try {
+            const stream = await navigator.mediaDevices.getDisplayMedia({
+                video: {
+                    ...previewResolutionConstraints(
+                        preferredScreenShareResolution(),
+                    ),
+                    frameRate: {
+                        ideal: preferredScreenShareFps(),
+                        max: preferredScreenShareFps(),
+                    },
+                    displaySurface,
+                },
+                audio: false,
+            });
 
-    try {
-      const stream = await navigator.mediaDevices.getDisplayMedia({
-        video: {
-          ...previewResolutionConstraints(preferredScreenShareResolution()),
-          frameRate: { ideal: preferredScreenShareFps(), max: preferredScreenShareFps() },
-          displaySurface,
-        },
-        audio: false,
-      });
+            const [track] = stream.getVideoTracks();
+            if (track) {
+                track.addEventListener("ended", () => {
+                    if (screenSharePreviewStream() === stream) {
+                        stopScreenSharePreview();
+                    }
+                });
+            }
 
-      const [track] = stream.getVideoTracks();
-      if (track) {
-        track.addEventListener("ended", () => {
-          if (screenSharePreviewStream() === stream) {
-            stopScreenSharePreview();
-          }
-        });
-      }
-
-      setScreenSharePreviewStream(stream);
-    } catch (error) {
-      setScreenSharePreviewError(errorMessage(error, "Failed to start preview"));
-    }
-  }
-
-  function selectedScreenShareBitrateKbps(): number {
-    const mode = preferredScreenShareBitrateMode();
-    const resolution = preferredScreenShareResolution();
-    const fps = preferredScreenShareFps();
-    if (mode === "auto") {
-      return autoBitrateKbps(resolution, fps);
+            setScreenSharePreviewStream(stream);
+        } catch (error) {
+            setScreenSharePreviewError(
+                errorMessage(error, "Failed to start preview"),
+            );
+        }
     }
 
-    if (mode === "custom") {
-      return preferredScreenShareCustomBitrateKbps();
+    function selectedScreenShareBitrateKbps(): number {
+        const mode = preferredScreenShareBitrateMode();
+        const resolution = preferredScreenShareResolution();
+        const fps = preferredScreenShareFps();
+        if (mode === "auto") {
+            return autoBitrateKbps(resolution, fps);
+        }
+
+        if (mode === "custom") {
+            return preferredScreenShareCustomBitrateKbps();
+        }
+
+        return manualBitrateKbps(mode, resolution);
     }
 
-    return manualBitrateKbps(mode, resolution);
-  }
+    function buildScreenShareOptions(): ScreenShareStartOptions {
+        const selected =
+            nativeSources().find(
+                (source) => source.id === selectedNativeSourceId(),
+            ) ?? null;
+        const sourceKind = selected
+            ? selected.kind === "screen"
+                ? "screen"
+                : selected.kind === "application"
+                  ? "application"
+                  : "window"
+            : preferredScreenShareSourceKind();
 
-  function buildScreenShareOptions(): ScreenShareStartOptions {
-    const selected = nativeSources().find((source) => source.id === selectedNativeSourceId()) ?? null;
-    const sourceKind = selected
-      ? (selected.kind === "screen" ? "screen" : selected.kind === "application" ? "application" : "window")
-      : preferredScreenShareSourceKind();
-
-    return {
-      resolution: preferredScreenShareResolution(),
-      fps: preferredScreenShareFps(),
-      bitrateKbps: selectedScreenShareBitrateKbps(),
-      sourceKind,
-      encoderBackend: preferredScreenShareEncoderBackend(),
-      codecPreference: preferredScreenShareCodecPreference(),
-      strictCodec: preferredScreenShareCodecStrictMode(),
-      sourceId: selected?.id,
-      sourceTitle: selected?.title,
-    };
-  }
-
-  async function loadNativeCaptureSources() {
-    if (!tauriRuntime) {
-      return;
+        return {
+            resolution: preferredScreenShareResolution(),
+            fps: preferredScreenShareFps(),
+            bitrateKbps: selectedScreenShareBitrateKbps(),
+            sourceKind,
+            encoderBackend: preferredScreenShareEncoderBackend(),
+            codecPreference: preferredScreenShareCodecPreference(),
+            strictCodec: preferredScreenShareCodecStrictMode(),
+            sourceId: selected?.id,
+            sourceTitle: selected?.title,
+        };
     }
 
-    setNativeSourcesLoading(true);
-    setNativeSourcesError("");
+    async function loadNativeCaptureSources() {
+        if (!tauriRuntime) {
+            return;
+        }
 
-    try {
-      const sources = await listNativeCaptureSources();
-      setNativeSources(sources);
+        setNativeSourcesLoading(true);
+        setNativeSourcesError("");
 
-      const selectedId = selectedNativeSourceId();
-      if (selectedId && sources.some((source) => source.id === selectedId)) {
-        return;
-      }
+        try {
+            const sources = await listNativeCaptureSources();
+            setNativeSources(sources);
 
-      const preferredKind = preferredScreenShareSourceKind();
-      const preferredSource = sources.find((source) => source.kind === preferredKind);
-      setSelectedNativeSourceId(preferredSource?.id ?? sources[0]?.id ?? null);
-    } catch (error) {
-      setNativeSources([]);
-      setSelectedNativeSourceId(null);
-      setNativeSourcesError(errorMessage(error, "Failed to load native capture sources"));
-    } finally {
-      setNativeSourcesLoading(false);
-    }
-  }
+            const selectedId = selectedNativeSourceId();
+            if (
+                selectedId &&
+                sources.some((source) => source.id === selectedId)
+            ) {
+                return;
+            }
 
-  async function loadNativeCodecSupport() {
-    if (!tauriRuntime) {
-      return;
-    }
-
-    try {
-      const capabilities = await nativeCodecCapabilities();
-      const indexed = capabilities.reduce<Record<string, NativeCodecCapability>>((acc, capability) => {
-        acc[capability.mime_type] = capability;
-        return acc;
-      }, {});
-      setNativeCodecSupport(indexed);
-    } catch {
-      setNativeCodecSupport(null);
-    }
-  }
-
-  function showErrorToast(message: string) {
-    setToastError(message);
-    if (toastTimer) {
-      clearTimeout(toastTimer);
+            const preferredKind = preferredScreenShareSourceKind();
+            const preferredSource = sources.find(
+                (source) => source.kind === preferredKind,
+            );
+            setSelectedNativeSourceId(
+                preferredSource?.id ?? sources[0]?.id ?? null,
+            );
+        } catch (error) {
+            setNativeSources([]);
+            setSelectedNativeSourceId(null);
+            setNativeSourcesError(
+                errorMessage(error, "Failed to load native capture sources"),
+            );
+        } finally {
+            setNativeSourcesLoading(false);
+        }
     }
 
-    toastTimer = setTimeout(() => {
-      toastTimer = null;
-      setToastError("");
-    }, 3500);
-  }
+    async function loadNativeCodecSupport() {
+        if (!tauriRuntime) {
+            return;
+        }
 
-  function closeScreenShareModal() {
-    stopScreenSharePreview();
-    setScreenShareModalOpen(false);
-  }
-
-  function ensureValidActiveChannel(nextChannels: Channel[]) {
-    const selected = activeChannelId();
-    const selectedStillExists = selected ? nextChannels.some((channel) => channel.id === selected) : false;
-
-    if (selectedStillExists) {
-      return;
+        try {
+            const capabilities = await nativeCodecCapabilities();
+            const indexed = capabilities.reduce<
+                Record<string, NativeCodecCapability>
+            >((acc, capability) => {
+                acc[capability.mime_type] = capability;
+                return acc;
+            }, {});
+            setNativeCodecSupport(indexed);
+        } catch {
+            setNativeCodecSupport(null);
+        }
     }
 
-    setActiveChannelId(nextChannels[0]?.id ?? null);
-  }
+    function showErrorToast(message: string) {
+        setToastError(message);
+        if (toastTimer) {
+            clearTimeout(toastTimer);
+        }
 
-  function joinVoiceChannel(channelId: string) {
-    if (voiceActionState() !== "idle" || joinedVoiceChannelId() === channelId) {
-      return;
+        toastTimer = setTimeout(() => {
+            toastTimer = null;
+            setToastError("");
+        }, 3500);
     }
 
-    setVoiceActionState("joining");
-    send({ type: "join_voice", channel_id: channelId });
-  }
-
-  function leaveVoiceChannel() {
-    const channelId = joinedVoiceChannelId();
-    if (!channelId || voiceActionState() !== "idle") {
-      return;
+    function closeScreenShareModal() {
+        stopScreenSharePreview();
+        setScreenShareModalOpen(false);
     }
 
-    setVoiceActionState("leaving");
-    send({ type: "leave_voice", channel_id: channelId });
-  }
+    function ensureValidActiveChannel(nextChannels: Channel[]) {
+        const selected = activeChannelId();
+        const selectedStillExists = selected
+            ? nextChannels.some((channel) => channel.id === selected)
+            : false;
 
-  function handleToggleMicMuted() {
-    const nextMuted = !micMuted();
-    toggleMicMuted();
-    setMicrophoneMuted(nextMuted);
-  }
+        if (selectedStillExists) {
+            return;
+        }
 
-  function handleToggleSpeakerMuted() {
-    const nextMuted = !speakerMuted();
-    toggleSpeakerMuted();
-    setSpeakersMuted(nextMuted);
-  }
-
-  async function handleToggleCamera() {
-    const channelId = joinedVoiceChannelId();
-    if (!channelId || cameraActionPending()) {
-      return;
+        setActiveChannelId(nextChannels[0]?.id ?? null);
     }
 
-    setCameraActionPending(true);
-    clearVoiceCameraError();
+    function joinVoiceChannel(channelId: string) {
+        if (
+            voiceActionState() !== "idle" ||
+            joinedVoiceChannelId() === channelId
+        ) {
+            return;
+        }
 
-    try {
-      const result = cameraEnabled()
-        ? await stopLocalCameraProducer(channelId)
-        : await startLocalCameraProducer(channelId);
-
-      if (!result.ok && result.error) {
-        setVoiceCameraError(result.error);
-        showErrorToast(result.error);
-      }
-    } finally {
-      setCameraActionPending(false);
-    }
-  }
-
-  async function startScreenShareWithOptions(channelId: string, options?: ScreenShareStartOptions) {
-    setScreenActionPending(true);
-
-    try {
-      const result = await startLocalScreenProducer(channelId, options);
-      if (!result.ok && result.error) {
-        showErrorToast(result.error);
-      }
-      return result;
-    } finally {
-      setScreenActionPending(false);
-    }
-  }
-
-  async function handleConfirmTauriScreenShare() {
-    const channelId = joinedVoiceChannelId();
-    if (!channelId || screenActionPending()) {
-      return;
+        setVoiceActionState("joining");
+        send({ type: "join_voice", channel_id: channelId });
     }
 
-    const selected = nativeSources().find((source) => source.id === selectedNativeSourceId()) ?? null;
-    if (selected) {
-      savePreferredScreenShareSourceKind(
-        selected.kind === "screen" ? "screen" : selected.kind === "application" ? "application" : "window",
-      );
+    function leaveVoiceChannel() {
+        const channelId = joinedVoiceChannelId();
+        if (!channelId || voiceActionState() !== "idle") {
+            return;
+        }
+
+        setVoiceActionState("leaving");
+        send({ type: "leave_voice", channel_id: channelId });
     }
 
-    const result = await startScreenShareWithOptions(channelId, buildScreenShareOptions());
-    if (result.ok) {
-      closeScreenShareModal();
-    }
-  }
-
-  async function handleToggleScreenShare() {
-    const channelId = joinedVoiceChannelId();
-    if (!channelId || screenActionPending()) {
-      return;
+    function handleToggleMicMuted() {
+        const nextMuted = !micMuted();
+        toggleMicMuted();
+        setMicrophoneMuted(nextMuted);
     }
 
-    try {
-      if (screenShareEnabled()) {
+    function handleToggleSpeakerMuted() {
+        const nextMuted = !speakerMuted();
+        toggleSpeakerMuted();
+        setSpeakersMuted(nextMuted);
+    }
+
+    async function handleToggleCamera() {
+        const channelId = joinedVoiceChannelId();
+        if (!channelId || cameraActionPending()) {
+            return;
+        }
+
+        setCameraActionPending(true);
+        clearVoiceCameraError();
+
+        try {
+            const result = cameraEnabled()
+                ? await stopLocalCameraProducer(channelId)
+                : await startLocalCameraProducer(channelId);
+
+            if (!result.ok && result.error) {
+                setVoiceCameraError(result.error);
+                showErrorToast(result.error);
+            }
+        } finally {
+            setCameraActionPending(false);
+        }
+    }
+
+    async function startScreenShareWithOptions(
+        channelId: string,
+        options?: ScreenShareStartOptions,
+    ) {
         setScreenActionPending(true);
-        const result = await stopLocalScreenProducer(channelId);
-        if (!result.ok && result.error) {
-          showErrorToast(result.error);
+
+        try {
+            const result = await startLocalScreenProducer(channelId, options);
+            if (!result.ok && result.error) {
+                showErrorToast(result.error);
+            }
+            return result;
+        } finally {
+            setScreenActionPending(false);
         }
-        return;
-      }
-
-      if (tauriRuntime) {
-        await loadNativeCaptureSources();
-        await loadNativeCodecSupport();
-        setScreenShareModalOpen(true);
-        return;
-      }
-
-      await startScreenShareWithOptions(channelId);
-    } finally {
-      setScreenActionPending(false);
-    }
-  }
-
-  function selectChannel(channel: Channel) {
-    if (channel.kind === "voice") {
-      joinVoiceChannel(channel.id);
-      return;
     }
 
-    setActiveChannelId(channel.id);
-    clearUnread(channel.id);
-  }
+    async function handleConfirmTauriScreenShare() {
+        const channelId = joinedVoiceChannelId();
+        if (!channelId || screenActionPending()) {
+            return;
+        }
 
-  function clearActiveChannelUnread() {
-    const selected = activeChannelId();
-    if (selected) {
-      clearUnread(selected);
-    }
-  }
+        const selected =
+            nativeSources().find(
+                (source) => source.id === selectedNativeSourceId(),
+            ) ?? null;
+        if (selected) {
+            savePreferredScreenShareSourceKind(
+                selected.kind === "screen"
+                    ? "screen"
+                    : selected.kind === "application"
+                      ? "application"
+                      : "window",
+            );
+        }
 
-  function formatUnreadBadge(channelId: string) {
-    const count = unreadCount(channelId);
-    if (count <= 0) {
-      return "";
-    }
-
-    return count > 99 ? "99+" : String(count);
-  }
-
-  function voiceMembers(channelId: string) {
-    return participantsByChannel()[channelId] ?? [];
-  }
-
-  function pulseBadge(channelId: string) {
-    const existingTimer = pulseTimers.get(channelId);
-    if (existingTimer) {
-      clearTimeout(existingTimer);
-    }
-
-    setPulsingByChannel((current) => ({ ...current, [channelId]: true }));
-
-    const timer = setTimeout(() => {
-      pulseTimers.delete(channelId);
-      setPulsingByChannel((current) => {
-        const next = { ...current };
-        delete next[channelId];
-        return next;
-      });
-    }, 420);
-
-    pulseTimers.set(channelId, timer);
-  }
-
-  async function loadInitialChannels() {
-    setIsLoading(true);
-    setLoadError("");
-    try {
-      const loaded = await fetchChannels();
-      const sorted = [...loaded].sort((a, b) => a.position - b.position);
-      setChannels(sorted);
-      ensureValidActiveChannel(sorted);
-    } catch (error) {
-      setLoadError(errorMessage(error, "Failed to load channels"));
-    } finally {
-      setIsLoading(false);
-    }
-  }
-
-  function openCreateChannel(kind: Channel["kind"]) {
-    if (isSaving()) {
-      return;
+        const result = await startScreenShareWithOptions(
+            channelId,
+            buildScreenShareOptions(),
+        );
+        if (result.ok) {
+            closeScreenShareModal();
+        }
     }
 
-    setChannelCreateOpenKind(kind);
-    setChannelCreateName("");
-    setChannelCreateDescription("");
-  }
+    async function handleToggleScreenShare() {
+        const channelId = joinedVoiceChannelId();
+        if (!channelId || screenActionPending()) {
+            return;
+        }
 
-  function closeCreateChannel() {
-    setChannelCreateOpenKind(null);
-    setChannelCreateName("");
-    setChannelCreateDescription("");
-  }
+        try {
+            if (screenShareEnabled()) {
+                setScreenActionPending(true);
+                const result = await stopLocalScreenProducer(channelId);
+                if (!result.ok && result.error) {
+                    showErrorToast(result.error);
+                }
+                return;
+            }
 
-  async function handleCreateChannel(kind: Channel["kind"], rawName: string, rawDescription: string) {
-    if (isSaving()) {
-      return;
+            if (tauriRuntime) {
+                await loadNativeCaptureSources();
+                await loadNativeCodecSupport();
+                setScreenShareModalOpen(true);
+                return;
+            }
+
+            await startScreenShareWithOptions(channelId);
+        } finally {
+            setScreenActionPending(false);
+        }
     }
 
-    const trimmed = rawName.trim();
-    const trimmedDescription = rawDescription.trim();
-    if (!trimmed) {
-      showErrorToast("Channel name is required");
-      return;
+    function selectChannel(channel: Channel) {
+        if (channel.kind === "voice") {
+            joinVoiceChannel(channel.id);
+            return;
+        }
+
+        setActiveChannelId(channel.id);
+        clearUnread(channel.id);
     }
 
-    setIsSaving(true);
-    setLoadError("");
-    try {
-      await post<Channel>("/channels", {
-        name: trimmed,
-        description: trimmedDescription.length > 0 ? trimmedDescription : null,
-        kind,
-      });
-      closeCreateChannel();
-    } catch (error) {
-      showErrorToast(errorMessage(error, "Failed to create channel"));
-    } finally {
-      setIsSaving(false);
-    }
-  }
-
-  async function handleDeleteChannel(channel: Channel) {
-    if (isSaving()) {
-      return;
+    function clearActiveChannelUnread() {
+        const selected = activeChannelId();
+        if (selected) {
+            clearUnread(selected);
+        }
     }
 
-    const confirmed = window.confirm(`Delete #${channel.name}?`);
-    if (!confirmed) {
-      return;
+    function formatUnreadBadge(channelId: string) {
+        const count = unreadCount(channelId);
+        if (count <= 0) {
+            return "";
+        }
+
+        return count > 99 ? "99+" : String(count);
     }
 
-    setIsSaving(true);
-    try {
-      await del<{ deleted: true }>(`/channels/${channel.id}`);
-    } catch (error) {
-      showErrorToast(errorMessage(error, "Failed to delete channel"));
-    } finally {
-      setIsSaving(false);
+    function voiceMembers(channelId: string) {
+        return participantsByChannel()[channelId] ?? [];
     }
-  }
 
-  onMount(() => {
-    connect();
-    startConnectionStatusSubscription();
-    void loadInitialChannels();
+    function pulseBadge(channelId: string) {
+        const existingTimer = pulseTimers.get(channelId);
+        if (existingTimer) {
+            clearTimeout(existingTimer);
+        }
 
-    const handleWindowFocus = () => {
-      clearActiveChannelUnread();
+        setPulsingByChannel((current) => ({ ...current, [channelId]: true }));
+
+        const timer = setTimeout(() => {
+            pulseTimers.delete(channelId);
+            setPulsingByChannel((current) => {
+                const next = { ...current };
+                delete next[channelId];
+                return next;
+            });
+        }, 420);
+
+        pulseTimers.set(channelId, timer);
+    }
+
+    async function loadInitialChannels() {
+        setIsLoading(true);
+        setLoadError("");
+        try {
+            const loaded = await fetchChannels();
+            const sorted = [...loaded].sort((a, b) => a.position - b.position);
+            setChannels(sorted);
+            ensureValidActiveChannel(sorted);
+        } catch (error) {
+            setLoadError(errorMessage(error, "Failed to load channels"));
+        } finally {
+            setIsLoading(false);
+        }
+    }
+
+    function openCreateChannel(kind: Channel["kind"]) {
+        if (isSaving()) {
+            return;
+        }
+
+        setChannelCreateOpenKind(kind);
+        setChannelCreateName("");
+        setChannelCreateDescription("");
+    }
+
+    function closeCreateChannel() {
+        setChannelCreateOpenKind(null);
+        setChannelCreateName("");
+        setChannelCreateDescription("");
+    }
+
+    async function handleCreateChannel(
+        kind: Channel["kind"],
+        rawName: string,
+        rawDescription: string,
+    ) {
+        if (isSaving()) {
+            return;
+        }
+
+        const trimmed = rawName.trim();
+        const trimmedDescription = rawDescription.trim();
+        if (!trimmed) {
+            showErrorToast("Channel name is required");
+            return;
+        }
+
+        setIsSaving(true);
+        setLoadError("");
+        try {
+            await post<Channel>("/channels", {
+                name: trimmed,
+                description:
+                    trimmedDescription.length > 0 ? trimmedDescription : null,
+                kind,
+            });
+            closeCreateChannel();
+        } catch (error) {
+            showErrorToast(errorMessage(error, "Failed to create channel"));
+        } finally {
+            setIsSaving(false);
+        }
+    }
+
+    async function handleDeleteChannel(channel: Channel) {
+        if (isSaving()) {
+            return;
+        }
+
+        const confirmed = window.confirm(`Delete #${channel.name}?`);
+        if (!confirmed) {
+            return;
+        }
+
+        setIsSaving(true);
+        try {
+            await del<{ deleted: true }>(`/channels/${channel.id}`);
+        } catch (error) {
+            showErrorToast(errorMessage(error, "Failed to delete channel"));
+        } finally {
+            setIsSaving(false);
+        }
+    }
+
+    onMount(() => {
+        connect();
+        startConnectionStatusSubscription();
+        void loadInitialChannels();
+
+        registerContextMenuHandlers({
+            channel: {
+                onDelete: (channel) => void handleDeleteChannel(channel),
+            },
+        });
+
+        const handleWindowFocus = () => {
+            clearActiveChannelUnread();
+        };
+
+        const handleVisibilityChange = () => {
+            if (!document.hidden) {
+                clearActiveChannelUnread();
+            }
+        };
+
+        window.addEventListener("focus", handleWindowFocus);
+        document.addEventListener("visibilitychange", handleVisibilityChange);
+
+        const unsubscribe = onMessage((msg) => {
+            if (msg.type === "channel_created") {
+                setChannels((current) => {
+                    const next = current.some(
+                        (channel) => channel.id === msg.channel.id,
+                    )
+                        ? current.map((channel) =>
+                              channel.id === msg.channel.id
+                                  ? msg.channel
+                                  : channel,
+                          )
+                        : [...current, msg.channel];
+                    const sorted = next.sort((a, b) => a.position - b.position);
+                    ensureValidActiveChannel(sorted);
+                    return sorted;
+                });
+                return;
+            }
+
+            if (msg.type === "channel_deleted") {
+                if (joinedVoiceChannelId() === msg.id) {
+                    setJoinedVoiceChannel(null);
+                    setVoiceActionState("idle");
+                    cleanupMediaTransports();
+                    resetVoiceMediaState();
+                }
+
+                removeVoiceChannelState(msg.id);
+                setChannels((current) => {
+                    const next = current.filter(
+                        (channel) => channel.id !== msg.id,
+                    );
+                    ensureValidActiveChannel(next);
+                    return next;
+                });
+                removeUnreadChannel(msg.id);
+                return;
+            }
+
+            if (msg.type === "channel_activity") {
+                if (msg.channel_id !== activeChannelId()) {
+                    incrementUnread(msg.channel_id);
+                    pulseBadge(msg.channel_id);
+                }
+                return;
+            }
+
+            if (msg.type === "voice_presence_snapshot") {
+                applyVoiceSnapshot(msg.channels);
+                return;
+            }
+
+            if (msg.type === "voice_user_joined") {
+                applyVoiceJoined(msg.channel_id, msg.username);
+                return;
+            }
+
+            if (msg.type === "voice_user_left") {
+                applyVoiceLeft(msg.channel_id, msg.username);
+                return;
+            }
+
+            if (msg.type === "voice_user_speaking") {
+                applyVoiceSpeaking(msg.channel_id, msg.username, msg.speaking);
+                return;
+            }
+
+            if (msg.type === "voice_joined") {
+                setJoinedVoiceChannel(msg.channel_id);
+                startCameraStateSubscription();
+                startScreenStateSubscription();
+                startVideoTilesSubscription();
+                clearVoiceRejoinNotice();
+                setVoiceActionState("idle");
+                void initializeMediaTransports(msg.channel_id).catch(
+                    (error) => {
+                        showErrorToast(
+                            errorMessage(
+                                error,
+                                "Failed to initialize media transports",
+                            ),
+                        );
+                    },
+                );
+                setMicrophoneMuted(micMuted());
+                setSpeakersMuted(speakerMuted());
+                return;
+            }
+
+            if (msg.type === "voice_left") {
+                if (joinedVoiceChannelId() === msg.channel_id) {
+                    setJoinedVoiceChannel(null);
+                    cleanupMediaTransports();
+                    resetVoiceMediaState();
+                }
+                setVoiceActionState("idle");
+                return;
+            }
+
+            if (msg.type === "error" && voiceActionState() !== "idle") {
+                setVoiceActionState("idle");
+                showErrorToast(msg.message);
+            }
+        });
+
+        const unsubscribeClose = onClose(() => {
+            if (!joinedVoiceChannelId()) {
+                return;
+            }
+
+            cleanupMediaTransports();
+            setJoinedVoiceChannel(null);
+            resetVoiceMediaState();
+            setVoiceActionState("idle");
+            showVoiceRejoinNotice();
+        });
+
+        onCleanup(() => {
+            pulseTimers.forEach((timer) => clearTimeout(timer));
+            pulseTimers.clear();
+            if (toastTimer) {
+                clearTimeout(toastTimer);
+                toastTimer = null;
+            }
+            window.removeEventListener("focus", handleWindowFocus);
+            document.removeEventListener(
+                "visibilitychange",
+                handleVisibilityChange,
+            );
+            unsubscribe();
+            unsubscribeClose();
+            stopConnectionStatusSubscription();
+            stopScreenSharePreview();
+        });
+    });
+
+    const sortedChannels = () =>
+        [...channels()].sort((a, b) => a.position - b.position);
+    const textChannels = () =>
+        sortedChannels().filter((channel) => channel.kind === "text");
+    const voiceChannels = () =>
+        sortedChannels().filter((channel) => channel.kind === "voice");
+    const connectedVoiceChannelName = () => {
+        const connectedChannelId = joinedVoiceChannelId();
+        if (!connectedChannelId) {
+            return null;
+        }
+
+        const channel = sortedChannels().find(
+            (entry) => entry.id === connectedChannelId,
+        );
+        return channel ? channel.name : "Unknown channel";
     };
 
-    const handleVisibilityChange = () => {
-      if (!document.hidden) {
+    createEffect(() => {
         clearActiveChannelUnread();
-      }
-    };
+    });
 
-    window.addEventListener("focus", handleWindowFocus);
-    document.addEventListener("visibilitychange", handleVisibilityChange);
+    createEffect(() => {
+        if (!channelCreateOpenKind()) {
+            return;
+        }
 
-    const unsubscribe = onMessage((msg) => {
-      if (msg.type === "channel_created") {
-        setChannels((current) => {
-          const next = current.some((channel) => channel.id === msg.channel.id)
-            ? current.map((channel) => (channel.id === msg.channel.id ? msg.channel : channel))
-            : [...current, msg.channel];
-          const sorted = next.sort((a, b) => a.position - b.position);
-          ensureValidActiveChannel(sorted);
-          return sorted;
+        if (channelCreateNameInputRef) {
+            channelCreateNameInputRef.focus();
+            channelCreateNameInputRef.select();
+        }
+    });
+
+    createEffect(() => {
+        if (!joinedVoiceChannelId()) {
+            closeScreenShareModal();
+        }
+    });
+
+    createEffect(() => {
+        if (!screenShareModalOpen()) {
+            stopScreenSharePreview();
+        }
+    });
+
+    createEffect(() => {
+        const stream = screenSharePreviewStream();
+        if (!screenSharePreviewVideoRef) {
+            return;
+        }
+
+        if (!stream) {
+            screenSharePreviewVideoRef.srcObject = null;
+            return;
+        }
+
+        screenSharePreviewVideoRef.srcObject = stream;
+        screenSharePreviewVideoRef.muted = true;
+        screenSharePreviewVideoRef.playsInline = true;
+        void screenSharePreviewVideoRef.play().catch(() => undefined);
+    });
+
+    createEffect(() => {
+        selectedNativeSourceId();
+        preferredScreenShareSourceKind();
+        untrack(() => stopScreenSharePreview());
+    });
+
+    createEffect(() => {
+        if (!tauriRuntime || !screenShareEnabled()) {
+            setNativeSenderMetrics(null);
+            return;
+        }
+
+        let cancelled = false;
+
+        const pollStatus = async () => {
+            try {
+                const status = await nativeCaptureStatus();
+                if (!cancelled) {
+                    setNativeSenderMetrics(status.native_sender);
+                }
+            } catch {
+                if (!cancelled) {
+                    setNativeSenderMetrics(null);
+                }
+            }
+        };
+
+        void pollStatus();
+        const timer = window.setInterval(() => {
+            void pollStatus();
+        }, 1000);
+
+        onCleanup(() => {
+            cancelled = true;
+            window.clearInterval(timer);
         });
-        return;
-      }
-
-      if (msg.type === "channel_deleted") {
-        if (joinedVoiceChannelId() === msg.id) {
-          setJoinedVoiceChannel(null);
-          setVoiceActionState("idle");
-          cleanupMediaTransports();
-          resetVoiceMediaState();
-        }
-
-        removeVoiceChannelState(msg.id);
-        setChannels((current) => {
-          const next = current.filter((channel) => channel.id !== msg.id);
-          ensureValidActiveChannel(next);
-          return next;
-        });
-        removeUnreadChannel(msg.id);
-        return;
-      }
-
-      if (msg.type === "channel_activity") {
-        if (msg.channel_id !== activeChannelId()) {
-          incrementUnread(msg.channel_id);
-          pulseBadge(msg.channel_id);
-        }
-        return;
-      }
-
-      if (msg.type === "voice_presence_snapshot") {
-        applyVoiceSnapshot(msg.channels);
-        return;
-      }
-
-      if (msg.type === "voice_user_joined") {
-        applyVoiceJoined(msg.channel_id, msg.username);
-        return;
-      }
-
-      if (msg.type === "voice_user_left") {
-        applyVoiceLeft(msg.channel_id, msg.username);
-        return;
-      }
-
-      if (msg.type === "voice_user_speaking") {
-        applyVoiceSpeaking(msg.channel_id, msg.username, msg.speaking);
-        return;
-      }
-
-      if (msg.type === "voice_joined") {
-        setJoinedVoiceChannel(msg.channel_id);
-        startCameraStateSubscription();
-        startScreenStateSubscription();
-        startVideoTilesSubscription();
-        clearVoiceRejoinNotice();
-        setVoiceActionState("idle");
-        void initializeMediaTransports(msg.channel_id).catch((error) => {
-          showErrorToast(errorMessage(error, "Failed to initialize media transports"));
-        });
-        setMicrophoneMuted(micMuted());
-        setSpeakersMuted(speakerMuted());
-        return;
-      }
-
-      if (msg.type === "voice_left") {
-        if (joinedVoiceChannelId() === msg.channel_id) {
-          setJoinedVoiceChannel(null);
-          cleanupMediaTransports();
-          resetVoiceMediaState();
-        }
-        setVoiceActionState("idle");
-        return;
-      }
-
-      if (msg.type === "error" && voiceActionState() !== "idle") {
-        setVoiceActionState("idle");
-        showErrorToast(msg.message);
-      }
     });
 
-    const unsubscribeClose = onClose(() => {
-      if (!joinedVoiceChannelId()) {
-        return;
-      }
-
-      cleanupMediaTransports();
-      setJoinedVoiceChannel(null);
-      resetVoiceMediaState();
-      setVoiceActionState("idle");
-      showVoiceRejoinNotice();
-    });
-
-    onCleanup(() => {
-      pulseTimers.forEach((timer) => clearTimeout(timer));
-      pulseTimers.clear();
-      if (toastTimer) {
-        clearTimeout(toastTimer);
-        toastTimer = null;
-      }
-      window.removeEventListener("focus", handleWindowFocus);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-      unsubscribe();
-      unsubscribeClose();
-      stopConnectionStatusSubscription();
-      stopScreenSharePreview();
-    });
-  });
-
-  const sortedChannels = () => [...channels()].sort((a, b) => a.position - b.position);
-  const textChannels = () => sortedChannels().filter((channel) => channel.kind === "text");
-  const voiceChannels = () => sortedChannels().filter((channel) => channel.kind === "voice");
-  const connectedVoiceChannelName = () => {
-    const connectedChannelId = joinedVoiceChannelId();
-    if (!connectedChannelId) {
-      return null;
-    }
-
-    const channel = sortedChannels().find((entry) => entry.id === connectedChannelId);
-    return channel ? channel.name : "Unknown channel";
-  };
-
-  createEffect(() => {
-    clearActiveChannelUnread();
-  });
-
-  createEffect(() => {
-    if (!channelCreateOpenKind()) {
-      return;
-    }
-
-    if (channelCreateNameInputRef) {
-      channelCreateNameInputRef.focus();
-      channelCreateNameInputRef.select();
-    }
-  });
-
-  createEffect(() => {
-    if (!joinedVoiceChannelId()) {
-      closeScreenShareModal();
-    }
-  });
-
-  createEffect(() => {
-    if (!screenShareModalOpen()) {
-      stopScreenSharePreview();
-    }
-  });
-
-  createEffect(() => {
-    const stream = screenSharePreviewStream();
-    if (!screenSharePreviewVideoRef) {
-      return;
-    }
-
-    if (!stream) {
-      screenSharePreviewVideoRef.srcObject = null;
-      return;
-    }
-
-    screenSharePreviewVideoRef.srcObject = stream;
-    screenSharePreviewVideoRef.muted = true;
-    screenSharePreviewVideoRef.playsInline = true;
-    void screenSharePreviewVideoRef.play().catch(() => undefined);
-  });
-
-  createEffect(() => {
-    selectedNativeSourceId();
-    preferredScreenShareSourceKind();
-    untrack(() => stopScreenSharePreview());
-  });
-
-  createEffect(() => {
-    if (!tauriRuntime || !screenShareEnabled()) {
-      setNativeSenderMetrics(null);
-      return;
-    }
-
-    let cancelled = false;
-
-    const pollStatus = async () => {
-      try {
-        const status = await nativeCaptureStatus();
-        if (!cancelled) {
-          setNativeSenderMetrics(status.native_sender);
-        }
-      } catch {
-        if (!cancelled) {
-          setNativeSenderMetrics(null);
-        }
-      }
-    };
-
-    void pollStatus();
-    const timer = window.setInterval(() => {
-      void pollStatus();
-    }, 1000);
-
-    onCleanup(() => {
-      cancelled = true;
-      window.clearInterval(timer);
-    });
-  });
-
-  return (
-    <div class="channel-list">
-      <h3>Channels</h3>
-      <AsyncContent
-        loading={isLoading()}
-        loadingText="Loading channels..."
-        error={sortedChannels().length === 0 ? loadError() : null}
-        empty={false}
-      >
-        <div class="channel-groups">
-          <section class="channel-group" aria-labelledby="text-channels-heading">
-            <div class="channel-group-header">
-              <h4 id="text-channels-heading" class="channel-group-heading">Text Channels</h4>
-              <button
-                type="button"
-                class="channel-group-add"
-                onClick={() => openCreateChannel("text")}
-                disabled={isSaving()}
-                title="Create text channel"
-                aria-label="Create text channel"
-              >
-                <svg viewBox="0 0 16 16" class="channel-group-add-icon" aria-hidden="true">
-                  <path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
-                </svg>
-              </button>
-            </div>
-            <Show when={textChannels().length > 0} fallback={<p class="channel-group-empty">No text channels yet</p>}>
-              <ul class="channel-items">
-                <For each={textChannels()}>
-                  {(channel) => (
-                    <ChannelRow
-                      channel={channel}
-                      prefix="#"
-                      isActive={activeChannelId() === channel.id}
-                      isVoiceConnected={joinedVoiceChannelId() === channel.id}
-                      onSelect={() => selectChannel(channel)}
-                      onDelete={() => void handleDeleteChannel(channel)}
-                      disabled={isSaving()}
-                      badge={
-                        <Show when={unreadCount(channel.id) > 0}>
-                          <span class={`channel-badge${pulsingByChannel()[channel.id] ? " is-pulsing" : ""}`}>
-                            {formatUnreadBadge(channel.id)}
-                          </span>
-                        </Show>
-                      }
-                    />
-                  )}
-                </For>
-              </ul>
-            </Show>
-          </section>
-
-          <section class="channel-group" aria-labelledby="voice-channels-heading">
-            <div class="channel-group-header">
-              <h4 id="voice-channels-heading" class="channel-group-heading">Voice Channels</h4>
-              <button
-                type="button"
-                class="channel-group-add"
-                onClick={() => openCreateChannel("voice")}
-                disabled={isSaving()}
-                title="Create voice channel"
-                aria-label="Create voice channel"
-              >
-                <svg viewBox="0 0 16 16" class="channel-group-add-icon" aria-hidden="true">
-                  <path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
-                </svg>
-              </button>
-            </div>
-            <Show when={voiceChannels().length > 0} fallback={<p class="channel-group-empty">No voice channels yet</p>}>
-              <ul class="channel-items">
-                <For each={voiceChannels()}>
-                  {(channel) => (
-                    <ChannelRow
-                      channel={channel}
-                      prefix="~"
-                      isActive={activeChannelId() === channel.id}
-                      isVoiceConnected={joinedVoiceChannelId() === channel.id}
-                      onSelect={() => selectChannel(channel)}
-                      onDelete={() => void handleDeleteChannel(channel)}
-                      disabled={isSaving()}
+    return (
+        <div class="channel-list">
+            <h3>Channels</h3>
+            <AsyncContent
+                loading={isLoading()}
+                loadingText="Loading channels..."
+                error={sortedChannels().length === 0 ? loadError() : null}
+                empty={false}
+            >
+                <div class="channel-groups">
+                    <section
+                        class="channel-group"
+                        aria-labelledby="text-channels-heading"
                     >
-                      <Show when={voiceMembers(channel.id).length > 0}>
-                        <ul class="channel-voice-members">
-                          <For each={voiceMembers(channel.id)}>
-                            {(username) => (
-                              <li class="channel-voice-member">
-                                <span
-                                  class={`channel-voice-member-dot${isVoiceMemberSpeaking(channel.id, username) ? " is-speaking" : ""}`}
-                                  aria-hidden="true"
-                                />
-                                <span>{username}</span>
-                              </li>
-                            )}
-                          </For>
-                        </ul>
-                      </Show>
-                    </ChannelRow>
-                  )}
-                </For>
-              </ul>
+                        <div class="channel-group-header">
+                            <h4
+                                id="text-channels-heading"
+                                class="channel-group-heading"
+                            >
+                                Text Channels
+                            </h4>
+                            <button
+                                type="button"
+                                class="channel-group-add"
+                                onClick={() => openCreateChannel("text")}
+                                disabled={isSaving()}
+                                title="Create text channel"
+                                aria-label="Create text channel"
+                            >
+                                <svg
+                                    viewBox="0 0 16 16"
+                                    class="channel-group-add-icon"
+                                    aria-hidden="true"
+                                >
+                                    <path
+                                        d="M8 3v10M3 8h10"
+                                        stroke="currentColor"
+                                        stroke-width="1.8"
+                                        stroke-linecap="round"
+                                    />
+                                </svg>
+                            </button>
+                        </div>
+                        <Show
+                            when={textChannels().length > 0}
+                            fallback={
+                                <p class="channel-group-empty">
+                                    No text channels yet
+                                </p>
+                            }
+                        >
+                            <ul class="channel-items">
+                                <For each={textChannels()}>
+                                    {(channel) => (
+                                        <ChannelRow
+                                            channel={channel}
+                                            prefix="#"
+                                            isActive={
+                                                activeChannelId() === channel.id
+                                            }
+                                            isVoiceConnected={
+                                                joinedVoiceChannelId() ===
+                                                channel.id
+                                            }
+                                            onSelect={() =>
+                                                selectChannel(channel)
+                                            }
+                                            onDelete={() =>
+                                                void handleDeleteChannel(channel)
+                                            }
+                                            disabled={isSaving()}
+                                            badge={
+                                                <Show
+                                                    when={
+                                                        unreadCount(
+                                                            channel.id,
+                                                        ) > 0
+                                                    }
+                                                >
+                                                    <span
+                                                        class={`channel-badge${pulsingByChannel()[channel.id] ? " is-pulsing" : ""}`}
+                                                    >
+                                                        {formatUnreadBadge(
+                                                            channel.id,
+                                                        )}
+                                                    </span>
+                                                </Show>
+                                            }
+                                        />
+                                    )}
+                                </For>
+                            </ul>
+                        </Show>
+                    </section>
+
+                    <section
+                        class="channel-group"
+                        aria-labelledby="voice-channels-heading"
+                    >
+                        <div class="channel-group-header">
+                            <h4
+                                id="voice-channels-heading"
+                                class="channel-group-heading"
+                            >
+                                Voice Channels
+                            </h4>
+                            <button
+                                type="button"
+                                class="channel-group-add"
+                                onClick={() => openCreateChannel("voice")}
+                                disabled={isSaving()}
+                                title="Create voice channel"
+                                aria-label="Create voice channel"
+                            >
+                                <svg
+                                    viewBox="0 0 16 16"
+                                    class="channel-group-add-icon"
+                                    aria-hidden="true"
+                                >
+                                    <path
+                                        d="M8 3v10M3 8h10"
+                                        stroke="currentColor"
+                                        stroke-width="1.8"
+                                        stroke-linecap="round"
+                                    />
+                                </svg>
+                            </button>
+                        </div>
+                        <Show
+                            when={voiceChannels().length > 0}
+                            fallback={
+                                <p class="channel-group-empty">
+                                    No voice channels yet
+                                </p>
+                            }
+                        >
+                            <ul class="channel-items">
+                                <For each={voiceChannels()}>
+                                    {(channel) => (
+                                        <ChannelRow
+                                            channel={channel}
+                                            prefix="~"
+                                            isActive={
+                                                activeChannelId() === channel.id
+                                            }
+                                            isVoiceConnected={
+                                                joinedVoiceChannelId() ===
+                                                channel.id
+                                            }
+                                            onSelect={() =>
+                                                selectChannel(channel)
+                                            }
+                                            onDelete={() =>
+                                                void handleDeleteChannel(
+                                                    channel,
+                                                )
+                                            }
+                                            disabled={isSaving()}
+                                        >
+                                            <Show
+                                                when={
+                                                    voiceMembers(channel.id)
+                                                        .length > 0
+                                                }
+                                            >
+                                                <ul class="channel-voice-members">
+                                                    <For
+                                                        each={voiceMembers(
+                                                            channel.id,
+                                                        )}
+                                                    >
+                                                        {(username) => (
+                                                            <li class="channel-voice-member">
+                                                                <span
+                                                                    class={`channel-voice-member-dot${isVoiceMemberSpeaking(channel.id, username) ? " is-speaking" : ""}`}
+                                                                    aria-hidden="true"
+                                                                />
+                                                                <span>
+                                                                    {username}
+                                                                </span>
+                                                            </li>
+                                                        )}
+                                                    </For>
+                                                </ul>
+                                            </Show>
+                                        </ChannelRow>
+                                    )}
+                                </For>
+                            </ul>
+                        </Show>
+                    </section>
+                </div>
+
+                <CreateChannelModal
+                    openKind={channelCreateOpenKind()}
+                    onClose={closeCreateChannel}
+                    name={channelCreateName}
+                    setName={setChannelCreateName}
+                    description={channelCreateDescription}
+                    setDescription={setChannelCreateDescription}
+                    nameInputRef={() => channelCreateNameInputRef}
+                    isSaving={isSaving()}
+                    onSubmit={(kind, name, description) =>
+                        void handleCreateChannel(kind, name, description)
+                    }
+                />
+
+                <div class="channel-footer">
+                    <Show when={voiceRejoinNotice() && !joinedVoiceChannelId()}>
+                        <div
+                            class="channel-footer-banner"
+                            role="status"
+                            aria-live="polite"
+                        >
+                            <span>
+                                Voice disconnected after profile update. Click a
+                                voice channel to rejoin.
+                            </span>
+                            <button
+                                type="button"
+                                class="channel-footer-banner-dismiss"
+                                onClick={clearVoiceRejoinNotice}
+                                aria-label="Dismiss voice rejoin notice"
+                            >
+                                Dismiss
+                            </button>
+                        </div>
+                    </Show>
+                    <Show when={joinedVoiceChannelId()}>
+                        <VoiceDock
+                            connectedChannelName={connectedVoiceChannelName()}
+                            nativeDebugEnabled={nativeDebugEnabled}
+                            nativeSenderMetrics={nativeSenderMetrics()}
+                            cameraActionPending={cameraActionPending()}
+                            screenActionPending={screenActionPending()}
+                            onDisconnect={leaveVoiceChannel}
+                            onToggleMicMuted={handleToggleMicMuted}
+                            onToggleSpeakerMuted={handleToggleSpeakerMuted}
+                            onToggleCamera={() => void handleToggleCamera()}
+                            onToggleScreenShare={() =>
+                                void handleToggleScreenShare()
+                            }
+                        />
+                    </Show>
+                    <ScreenShareModal
+                        open={
+                            tauriRuntime &&
+                            screenShareModalOpen() &&
+                            !screenShareEnabled()
+                        }
+                        onClose={closeScreenShareModal}
+                        nativeSourcesLoading={nativeSourcesLoading()}
+                        nativeSourcesError={nativeSourcesError()}
+                        nativeSources={nativeSources()}
+                        selectedNativeSourceId={selectedNativeSourceId()}
+                        onSelectNativeSource={setSelectedNativeSourceId}
+                        nativeCodecSupport={nativeCodecSupport()}
+                        screenSharePreviewStream={screenSharePreviewStream()}
+                        screenSharePreviewError={screenSharePreviewError()}
+                        screenSharePreviewVideoRef={() =>
+                            screenSharePreviewVideoRef
+                        }
+                        onRefreshSources={() =>
+                            void Promise.all([
+                                loadNativeCaptureSources(),
+                                loadNativeCodecSupport(),
+                            ])
+                        }
+                        onStartPreview={() => void startScreenSharePreview()}
+                        onStopPreview={stopScreenSharePreview}
+                        onConfirm={() => void handleConfirmTauriScreenShare()}
+                        screenActionPending={screenActionPending()}
+                    />
+                    <UserSettingsDock />
+                </div>
+            </AsyncContent>
+            <Show when={toastError()}>
+                <div class="toast toast-error" role="status" aria-live="polite">
+                    {toastError()}
+                </div>
             </Show>
-          </section>
         </div>
-
-        <CreateChannelModal
-          openKind={channelCreateOpenKind()}
-          onClose={closeCreateChannel}
-          name={channelCreateName}
-          setName={setChannelCreateName}
-          description={channelCreateDescription}
-          setDescription={setChannelCreateDescription}
-          nameInputRef={() => channelCreateNameInputRef}
-          isSaving={isSaving()}
-          onSubmit={(kind, name, description) => void handleCreateChannel(kind, name, description)}
-        />
-
-        <div class="channel-footer">
-          <Show when={voiceRejoinNotice() && !joinedVoiceChannelId()}>
-            <div class="channel-footer-banner" role="status" aria-live="polite">
-              <span>Voice disconnected after profile update. Click a voice channel to rejoin.</span>
-              <button
-                type="button"
-                class="channel-footer-banner-dismiss"
-                onClick={clearVoiceRejoinNotice}
-                aria-label="Dismiss voice rejoin notice"
-              >
-                Dismiss
-              </button>
-            </div>
-          </Show>
-          <Show when={joinedVoiceChannelId()}>
-            <VoiceDock
-              connectedChannelName={connectedVoiceChannelName()}
-              nativeDebugEnabled={nativeDebugEnabled}
-              nativeSenderMetrics={nativeSenderMetrics()}
-              cameraActionPending={cameraActionPending()}
-              screenActionPending={screenActionPending()}
-              onDisconnect={leaveVoiceChannel}
-              onToggleMicMuted={handleToggleMicMuted}
-              onToggleSpeakerMuted={handleToggleSpeakerMuted}
-              onToggleCamera={() => void handleToggleCamera()}
-              onToggleScreenShare={() => void handleToggleScreenShare()}
-            />
-          </Show>
-          <ScreenShareModal
-            open={tauriRuntime && screenShareModalOpen() && !screenShareEnabled()}
-            onClose={closeScreenShareModal}
-            nativeSourcesLoading={nativeSourcesLoading()}
-            nativeSourcesError={nativeSourcesError()}
-            nativeSources={nativeSources()}
-            selectedNativeSourceId={selectedNativeSourceId()}
-            onSelectNativeSource={setSelectedNativeSourceId}
-            nativeCodecSupport={nativeCodecSupport()}
-            screenSharePreviewStream={screenSharePreviewStream()}
-            screenSharePreviewError={screenSharePreviewError()}
-            screenSharePreviewVideoRef={() => screenSharePreviewVideoRef}
-            onRefreshSources={() => void Promise.all([loadNativeCaptureSources(), loadNativeCodecSupport()])}
-            onStartPreview={() => void startScreenSharePreview()}
-            onStopPreview={stopScreenSharePreview}
-            onConfirm={() => void handleConfirmTauriScreenShare()}
-            screenActionPending={screenActionPending()}
-          />
-          <UserSettingsDock />
-        </div>
-      </AsyncContent>
-      <Show when={toastError()}>
-        <div class="toast toast-error" role="status" aria-live="polite">{toastError()}</div>
-      </Show>
-    </div>
-  );
+    );
 }

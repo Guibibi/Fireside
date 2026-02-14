@@ -5,6 +5,7 @@ import { errorMessage } from "../utils/error";
 import AsyncContent from "./AsyncContent";
 import { username } from "../stores/auth";
 import { activeChannelId, type Channel } from "../stores/chat";
+import { openContextMenu, registerContextMenuHandlers, handleLongPressStart, handleLongPressEnd, setContextMenuTarget } from "../stores/contextMenu";
 import VideoStage from "./VideoStage";
 
 interface ChannelMessage {
@@ -210,6 +211,23 @@ export default function MessageArea() {
   onMount(() => {
     connect();
 
+    registerContextMenuHandlers({
+      message: {
+        onEdit: (msgData) => {
+          const msg = messages().find((m) => m.id === msgData.id);
+          if (msg) {
+            beginEdit(msg);
+          }
+        },
+        onDelete: (msgData) => {
+          const msg = messages().find((m) => m.id === msgData.id);
+          if (msg) {
+            void removeMessage(msg);
+          }
+        },
+      },
+    });
+
     const unsubscribe = onMessage((msg) => {
       if (msg.type === "error") {
         setWsError(msg.message);
@@ -398,7 +416,19 @@ export default function MessageArea() {
           <ul class="message-items">
             <For each={messages()}>
               {(message) => (
-                <li class="message-item">
+                <li
+                  class="message-item"
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    openContextMenu(e.clientX, e.clientY, "message", message.id, message);
+                  }}
+                  onFocus={() => setContextMenuTarget("message", message.id, message)}
+                  onTouchStart={(e) => {
+                    const touch = e.touches[0];
+                    handleLongPressStart(touch.clientX, touch.clientY, "message", message.id, message);
+                  }}
+                  onTouchEnd={handleLongPressEnd}
+                >
                   <div class="message-meta">
                     <span class="message-author">{message.author_username}</span>
                     <time class="message-time">

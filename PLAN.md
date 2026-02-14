@@ -20,6 +20,7 @@ Yankcord is a self-hosted, minimal chat app. One server instance = one community
 - Voice/video core is shipped: channel-scoped voice, camera, screen share, reconnect/device-change resilience.
 - Native sender codec expansion is shipped: additive codec negotiation, strict codec mode, codec telemetry, codec readiness rollout (`VP8`/`VP9`/`AV1` ready).
 - Phase 5.1 is shipped: channel list now renders separate `Text Channels` and `Voice Channels` sections while preserving existing unread and voice presence behavior.
+- Phase 5.2 is shipped: native-style context menus for channels, messages, and members with keyboard (Context Menu key / Shift+F10), right-click, and long-press invocation, plus focus restoration after dismissal.
 
 ---
 
