@@ -1487,7 +1487,8 @@ async function startNativeScreenProducer(
     throw new Error("Native sender negotiation failed: codec metadata missing.");
   }
 
-  if (negotiatedMimeType.toLowerCase() !== "video/h264") {
+  const negotiatedMimeTypeNormalized = negotiatedMimeType.toLowerCase();
+  if (negotiatedMimeTypeNormalized !== "video/h264" && negotiatedMimeTypeNormalized !== "video/vp8") {
     reportNativeSenderDiagnostic(
       channelId,
       "native_sender_unsupported_codec",

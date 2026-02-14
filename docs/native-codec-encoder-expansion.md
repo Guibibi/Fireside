@@ -18,11 +18,11 @@ Goals:
 
 ## Current Baseline
 
-- Native sender publishes H264 baseline (`profile-level-id=42e01f`, `packetization-mode=1`).
+- Native sender publishes negotiated codec from server session metadata (currently `H264` and `VP8` ready; `VP9`/`AV1` planned).
 - Payload type and SSRC are negotiated by server and passed to Tauri sender.
 - Native sender session signaling now includes additive codec metadata (`codec`, `available_codecs`).
-- Codec catalog advertises readiness status (`ready` vs `planned`) for negotiation safety.
-- RTP packetizer abstraction includes H264 and VP8 paths, plus explicit VP9/AV1 scaffold packetizers that fail fast with diagnostics until implemented.
+- Codec catalog advertises readiness status (`ready` vs `planned`) for negotiation safety (`H264`/`VP8` ready, `VP9`/`AV1` planned).
+- RTP packetizer abstraction includes functional H264, VP8, and VP9 paths; AV1 remains scaffolded fail-fast until implemented.
 
 ### Current Scaffolding Switches
 
@@ -30,6 +30,8 @@ Goals:
   - `auto` (default): try NVENC first, fallback to OpenH264
   - `nvenc`: force NVENC attempt, fallback to OpenH264 if unavailable
   - `openh264`: force software backend
+- VP8 FFmpeg override env var: `YANKCORD_NATIVE_VP8_FFMPEG_PATH` (defaults to `ffmpeg` on PATH)
+- VP9 FFmpeg override env var: `YANKCORD_NATIVE_VP9_FFMPEG_PATH` (defaults to `ffmpeg` on PATH)
 - Build feature for NVENC wiring: `native-nvenc` (in `client/src-tauri/Cargo.toml`)
   - Current status: FFmpeg-backed NVENC path is wired behind feature/env and validated on Windows after switching to a persistent encoder process model.
 - Runtime backend fallback threshold (used when NVENC backend is active):
@@ -131,6 +133,12 @@ Guardrails:
 4. Keep old clients compatible by defaulting to H264 when codec fields are absent.
 
 ## Phase 4: VP8/VP9/AV1 Decision Matrix
+
+Current status update:
+
+- VP8 is now implemented end-to-end for the native sender path (encoder + RTP packetization + negotiation readiness).
+- VP9 encoder + RTP packetization paths are implemented, but server negotiation still marks VP9 as `planned` for controlled rollout.
+- AV1 remains planned and intentionally fail fast in packetizer/encoder selection until implemented.
 
 Decision order should prioritize operational risk over theoretical efficiency.
 

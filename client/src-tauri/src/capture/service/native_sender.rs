@@ -596,8 +596,11 @@ pub fn run_native_sender_worker(
         config.payload_type,
         config.ssrc,
         codec.clock_rate,
-        codec.packetization_mode,
-        codec.profile_level_id,
+        codec
+            .packetization_mode
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| "none".to_string()),
+        codec.profile_level_id.unwrap_or("none"),
         config.target_rtp.as_deref().unwrap_or("disabled"),
         degradation_tuning.level1_avg_depth,
         degradation_tuning.level1_peak_depth,

@@ -193,8 +193,8 @@ mod imp {
             CodecDescriptor {
                 mime_type: "video/H264",
                 clock_rate: 90_000,
-                packetization_mode: 1,
-                profile_level_id: "42e01f",
+                packetization_mode: Some(1),
+                profile_level_id: Some("42e01f"),
             }
         }
 

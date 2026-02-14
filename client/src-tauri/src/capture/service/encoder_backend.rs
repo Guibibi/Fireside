@@ -3,13 +3,15 @@ use super::h264_encoder::{
 };
 use super::metrics::NativeSenderSharedMetrics;
 use super::nvenc_encoder::try_build_nvenc_backend;
+use super::vp8_encoder::try_build_vp8_backend;
+use super::vp9_encoder::try_build_vp9_backend;
 
 #[derive(Debug, Clone, Copy)]
 pub struct CodecDescriptor {
     pub mime_type: &'static str,
     pub clock_rate: u32,
-    pub packetization_mode: u8,
-    pub profile_level_id: &'static str,
+    pub packetization_mode: Option<u8>,
+    pub profile_level_id: Option<&'static str>,
 }
 
 pub trait VideoEncoderBackend: Send {
@@ -155,12 +157,36 @@ pub fn create_encoder_backend_for_codec(
         NativeCodecTarget::H264 => {
             create_encoder_backend(target_fps, target_bitrate_kbps, preference_override)
         }
-        NativeCodecTarget::Vp8 => Err(
-            "native_sender_encoder_not_available: VP8 encoder backend not implemented".to_string(),
-        ),
-        NativeCodecTarget::Vp9 => Err(
-            "native_sender_encoder_not_available: VP9 encoder backend not implemented".to_string(),
-        ),
+        NativeCodecTarget::Vp8 => {
+            let backend = try_build_vp8_backend(target_fps, target_bitrate_kbps)
+                .map_err(|error| format!("native_sender_encoder_not_available: {error}"))?;
+            Ok((
+                backend,
+                EncoderBackendSelection {
+                    requested_backend: preference_override
+                        .map(EncoderPreference::from_label)
+                        .unwrap_or_else(EncoderPreference::from_env)
+                        .as_label(),
+                    selected_backend: "ffmpeg-vp8",
+                    fallback_reason: None,
+                },
+            ))
+        }
+        NativeCodecTarget::Vp9 => {
+            let backend = try_build_vp9_backend(target_fps, target_bitrate_kbps)
+                .map_err(|error| format!("native_sender_encoder_not_available: {error}"))?;
+            Ok((
+                backend,
+                EncoderBackendSelection {
+                    requested_backend: preference_override
+                        .map(EncoderPreference::from_label)
+                        .unwrap_or_else(EncoderPreference::from_env)
+                        .as_label(),
+                    selected_backend: "ffmpeg-vp9",
+                    fallback_reason: None,
+                },
+            ))
+        }
         NativeCodecTarget::Av1 => Err(
             "native_sender_encoder_not_available: AV1 encoder backend not implemented".to_string(),
         ),
@@ -184,8 +210,8 @@ impl VideoEncoderBackend for OpenH264EncoderBackend {
         CodecDescriptor {
             mime_type: "video/H264",
             clock_rate: 90_000,
-            packetization_mode: 1,
-            profile_level_id: "42e01f",
+            packetization_mode: Some(1),
+            profile_level_id: Some("42e01f"),
         }
     }
 

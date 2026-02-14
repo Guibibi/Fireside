@@ -5,6 +5,8 @@ mod native_sender;
 mod nvenc_encoder;
 mod rtp_packetizer;
 mod rtp_sender;
+mod vp8_encoder;
+mod vp9_encoder;
 
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, Ordering};

@@ -23,15 +23,15 @@ This file consolidates active execution plans.
 - [x] Performance hardening and threshold tuning completed.
 - [x] NVENC-backed native path wired with fallback policy.
 - [x] Native sender session signaling now carries additive codec negotiation fields (`codec`, `available_codecs`) with backwards-compatible H264 defaults.
-- [x] Native RTP packetizer abstraction now supports codec-specific packetizers (H264 + VP8 wiring), while keeping H264 as the active default path.
-- [x] Codec catalog/negotiation scaffolding now advertises VP9/AV1 as `planned` and keeps selection constrained to runtime-ready codecs.
-- [ ] Codec expansion complete (VP8/VP9/AV1 native packetizer paths as desired).
-- [ ] Native sender codec negotiation generalized beyond fixed H264 profile.
+- [x] Native RTP packetizer abstraction now supports codec-specific packetizers (H264 + VP8), while preserving H264 behavior.
+- [x] VP9 native encoder + RTP packetizer path is implemented but kept negotiation-planned for controlled rollout.
+- [x] Codec catalog/negotiation now advertises `VP8` as `ready` and keeps `VP9`/`AV1` as `planned`.
+- [ ] Codec expansion complete for AV1 native encoder + packetizer path.
+- [x] Native sender codec negotiation is additive and codec-aware (`codec`, `available_codecs`) with H264-compatible legacy fields.
 
 ### Near-Term Next Steps
 
-1. Add codec-specific native RTP packetizer support where needed beyond H264.
-2. Generalize native sender session negotiation to return negotiated codec descriptor(s) additively.
+1. Implement AV1 native encoder backend + RTP packetizer path.
 3. Keep backwards compatibility: default to H264 when codec fields are absent.
 4. Keep web/browser flows unchanged.
 

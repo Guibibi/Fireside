@@ -76,6 +76,17 @@ impl NativeRtpSender {
         sent
     }
 
+    pub fn send_vp9_frames(&mut self, frames: &[Vec<u8>], timestamp_ms: u64) -> usize {
+        let mut sent = 0usize;
+        let rtp_timestamp = timestamp_ms.wrapping_mul(90) as u32;
+
+        for frame in frames {
+            sent = sent.saturating_add(self.send_vp9_frame(frame, rtp_timestamp));
+        }
+
+        sent
+    }
+
     pub fn poll_feedback(&mut self) -> FeedbackPollResult {
         let Some(socket) = self.socket.as_ref() else {
             return FeedbackPollResult::default();
@@ -182,6 +193,46 @@ impl NativeRtpSender {
             let mut packet = Vec::with_capacity(13 + payload_len);
             packet.extend_from_slice(&self.build_rtp_header(rtp_timestamp, is_last));
             packet.push(if is_first { 0x10 } else { 0x00 });
+            packet.extend_from_slice(&frame[offset..offset + payload_len]);
+            self.write_packet(&packet);
+
+            offset += payload_len;
+            packets += 1;
+        }
+
+        packets
+    }
+
+    fn send_vp9_frame(&mut self, frame: &[u8], rtp_timestamp: u32) -> usize {
+        if frame.is_empty() {
+            return 0;
+        }
+
+        let max_payload = self.mtu.saturating_sub(13);
+        if max_payload == 0 {
+            return 0;
+        }
+
+        let mut offset = 0usize;
+        let mut packets = 0usize;
+
+        while offset < frame.len() {
+            let remaining = frame.len() - offset;
+            let payload_len = remaining.min(max_payload);
+            let is_first = offset == 0;
+            let is_last = offset + payload_len >= frame.len();
+
+            let mut vp9_descriptor = 0u8;
+            if is_first {
+                vp9_descriptor |= 0x08;
+            }
+            if is_last {
+                vp9_descriptor |= 0x04;
+            }
+
+            let mut packet = Vec::with_capacity(13 + payload_len);
+            packet.extend_from_slice(&self.build_rtp_header(rtp_timestamp, is_last));
+            packet.push(vp9_descriptor);
             packet.extend_from_slice(&frame[offset..offset + payload_len]);
             self.write_packet(&packet);
 
