@@ -1365,7 +1365,13 @@ async function startNativeScreenProducer(
     const status = await nativeCaptureStatus().catch(() => null);
     if (status) {
       const backend = status.native_sender.encoder_backend ?? "unknown";
-      reportNativeSenderDiagnostic(channelId, "native_sender_started", `encoder_backend=${backend}`);
+      const requestedBackend = status.native_sender.encoder_backend_requested ?? "unknown";
+      const fallbackReason = status.native_sender.encoder_backend_fallback_reason ?? "none";
+      reportNativeSenderDiagnostic(
+        channelId,
+        "native_sender_started",
+        `encoder_backend=${backend};requested_backend=${requestedBackend};backend_fallback_reason=${fallbackReason}`,
+      );
     }
   } catch (error) {
     await requestMediaSignal(channelId, "media_close_producer", {
@@ -1399,11 +1405,13 @@ async function startNativeScreenProducer(
         }
 
         const backend = status.native_sender.encoder_backend ?? "unknown";
+        const requestedBackend = status.native_sender.encoder_backend_requested ?? "unknown";
+        const backendFallbackReason = status.native_sender.encoder_backend_fallback_reason ?? "none";
         const degradation = status.native_sender.degradation_level;
         reportNativeSenderDiagnostic(
           channelId,
           "native_sender_runtime_fallback",
-          `reason=${fallbackReason};encoder_backend=${backend};degradation=${degradation}`,
+          `reason=${fallbackReason};encoder_backend=${backend};requested_backend=${requestedBackend};backend_fallback_reason=${backendFallbackReason};degradation=${degradation}`,
         );
 
         const browserFallbackOptions: ScreenShareStartOptions = {

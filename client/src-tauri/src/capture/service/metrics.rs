@@ -27,10 +27,17 @@ pub struct NativeSenderSharedMetrics {
     pub sender_stopped_events: AtomicU64,
     pub fallback_triggered_events: AtomicU64,
     pub fallback_completed_events: AtomicU64,
+    pub encoder_backend_runtime_fallback_events: AtomicU64,
     pub transport_connected: AtomicBool,
     pub producer_connected: AtomicBool,
     pub degradation_level: AtomicU64,
+    pub pressure_window_avg_depth: AtomicU64,
+    pub pressure_window_peak_depth: AtomicU64,
+    pub pressure_window_max_avg_depth: AtomicU64,
+    pub pressure_window_max_peak_depth: AtomicU64,
     pub encoder_backend: Mutex<Option<String>>,
+    pub encoder_backend_requested: Mutex<Option<String>>,
+    pub encoder_backend_fallback_reason: Mutex<Option<String>>,
     pub recent_fallback_reason: Mutex<Option<String>>,
 }
 
@@ -64,13 +71,20 @@ pub struct NativeSenderMetrics {
     pub last_encode_latency_ms: Option<u64>,
     pub recent_fallback_reason: Option<String>,
     pub degradation_level: String,
+    pub pressure_window_avg_depth: u64,
+    pub pressure_window_peak_depth: u64,
+    pub pressure_window_max_avg_depth: u64,
+    pub pressure_window_max_peak_depth: u64,
     pub producer_connected: bool,
     pub transport_connected: bool,
     pub sender_started_events: u64,
     pub sender_stopped_events: u64,
     pub fallback_triggered_events: u64,
     pub fallback_completed_events: u64,
+    pub encoder_backend_runtime_fallback_events: u64,
     pub encoder_backend: Option<String>,
+    pub encoder_backend_requested: Option<String>,
+    pub encoder_backend_fallback_reason: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -85,9 +99,39 @@ pub struct NativeSenderSnapshotInput {
 }
 
 impl NativeSenderSharedMetrics {
+    pub fn update_pressure_window(&self, avg_depth: u64, peak_depth: u64) {
+        self.pressure_window_avg_depth
+            .store(avg_depth, Ordering::Relaxed);
+        self.pressure_window_peak_depth
+            .store(peak_depth, Ordering::Relaxed);
+
+        let _ = self.pressure_window_max_avg_depth.fetch_update(
+            Ordering::Relaxed,
+            Ordering::Relaxed,
+            |current| Some(current.max(avg_depth)),
+        );
+        let _ = self.pressure_window_max_peak_depth.fetch_update(
+            Ordering::Relaxed,
+            Ordering::Relaxed,
+            |current| Some(current.max(peak_depth)),
+        );
+    }
+
     pub fn set_encoder_backend(&self, backend: &str) {
         if let Ok(mut slot) = self.encoder_backend.lock() {
             *slot = Some(backend.to_string());
+        }
+    }
+
+    pub fn set_encoder_backend_requested(&self, backend: &str) {
+        if let Ok(mut slot) = self.encoder_backend_requested.lock() {
+            *slot = Some(backend.to_string());
+        }
+    }
+
+    pub fn set_encoder_backend_fallback_reason(&self, reason: Option<&str>) {
+        if let Ok(mut slot) = self.encoder_backend_fallback_reason.lock() {
+            *slot = reason.map(ToString::to_string);
         }
     }
 
@@ -124,11 +168,27 @@ impl NativeSenderSharedMetrics {
         let dropped_before_encode = self.dropped_before_encode.load(Ordering::Relaxed);
         let dropped_during_send = self.dropped_during_send.load(Ordering::Relaxed);
         let degradation_level = self.degradation_level.load(Ordering::Relaxed);
+        let pressure_window_avg_depth = self.pressure_window_avg_depth.load(Ordering::Relaxed);
+        let pressure_window_peak_depth = self.pressure_window_peak_depth.load(Ordering::Relaxed);
+        let pressure_window_max_avg_depth =
+            self.pressure_window_max_avg_depth.load(Ordering::Relaxed);
+        let pressure_window_max_peak_depth =
+            self.pressure_window_max_peak_depth.load(Ordering::Relaxed);
         let encoder_backend = self
             .encoder_backend
             .lock()
             .ok()
             .and_then(|backend| backend.clone());
+        let encoder_backend_requested = self
+            .encoder_backend_requested
+            .lock()
+            .ok()
+            .and_then(|backend| backend.clone());
+        let encoder_backend_fallback_reason = self
+            .encoder_backend_fallback_reason
+            .lock()
+            .ok()
+            .and_then(|reason| reason.clone());
         let fallback_reason = self
             .recent_fallback_reason
             .lock()
@@ -180,13 +240,22 @@ impl NativeSenderSharedMetrics {
             },
             recent_fallback_reason: fallback_reason,
             degradation_level: degradation_level_name(degradation_level).to_string(),
+            pressure_window_avg_depth,
+            pressure_window_peak_depth,
+            pressure_window_max_avg_depth,
+            pressure_window_max_peak_depth,
             producer_connected: self.producer_connected.load(Ordering::Relaxed),
             transport_connected: self.transport_connected.load(Ordering::Relaxed),
             sender_started_events: self.sender_started_events.load(Ordering::Relaxed),
             sender_stopped_events: self.sender_stopped_events.load(Ordering::Relaxed),
             fallback_triggered_events: self.fallback_triggered_events.load(Ordering::Relaxed),
             fallback_completed_events: self.fallback_completed_events.load(Ordering::Relaxed),
+            encoder_backend_runtime_fallback_events: self
+                .encoder_backend_runtime_fallback_events
+                .load(Ordering::Relaxed),
             encoder_backend,
+            encoder_backend_requested,
+            encoder_backend_fallback_reason,
         }
     }
 }

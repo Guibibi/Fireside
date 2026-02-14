@@ -57,13 +57,20 @@ export interface NativeCaptureStatus {
     last_encode_latency_ms: number | null;
     recent_fallback_reason: string | null;
     degradation_level: "none" | "fps_reduced" | "resolution_reduced" | "bitrate_reduced";
+    pressure_window_avg_depth: number;
+    pressure_window_peak_depth: number;
+    pressure_window_max_avg_depth: number;
+    pressure_window_max_peak_depth: number;
     producer_connected: boolean;
     transport_connected: boolean;
     sender_started_events: number;
     sender_stopped_events: number;
     fallback_triggered_events: number;
     fallback_completed_events: number;
+    encoder_backend_runtime_fallback_events: number;
     encoder_backend: "openh264" | "nvenc" | string | null;
+    encoder_backend_requested: "auto" | "openh264" | "nvenc" | string | null;
+    encoder_backend_fallback_reason: string | null;
   };
 }
 

@@ -185,13 +185,20 @@ impl NativeCaptureService {
                 last_encode_latency_ms: None,
                 recent_fallback_reason: None,
                 degradation_level: "none".to_string(),
+                pressure_window_avg_depth: 0,
+                pressure_window_peak_depth: 0,
+                pressure_window_max_avg_depth: 0,
+                pressure_window_max_peak_depth: 0,
                 producer_connected: false,
                 transport_connected: false,
                 sender_started_events: 0,
                 sender_stopped_events: 0,
                 fallback_triggered_events: 0,
                 fallback_completed_events: 0,
+                encoder_backend_runtime_fallback_events: 0,
                 encoder_backend: None,
+                encoder_backend_requested: None,
+                encoder_backend_fallback_reason: None,
             });
         };
 

@@ -978,7 +978,10 @@ export default function ChannelList() {
                   <p class="voice-dock-channel">Keyframe requests: {nativeSenderMetrics()?.keyframe_requests ?? 0} | Drop(no BGRA): {nativeSenderMetrics()?.dropped_missing_bgra ?? 0}</p>
                   <p class="voice-dock-channel">Transport: {nativeSenderMetrics()?.transport_connected ? "connected" : "disconnected"} | Producer: {nativeSenderMetrics()?.producer_connected ? "connected" : "disconnected"}</p>
                   <p class="voice-dock-channel">Degradation: {nativeSenderMetrics()?.degradation_level ?? "none"} | Fallback: {nativeSenderMetrics()?.recent_fallback_reason ?? "none"}</p>
+                  <p class="voice-dock-channel">Pressure(avg/peak/max): {nativeSenderMetrics()?.pressure_window_avg_depth ?? 0}/{nativeSenderMetrics()?.pressure_window_peak_depth ?? 0}/{nativeSenderMetrics()?.pressure_window_max_peak_depth ?? 0}</p>
                   <p class="voice-dock-channel">Encoder backend: {nativeSenderMetrics()?.encoder_backend ?? "unknown"}</p>
+                  <p class="voice-dock-channel">Encoder requested: {nativeSenderMetrics()?.encoder_backend_requested ?? "unknown"} | Backend fallback: {nativeSenderMetrics()?.encoder_backend_fallback_reason ?? "none"}</p>
+                  <p class="voice-dock-channel">Backend runtime fallback events: {nativeSenderMetrics()?.encoder_backend_runtime_fallback_events ?? 0}</p>
                   <Show when={nativeSenderMetrics()?.rtp_target}>
                     <p class="voice-dock-channel">RTP target: {nativeSenderMetrics()?.rtp_target}</p>
                   </Show>

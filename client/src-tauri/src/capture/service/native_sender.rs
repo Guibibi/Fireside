@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use crate::capture::windows_capture::{self, NativeFramePacket};
 
-use super::encoder_backend::{create_encoder_backend, VideoEncoderBackend};
+use super::encoder_backend::{create_encoder_backend, create_openh264_backend};
 use super::metrics::NativeSenderSharedMetrics;
 use super::rtp_packetizer::{H264RtpPacketizer, RtpPacketizer};
 
@@ -30,6 +30,7 @@ const LEVEL3_BITRATE_NUMERATOR_DEFAULT: u32 = 7;
 const LEVEL3_BITRATE_DENOMINATOR_DEFAULT: u32 = 10;
 const DEFAULT_TARGET_BITRATE_KBPS: u32 = 8_000;
 const MIN_DEGRADED_BITRATE_KBPS: u32 = 1_200;
+const NVENC_RUNTIME_FALLBACK_ENCODE_FAILURES_DEFAULT: u64 = 12;
 
 #[derive(Debug, Clone)]
 struct DegradationTuning {
@@ -269,6 +270,7 @@ impl AdaptiveDegradationState {
     ) {
         self.record_sample(queue_depth, now_ms);
         let (avg_depth, peak_depth) = self.pressure_stats();
+        shared.update_pressure_window(avg_depth, peak_depth);
 
         let next_level = if avg_depth >= tuning.level3_avg_depth
             || peak_depth >= tuning.level3_peak_depth
@@ -464,7 +466,7 @@ pub fn run_native_sender_worker(
     stop_signal: Arc<std::sync::atomic::AtomicBool>,
     shared: Arc<NativeSenderSharedMetrics>,
 ) {
-    let mut encoder: Box<dyn VideoEncoderBackend> =
+    let (mut encoder, encoder_selection) =
         create_encoder_backend(config.target_fps, config.target_bitrate_kbps);
     let codec = encoder.codec_descriptor();
     let mut packetizer: Box<dyn RtpPacketizer> = Box::new(H264RtpPacketizer::new(
@@ -477,7 +479,9 @@ pub fn run_native_sender_worker(
 
     shared.worker_started_ms.store(now_ms, Ordering::Relaxed);
     shared.sender_started_events.fetch_add(1, Ordering::Relaxed);
-    shared.set_encoder_backend(encoder.backend_name());
+    shared.set_encoder_backend(encoder_selection.selected_backend);
+    shared.set_encoder_backend_requested(encoder_selection.requested_backend);
+    shared.set_encoder_backend_fallback_reason(encoder_selection.fallback_reason.as_deref());
     shared.set_recent_fallback_reason(None);
     shared.set_degradation_level(0);
     shared
@@ -488,10 +492,15 @@ pub fn run_native_sender_worker(
         .store(packetizer.transport_connected(), Ordering::Relaxed);
 
     eprintln!(
-        "[native-sender] event=sender_started source={} codec={} encoder_backend={} pt={} ssrc={} clock={} packetization={} profile={} target={} degrade_l1(avg={},peak={}) degrade_l2(avg={},peak={},scale={}) degrade_l3(avg={},peak={},scale={},bitrate={}/{}) recover(avg={},peak={})",
+        "[native-sender] event=sender_started source={} codec={} encoder_backend={} encoder_requested={} encoder_fallback_reason={} pt={} ssrc={} clock={} packetization={} profile={} target={} degrade_l1(avg={},peak={}) degrade_l2(avg={},peak={},scale={}) degrade_l3(avg={},peak={},scale={},bitrate={}/{}) recover(avg={},peak={})",
         config.source_id,
         codec.mime_type,
-        encoder.backend_name(),
+        encoder_selection.selected_backend,
+        encoder_selection.requested_backend,
+        encoder_selection
+            .fallback_reason
+            .as_deref()
+            .unwrap_or("none"),
         config.payload_type,
         config.ssrc,
         codec.clock_rate,
@@ -516,6 +525,14 @@ pub fn run_native_sender_worker(
     let mut degradation_state = AdaptiveDegradationState::default();
     let mut downscale_buffer = DownscaleBuffer::default();
     let mut bitrate_limiter = BitrateLimiter::default();
+    let mut consecutive_encode_failures = 0u64;
+    let mut active_encoder_backend = encoder_selection.selected_backend;
+    let nvenc_runtime_fallback_encode_failures = env_u64(
+        "YANKCORD_NATIVE_NVENC_RUNTIME_FALLBACK_ENCODE_FAILURES",
+        NVENC_RUNTIME_FALLBACK_ENCODE_FAILURES_DEFAULT,
+        1,
+        120,
+    );
 
     while !stop_signal.load(Ordering::Relaxed) {
         match receiver.recv_timeout(Duration::from_millis(250)) {
@@ -592,8 +609,28 @@ pub fn run_native_sender_worker(
                 let encoded_nals =
                     encoder.encode_frame(encode_input, encode_width, encode_height, &shared);
                 let Some(nals) = encoded_nals else {
+                    consecutive_encode_failures = consecutive_encode_failures.saturating_add(1);
+                    if active_encoder_backend == "nvenc"
+                        && consecutive_encode_failures >= nvenc_runtime_fallback_encode_failures
+                    {
+                        encoder =
+                            create_openh264_backend(config.target_fps, config.target_bitrate_kbps);
+                        active_encoder_backend = "openh264";
+                        shared.set_encoder_backend("openh264");
+                        shared.set_encoder_backend_fallback_reason(Some(
+                            "nvenc_runtime_encode_failure_threshold",
+                        ));
+                        shared
+                            .encoder_backend_runtime_fallback_events
+                            .fetch_add(1, Ordering::Relaxed);
+                        eprintln!(
+                            "[native-sender] event=encoder_backend_runtime_fallback source={} from=nvenc to=openh264 reason=encode_failure_threshold threshold={}",
+                            config.source_id, nvenc_runtime_fallback_encode_failures,
+                        );
+                    }
                     continue;
                 };
+                consecutive_encode_failures = 0;
 
                 let encoded_bytes: usize = nals.iter().map(|nal| nal.len()).sum();
                 let bitrate_cap_kbps = degradation_state

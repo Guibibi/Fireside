@@ -92,19 +92,22 @@
 
 ### Remaining for Next Session
 
-- [ ] Windows manual verification pass (end-to-end native publish + forced-fallback scenarios).
-- [ ] Performance workstream items.
+- [x] Windows manual verification pass (end-to-end native publish + forced-fallback scenarios).
+- [x] Performance workstream items.
   - [x] Frame copy minimization / pooling (YUV reuse in OpenH264 path)
   - [x] Adaptive degradation ladder behavior (moving-window avg/peak pressure)
   - [x] Queue tuning split counters (before-encode vs during-send)
   - [x] Add resolution/bitrate degradation tiers (currently frame dropping only)
-  - [ ] Tune ladder thresholds based on Windows manual runs
+  - [x] Expose queue-pressure telemetry snapshots (window avg/peak/max) for threshold calibration
+  - [x] Tune ladder thresholds based on Windows manual runs
 - [x] Optional diagnostics-only UDP mirror finalized as explicitly feature/env-guarded.
-- [ ] Codec and encoder expansion implementation.
+- [x] Codec and encoder expansion implementation.
   - [x] Define backend abstraction for encoder and RTP packetizer by codec
   - [x] Add VP8/VP9/AV1 feasibility + rollout decision
   - [x] Add encoder backend selector + NVENC scaffold (feature/env-gated)
-  - [ ] Implement real NVENC backend and runtime fallback policy
+  - [x] Surface encoder backend selection intent/fallback reason in status + diagnostics
+  - [x] Add runtime backend downgrade policy (NVENC -> OpenH264 on sustained encode failures)
+  - [x] Implement real NVENC backend path (FFmpeg `h264_nvenc` bridge behind feature/env)
   - [x] Surface selected encoder backend in client diagnostics payload/status
 
 ## Current Baseline (Starting Point)
