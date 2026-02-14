@@ -39,8 +39,6 @@ mod imp {
         pending_output: Vec<u8>,
         submitted_frames: u64,
         reported_frames: u64,
-        /// Tracks bytes received before current frame submission
-        output_bytes_at_submission: usize,
         width: u32,
         height: u32,
     }
@@ -67,49 +65,51 @@ mod imp {
         }
 
         fn wait_for_frame_output(&mut self) -> Result<Vec<u8>, String> {
-            let timeout = Duration::from_millis(FRAME_ENCODE_TIMEOUT_MS);
+            // NVENC uses a streaming model - output lags behind input by several frames.
+            // Instead of waiting for exact frame sync, we:
+            // 1. Give FFmpeg a brief moment to produce output
+            // 2. Return whatever output is available
+            // 3. Only fail if encoder appears completely stalled
+
+            let brief_wait = Duration::from_millis(100);
+            let stall_timeout = Duration::from_millis(FRAME_ENCODE_TIMEOUT_MS);
             let started = Instant::now();
 
-            loop {
+            // Brief wait for output to arrive
+            while started.elapsed() < brief_wait {
                 self.drain_channels();
-
-                let have_new_output = self.pending_output.len() > self.output_bytes_at_submission;
-
-                // NVENC has pipeline delay - it buffers frames internally before producing
-                // output. The encoder needs NVENC_PIPELINE_DEPTH frames to prime its pipeline.
-                //
-                // Pipeline behavior:
-                // - submitted=1, reported=0 → still in ramp-up, may not have output yet
-                // - submitted=5, reported=3 → normal operation, 2 frames behind is OK
-                // - submitted=10, reported=3 → encoder stalled, something is wrong
-                //
-                // We succeed when:
-                // 1. We have new output bytes AND we're within acceptable lag, OR
-                // 2. We're still in ramp-up phase (submitted <= pipeline depth) and got output
-                let lag = self.submitted_frames.saturating_sub(self.reported_frames);
-                let in_ramp_up = self.submitted_frames <= NVENC_PIPELINE_DEPTH;
-                let acceptable_lag = lag <= NVENC_PIPELINE_DEPTH;
-
-                if have_new_output && (in_ramp_up || acceptable_lag) {
+                if !self.pending_output.is_empty() {
                     return Ok(std::mem::take(&mut self.pending_output));
                 }
-
-                // During ramp-up, if we've waited a bit and have output, accept it even
-                // without reported frame progress (FFmpeg may not report progress immediately)
-                let ramp_up_grace = started.elapsed() >= Duration::from_millis(50);
-                if in_ramp_up && ramp_up_grace && !self.pending_output.is_empty() {
-                    return Ok(std::mem::take(&mut self.pending_output));
-                }
-
-                if started.elapsed() >= timeout {
-                    return Err(format!(
-                        "timed out waiting for NVENC frame output (submitted={}, reported={}, output_bytes={}, lag={})",
-                        self.submitted_frames, self.reported_frames, self.pending_output.len(), lag
-                    ));
-                }
-
-                thread::sleep(Duration::from_millis(2));
+                thread::sleep(Duration::from_millis(5));
             }
+
+            // If we're in ramp-up phase (pipeline not yet primed), keep waiting longer
+            // but with a reasonable timeout
+            let in_ramp_up = self.submitted_frames <= NVENC_PIPELINE_DEPTH;
+            if in_ramp_up {
+                while started.elapsed() < stall_timeout {
+                    self.drain_channels();
+                    if !self.pending_output.is_empty() {
+                        return Ok(std::mem::take(&mut self.pending_output));
+                    }
+                    thread::sleep(Duration::from_millis(10));
+                }
+            }
+
+            // Check for stall: if we've submitted many frames but got no output at all
+            let lag = self.submitted_frames.saturating_sub(self.reported_frames);
+            let stalled = lag > NVENC_PIPELINE_DEPTH * 2 && self.pending_output.is_empty();
+
+            if stalled {
+                return Err(format!(
+                    "NVENC encoder stalled (submitted={}, reported={}, lag={})",
+                    self.submitted_frames, self.reported_frames, lag
+                ));
+            }
+
+            // Return whatever we have, even if empty (caller will handle)
+            Ok(std::mem::take(&mut self.pending_output))
         }
 
         fn shutdown(mut self) {
@@ -199,10 +199,6 @@ mod imp {
 
             let process = self.ensure_process(width, height)?;
 
-            // Drain any pending output before submission to track new bytes
-            process.drain_channels();
-            process.output_bytes_at_submission = process.pending_output.len();
-
             process
                 .stdin
                 .write_all(bgra)
@@ -215,7 +211,10 @@ mod imp {
             process.submitted_frames = process.submitted_frames.saturating_add(1);
             let encoded = process.wait_for_frame_output()?;
             let nals = split_annex_b_nals(&encoded);
-            if nals.is_empty() {
+
+            // During ramp-up, empty output is expected (pipeline not yet primed)
+            // After ramp-up, empty output indicates a problem
+            if nals.is_empty() && process.submitted_frames > NVENC_PIPELINE_DEPTH {
                 return Err("ffmpeg NVENC produced no NAL units".to_string());
             }
 
@@ -246,6 +245,7 @@ mod imp {
             }
 
             match self.encode_once(bgra, width, height) {
+                Ok(nals) if nals.is_empty() => None, // Ramp-up: no output yet, not an error
                 Ok(nals) => Some(nals),
                 Err(error) => {
                     shared.encode_errors.fetch_add(1, Ordering::Relaxed);
@@ -476,7 +476,6 @@ mod imp {
             pending_output: Vec::new(),
             submitted_frames: 0,
             reported_frames: 0,
-            output_bytes_at_submission: 0,
             width,
             height,
         })
