@@ -57,16 +57,16 @@ This file consolidates active execution plans.
 
 ### Remaining QA / Exit Checks
 
-- [ ] Re-run multi-client QA focused on audio continuity while repeatedly toggling camera.
-- [ ] Verify screen share stability and channel isolation.
-- [ ] Verify reconnect and device-change stability.
-- [ ] Confirm exit criteria via manual matrix:
-  - [ ] Single user join/leave repeatedly.
-  - [ ] Two users audio-only mute/unmute.
-  - [ ] Two users audio+video toggle loops.
-  - [ ] Three users same-channel smoke.
-  - [ ] Users split across two channels isolation.
-  - [ ] Unexpected disconnect cleanup behavior.
+- [x] Re-run multi-client QA focused on audio continuity while repeatedly toggling camera.
+- [x] Verify screen share stability and channel isolation.
+- [x] Verify reconnect and device-change stability.
+- [x] Confirm exit criteria via manual matrix:
+  - [x] Single user join/leave repeatedly.
+  - [x] Two users audio-only mute/unmute.
+  - [x] Two users audio+video toggle loops.
+  - [x] Three users same-channel smoke.
+  - [x] Users split across two channels isolation.
+  - [x] Unexpected disconnect cleanup behavior.
 
 ### Validation
 
@@ -74,7 +74,6 @@ This file consolidates active execution plans.
 - `cargo test --manifest-path server/Cargo.toml`
 - `npm --prefix client run build`
 
-## Supporting Checklists
+## Track B Status
 
-- Detailed 3.5 checklist: `PHASE3_5_CHECKLIST.md`
-- Detailed 3.6 checklist: `PHASE3_6_CHECKLIST.md`
+- Phase 3 implementation and manual QA are complete.
