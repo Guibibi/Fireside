@@ -24,7 +24,7 @@ use encoder_backend::{create_encoder_backend_for_codec, NativeCodecTarget};
 use metrics::{NativeSenderMetrics, NativeSenderSharedMetrics, NativeSenderSnapshotInput};
 use native_sender::{run_native_sender_worker, NativeSenderRuntimeConfig};
 
-const DEFAULT_FRAME_QUEUE_CAPACITY: usize = 6;
+const DEFAULT_FRAME_QUEUE_CAPACITY: usize = 16;
 
 fn frame_queue_capacity() -> usize {
     std::env::var("YANKCORD_NATIVE_FRAME_QUEUE_CAPACITY")

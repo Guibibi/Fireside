@@ -35,6 +35,9 @@ const LEVEL3_BITRATE_DENOMINATOR_DEFAULT: u32 = 10;
 const DEFAULT_TARGET_BITRATE_KBPS: u32 = 8_000;
 const MIN_DEGRADED_BITRATE_KBPS: u32 = 1_200;
 const NVENC_RUNTIME_FALLBACK_ENCODE_FAILURES_DEFAULT: u64 = 12;
+const DEFAULT_MAX_ENCODE_WIDTH: u32 = 1920;
+const DEFAULT_MAX_ENCODE_HEIGHT: u32 = 1080;
+const DEFAULT_FPS_LIMIT: u32 = 30;
 
 fn create_packetizer_for_codec(
     mime_type: &str,
@@ -466,6 +469,54 @@ impl DownscaleBuffer {
     }
 }
 
+struct FpsLimiter {
+    target_interval_ms: u64,
+    last_encode_at_ms: u64,
+}
+
+impl FpsLimiter {
+    fn new(target_fps: Option<u32>) -> Self {
+        let fps = target_fps.unwrap_or(DEFAULT_FPS_LIMIT).max(1);
+        Self {
+            target_interval_ms: 1000 / fps as u64,
+            last_encode_at_ms: 0,
+        }
+    }
+
+    fn should_drop(&mut self, now_ms: u64) -> bool {
+        if self.last_encode_at_ms == 0 {
+            self.last_encode_at_ms = now_ms;
+            return false;
+        }
+
+        if now_ms.saturating_sub(self.last_encode_at_ms) < self.target_interval_ms {
+            return true;
+        }
+
+        self.last_encode_at_ms = now_ms;
+        false
+    }
+}
+
+fn resolution_cap_divisor(width: u32, height: u32) -> u32 {
+    let max_w = env_u32(
+        "YANKCORD_NATIVE_MAX_ENCODE_WIDTH",
+        DEFAULT_MAX_ENCODE_WIDTH,
+        320,
+        7680,
+    );
+    let max_h = env_u32(
+        "YANKCORD_NATIVE_MAX_ENCODE_HEIGHT",
+        DEFAULT_MAX_ENCODE_HEIGHT,
+        240,
+        4320,
+    );
+
+    let div_w = width.div_ceil(max_w);
+    let div_h = height.div_ceil(max_h);
+    div_w.max(div_h).max(1)
+}
+
 #[derive(Debug, Default)]
 struct BitrateLimiter {
     tokens_bytes: f64,
@@ -619,6 +670,8 @@ pub fn run_native_sender_worker(
     let mut failure_window = FailureWindowState::new(now_ms, &shared);
     let mut degradation_state = AdaptiveDegradationState::default();
     let mut downscale_buffer = DownscaleBuffer::default();
+    let mut resolution_cap_buffer = DownscaleBuffer::default();
+    let mut fps_limiter = FpsLimiter::new(config.target_fps);
     let mut bitrate_limiter = BitrateLimiter::default();
     let mut consecutive_encode_failures = 0u64;
     let mut active_encoder_backend = encoder_selection.selected_backend;
@@ -685,14 +738,27 @@ pub fn run_native_sender_worker(
                     &degradation_tuning,
                 );
 
+                // FPS limiter: drop frames arriving faster than target interval
+                if fps_limiter.should_drop(unix_timestamp_ms()) {
+                    shared.dropped_before_encode.fetch_add(1, Ordering::Relaxed);
+                    continue;
+                }
+
                 if degradation_state.should_drop_before_encode() {
                     shared.dropped_before_encode.fetch_add(1, Ordering::Relaxed);
                     continue;
                 }
 
+                // Resolution cap: always cap to max encode resolution before degradation scaling
+                let cap_divisor =
+                    resolution_cap_divisor(packet.width, packet.height);
+                let (capped_input, capped_w, capped_h) =
+                    resolution_cap_buffer.downscale(bgra, packet.width, packet.height, cap_divisor);
+
+                // Degradation downscaling stacks on top of the resolution cap
                 let scale_divisor = degradation_state.scale_divisor(&degradation_tuning);
                 let (encode_input, encode_width, encode_height) =
-                    downscale_buffer.downscale(bgra, packet.width, packet.height, scale_divisor);
+                    downscale_buffer.downscale(capped_input, capped_w, capped_h, scale_divisor);
                 shared
                     .last_frame_width
                     .store(encode_width as u64, Ordering::Relaxed);
@@ -719,9 +785,17 @@ pub fn run_native_sender_worker(
                         shared
                             .encoder_backend_runtime_fallback_events
                             .fetch_add(1, Ordering::Relaxed);
+
+                        // Force at least degradation level 1 to halve frame rate,
+                        // giving the software encoder breathing room.
+                        if degradation_state.level < 1 {
+                            degradation_state.level = 1;
+                            shared.set_degradation_level(1);
+                        }
+
                         eprintln!(
-                            "[native-sender] event=encoder_backend_runtime_fallback source={} from=nvenc to=openh264 reason=encode_failure_threshold threshold={}",
-                            config.source_id, nvenc_runtime_fallback_encode_failures,
+                            "[native-sender] event=encoder_backend_runtime_fallback source={} from=nvenc to=openh264 reason=encode_failure_threshold threshold={} forced_degrade_level={}",
+                            config.source_id, nvenc_runtime_fallback_encode_failures, degradation_state.level,
                         );
                     }
                     continue;

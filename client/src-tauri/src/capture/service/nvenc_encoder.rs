@@ -14,6 +14,7 @@ mod imp {
     use std::sync::atomic::Ordering;
     use std::sync::mpsc::{self, Receiver, TryRecvError};
     use std::thread::{self, JoinHandle};
+    use std::time::Duration;
 
     use super::{CodecDescriptor, NativeSenderSharedMetrics, VideoEncoderBackend};
 
@@ -27,6 +28,9 @@ mod imp {
     /// NVENC's encode pipeline typically has 2-4 frames of latency.
     const NVENC_PIPELINE_DEPTH: u64 = 4;
 
+    /// Maximum consecutive empty outputs after ramp-up before reporting an error.
+    const CONSECUTIVE_EMPTY_THRESHOLD: u64 = 3;
+
     struct NvencProcess {
         child: Child,
         stdin: ChildStdin,
@@ -37,6 +41,8 @@ mod imp {
         pending_output: Vec<u8>,
         submitted_frames: u64,
         reported_frames: u64,
+        consecutive_empty_outputs: u64,
+        target_fps: u32,
         width: u32,
         height: u32,
     }
@@ -63,10 +69,27 @@ mod imp {
         }
 
         fn collect_available_output(&mut self) -> Result<Vec<u8>, String> {
-            // Non-blocking: drain channels and return whatever is available.
-            // For real-time SFU streaming, we can't block waiting for output.
-            // Output naturally lags input by NVENC_PIPELINE_DEPTH frames - that's fine.
+            // First, drain whatever is already available (non-blocking).
             self.drain_channels();
+
+            // During ramp-up, the pipeline isn't primed yet — return whatever we have
+            // (likely empty) without waiting.
+            let in_ramp_up = self.submitted_frames <= NVENC_PIPELINE_DEPTH;
+
+            if !in_ramp_up && self.pending_output.is_empty() {
+                // After ramp-up, wait up to 2× frame interval for output to appear.
+                let wait_ms = 2 * 1000 / self.target_fps.max(1) as u64;
+                let timeout = Duration::from_millis(wait_ms);
+
+                match self.stdout_rx.recv_timeout(timeout) {
+                    Ok(chunk) => self.pending_output.extend_from_slice(&chunk),
+                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {}
+                }
+
+                // Drain any additional chunks that arrived during the wait.
+                self.drain_channels();
+            }
 
             // Check for stall: if we've submitted many frames but encoder isn't keeping up
             let lag = self.submitted_frames.saturating_sub(self.reported_frames);
@@ -182,12 +205,26 @@ mod imp {
             let encoded = process.collect_available_output()?;
             let nals = split_annex_b_nals(&encoded);
 
-            // During ramp-up, empty output is expected (pipeline not yet primed)
-            // After ramp-up, empty output indicates a problem
-            if nals.is_empty() && process.submitted_frames > NVENC_PIPELINE_DEPTH {
-                return Err("ffmpeg NVENC produced no NAL units".to_string());
+            if nals.is_empty() {
+                if process.submitted_frames <= NVENC_PIPELINE_DEPTH {
+                    // During ramp-up, empty output is expected (pipeline not yet primed)
+                    return Ok(Vec::new());
+                }
+
+                process.consecutive_empty_outputs =
+                    process.consecutive_empty_outputs.saturating_add(1);
+                if process.consecutive_empty_outputs >= CONSECUTIVE_EMPTY_THRESHOLD {
+                    return Err(format!(
+                        "ffmpeg NVENC produced no NAL units ({} consecutive empties)",
+                        process.consecutive_empty_outputs,
+                    ));
+                }
+
+                // Transient empty — not yet an error
+                return Ok(Vec::new());
             }
 
+            process.consecutive_empty_outputs = 0;
             Ok(nals)
         }
     }
@@ -446,6 +483,8 @@ mod imp {
             pending_output: Vec::new(),
             submitted_frames: 0,
             reported_frames: 0,
+            consecutive_empty_outputs: 0,
+            target_fps,
             width,
             height,
         })
