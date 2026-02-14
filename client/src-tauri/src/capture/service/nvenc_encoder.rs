@@ -379,6 +379,13 @@ mod imp {
             .arg(preset)
             .arg("-tune")
             .arg("ll")
+            // NVENC-specific: minimize lookahead delay
+            .arg("-rc-lookahead")
+            .arg("0")
+            .arg("-delay")
+            .arg("0")
+            .arg("-zerolatency")
+            .arg("1")
             .arg("-g")
             .arg(target_fps.to_string())
             .arg("-bf")
@@ -393,6 +400,9 @@ mod imp {
             .arg(format!("{}k", target_bitrate_kbps.saturating_mul(2)))
             .arg("-progress")
             .arg("pipe:2")
+            // Force immediate output flushing
+            .arg("-flush_packets")
+            .arg("1")
             .arg("-f")
             .arg("h264")
             .arg("pipe:1")
