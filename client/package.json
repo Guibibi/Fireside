@@ -9,7 +9,11 @@
     "build": "vite build",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "serve": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:dev:nvenc": "tauri dev --features native-nvenc",
+    "tauri:build": "tauri build",
+    "tauri:build:nvenc": "tauri build --features native-nvenc"
   },
   "license": "MIT",
   "dependencies": {

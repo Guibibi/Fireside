@@ -45,7 +45,8 @@ export function strictCodecModeEnabled(options?: ScreenShareStartOptions): boole
 }
 
 export function preferredScreenShareCodecOrder(preference: ScreenShareCodecPreference): string[] {
-  const baseOrder = ["video/av1", "video/vp9", "video/vp8", "video/h264"];
+  // H264 first for maximum compatibility (universal WebRTC support, NVENC hardware acceleration)
+  const baseOrder = ["video/h264", "video/vp8", "video/vp9", "video/av1"];
   const preferredMimeType = codecPreferenceMimeType(preference);
   if (!preferredMimeType) {
     return baseOrder;
@@ -83,7 +84,7 @@ export function selectScreenShareCodecForPlatform(preference: ScreenShareCodecPr
   }
 
   const preferredOrder = preference === "auto"
-    ? ["video/av1", "video/vp9", "video/h264"]
+    ? ["video/h264", "video/vp8", "video/vp9"]
     : preferredScreenShareCodecOrder(preference);
   for (const preferredMimeType of preferredOrder) {
     const match = codecs.find((codec) => codecMimeType(codec)?.toLowerCase() === preferredMimeType);

@@ -31,6 +31,7 @@ import {
   initializedForChannelId,
   micProducer,
   microphoneMuted,
+  nativeCaptureAttempted,
   nativeScreenProducerId,
   screenEnabled,
   screenProducer,
@@ -45,6 +46,7 @@ import {
   setMicProducer,
   setMicStream,
   setMicTrack,
+  setNativeCaptureAttempted,
   setNativeFallbackMonitorRunning,
   setNativeFallbackMonitorTimer,
   setNativeScreenProducerId,
@@ -593,25 +595,16 @@ async function startNativeScreenProducer(
         const degradation = status.native_sender.degradation_level;
         reportNativeSenderDiagnostic(
           channelId,
-          "native_sender_runtime_fallback",
+          "native_sender_runtime_error",
           `reason=${fallbackReason};encoder_backend=${backend};requested_backend=${requestedBackend};backend_fallback_reason=${backendFallbackReason};degradation=${degradation}`,
         );
-
-        const browserFallbackOptions: ScreenShareStartOptions = {
-          ...options,
-          sourceId: undefined,
-          sourceTitle: undefined,
-        };
 
         await closeNativeScreenProducer(channelId);
         await disarmNativeCapture();
         stopAndReleaseScreenTracks();
 
-        const browserResult = await startBrowserScreenProducer(channelId, browserFallbackOptions);
-        if (browserResult.ok) {
-          setScreenError(`Native sender fallback (${fallbackReason}). Switched to browser screen capture.`);
-          notifyScreenStateSubscribers();
-        }
+        setScreenError(`Native screen capture failed: ${fallbackReason}`);
+        notifyScreenStateSubscribers();
       } catch {
         // best effort monitor
       } finally {
@@ -643,6 +636,7 @@ export async function startLocalScreenProducer(
   }
 
   if (isTauriRuntime() && options?.sourceId) {
+    setNativeCaptureAttempted(true);
     try {
       return await startNativeScreenProducer(channelId, options);
     } catch (error) {
@@ -657,11 +651,22 @@ export async function startLocalScreenProducer(
     }
   }
 
+  // Never fall back to browser if native capture was attempted in this session
+  if (nativeCaptureAttempted) {
+    const message = "Native screen capture required. Please select a source from the native picker.";
+    setScreenError(message);
+    notifyScreenStateSubscribers();
+    return { ok: false, error: message };
+  }
+
   return startBrowserScreenProducer(channelId, options);
 }
 
 export async function stopLocalScreenProducer(channelId: string): Promise<CameraActionResult> {
   const producerId = screenProducer?.id ?? nativeScreenProducerId;
+
+  // Reset native capture flag when user explicitly stops screen sharing
+  setNativeCaptureAttempted(false);
 
   if (!producerId) {
     stopAndReleaseScreenTracks();

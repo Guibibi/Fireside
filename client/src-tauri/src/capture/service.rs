@@ -12,7 +12,7 @@ mod vp9_encoder;
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::Receiver;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::thread::{self, JoinHandle};
 use tauri::{State, Window};
 
@@ -94,29 +94,35 @@ fn probe_native_codec_support(codec: NativeCodecTarget) -> Result<(), String> {
     create_encoder_backend_for_codec(codec, None, None, preference_override).map(|_| ())
 }
 
+static CODEC_CAPABILITIES_CACHE: OnceLock<Vec<NativeCodecCapability>> = OnceLock::new();
+
 fn native_codec_capabilities_snapshot() -> Vec<NativeCodecCapability> {
-    [
-        (NativeCodecTarget::H264, "video/H264"),
-        (NativeCodecTarget::Vp8, "video/VP8"),
-        (NativeCodecTarget::Vp9, "video/VP9"),
-        (NativeCodecTarget::Av1, "video/AV1"),
-    ]
-    .into_iter()
-    .map(
-        |(codec, mime_type)| match probe_native_codec_support(codec) {
-            Ok(()) => NativeCodecCapability {
-                mime_type: mime_type.to_string(),
-                available: true,
-                detail: None,
-            },
-            Err(error) => NativeCodecCapability {
-                mime_type: mime_type.to_string(),
-                available: false,
-                detail: Some(error),
-            },
-        },
-    )
-    .collect()
+    CODEC_CAPABILITIES_CACHE
+        .get_or_init(|| {
+            [
+                (NativeCodecTarget::H264, "video/H264"),
+                (NativeCodecTarget::Vp8, "video/VP8"),
+                (NativeCodecTarget::Vp9, "video/VP9"),
+                (NativeCodecTarget::Av1, "video/AV1"),
+            ]
+            .into_iter()
+            .map(
+                |(codec, mime_type)| match probe_native_codec_support(codec) {
+                    Ok(()) => NativeCodecCapability {
+                        mime_type: mime_type.to_string(),
+                        available: true,
+                        detail: None,
+                    },
+                    Err(error) => NativeCodecCapability {
+                        mime_type: mime_type.to_string(),
+                        available: false,
+                        detail: Some(error),
+                    },
+                },
+            )
+            .collect()
+        })
+        .clone()
 }
 
 #[derive(Debug, Clone, Serialize)]

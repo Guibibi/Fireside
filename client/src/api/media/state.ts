@@ -39,6 +39,7 @@ export let screenRoutingMode: RoutingMode | null = null;
 export let nativeScreenProducerId: string | null = null;
 export let nativeFallbackMonitorTimer: ReturnType<typeof setInterval> | null = null;
 export let nativeFallbackMonitorRunning = false;
+export let nativeCaptureAttempted = false;
 
 // Initialization state
 export let initializedForChannelId: string | null = null;
@@ -105,6 +106,7 @@ export function setScreenRoutingMode(value: RoutingMode | null) { screenRoutingM
 export function setNativeScreenProducerId(value: string | null) { nativeScreenProducerId = value; }
 export function setNativeFallbackMonitorTimer(value: ReturnType<typeof setInterval> | null) { nativeFallbackMonitorTimer = value; }
 export function setNativeFallbackMonitorRunning(value: boolean) { nativeFallbackMonitorRunning = value; }
+export function setNativeCaptureAttempted(value: boolean) { nativeCaptureAttempted = value; }
 
 export function setInitializedForChannelId(value: string | null) { initializedForChannelId = value; }
 export function setInitializingForChannelId(value: string | null) { initializingForChannelId = value; }
