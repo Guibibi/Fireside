@@ -23,7 +23,9 @@ Goals:
   - `nvenc`: force NVENC attempt, fallback to OpenH264 if unavailable
   - `openh264`: force software backend
 - Build feature for NVENC wiring: `native-nvenc` (in `client/src-tauri/Cargo.toml`)
-  - Current status: selection and module scaffolding are wired; NVENC encode path is not implemented yet.
+  - Current status: FFmpeg-backed NVENC path is wired behind feature/env and validated on Windows after switching to a persistent encoder process model.
+- Runtime backend fallback threshold (used when NVENC backend is active):
+  - `YANKCORD_NATIVE_NVENC_RUNTIME_FALLBACK_ENCODE_FAILURES` (default `12` consecutive failed encodes)
 - Diagnostics-only UDP mirror (disabled by default):
   - Cargo feature: `native-diagnostic-udp-mirror`
   - Env opt-in: `YANKCORD_NATIVE_ENABLE_DIAGNOSTIC_UDP_MIRROR=1`
@@ -34,6 +36,35 @@ Goals:
   - `YANKCORD_NATIVE_DEGRADE_LEVEL3_AVG_DEPTH`, `YANKCORD_NATIVE_DEGRADE_LEVEL3_PEAK_DEPTH`, `YANKCORD_NATIVE_DEGRADE_LEVEL3_SCALE_DIVISOR`
   - `YANKCORD_NATIVE_DEGRADE_LEVEL3_BITRATE_NUMERATOR`, `YANKCORD_NATIVE_DEGRADE_LEVEL3_BITRATE_DENOMINATOR`
   - `YANKCORD_NATIVE_DEGRADE_RECOVER_AVG_DEPTH`, `YANKCORD_NATIVE_DEGRADE_RECOVER_PEAK_DEPTH`
+
+### Threshold Calibration Structure (Telemetry-Driven)
+
+Use `native_capture_status.native_sender` pressure fields during Windows runs to tune threshold defaults with additive, low-risk adjustments:
+
+- `pressure_window_avg_depth`: current moving-window queue average.
+- `pressure_window_peak_depth`: current moving-window queue peak.
+- `pressure_window_max_avg_depth`: max moving-window average seen in current sender lifetime.
+- `pressure_window_max_peak_depth`: max moving-window peak seen in current sender lifetime.
+
+Recommended default baseline for queue capacity `6` (current default):
+
+- Keep level-1 entry near light pressure: avg `2`, peak `4`.
+- Keep level-2 entry near sustained pressure: avg `4`, peak `6`.
+- Keep level-3 entry near persistent overload: avg `6`, peak `7`.
+- Keep recovery conservative: avg `1`, peak `2`.
+
+Windows verification status:
+
+- Manual Windows validation passed with this baseline/default ladder.
+- Keep the current defaults as the recommended production starting point.
+- Only override via env vars when a specific host/GPU profile shows sustained pressure or early quality drop.
+
+Windows calibration pass guidance:
+
+1. Run 1080p30 share for at least 2-3 minutes and record max pressure fields.
+2. If `pressure_window_max_peak_depth` stays <= level-1 thresholds but drops still rise, reduce thresholds by 1.
+3. If stream quality degrades too early while max pressure remains low, increase level-2/3 avg thresholds by 1.
+4. Keep each level monotonic (`L1 <= L2 <= L3`) and adjust one notch per pass.
 
 ## Phase 1: Stabilize Abstractions (No New Codec Enabled)
 
@@ -70,7 +101,14 @@ Current implementation status:
 
 - Startup/runtime fallback policy to OpenH264 is wired.
 - Backend selection is surfaced via `native_capture_status.native_sender.encoder_backend` and client diagnostic events.
-- Real NVENC frame encode path is still pending.
+- Backend selection intent and fallback reason are surfaced via `encoder_backend_requested` and `encoder_backend_fallback_reason`.
+- Runtime backend downgrade path is wired (NVENC -> OpenH264 on sustained encode failures).
+- NVENC frame encode path is implemented via `ffmpeg` `h264_nvenc` bridge (`YANKCORD_NATIVE_NVENC_FFMPEG_PATH` override supported).
+- NVENC runtime path now uses a long-lived `ffmpeg` process (not per-frame spawn), which removes startup overhead from steady-state encoding.
+
+Windows verification note:
+
+- Manual Windows validation confirmed expected behavior with the persistent process path.
 
 Guardrails:
 
