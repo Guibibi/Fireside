@@ -43,12 +43,15 @@ Edit `server/.env.docker` and set at minimum:
   - `chat.example.com` (or your domain) for automatic HTTPS in Caddy
 - `WEBRTC_ANNOUNCED_IP` only when browser clients connect over the public internet and need voice/media
 - `NATIVE_RTP_ANNOUNCED_IP` when Tauri desktop clients on other hosts use native screen share
+- `STORAGE_BACKEND` and `STORAGE_LOCAL_ROOT` for media upload storage
 
 Notes:
 
 - `DATABASE_URL` must be set explicitly. If your DB username or password includes reserved URI characters (for example `@`, `:`, `/`, `?`, `#`), URL-encode those credential parts in the connection string. If you customize `POSTGRES_USER`, `POSTGRES_PASSWORD`, or `POSTGRES_DB`, keep the credentials and database name in `DATABASE_URL` in sync.
 - Leaving `WEBRTC_ANNOUNCED_IP` empty or localhost is fine for local/private setups, but public internet voice traffic typically requires it set to a public IP or DNS name.
 - For remote Tauri native screen share, set `NATIVE_RTP_ANNOUNCED_IP` to a reachable public IP and `NATIVE_RTP_LISTEN_IP=0.0.0.0`.
+- Media uploads default to `STORAGE_BACKEND=local`; set `STORAGE_LOCAL_ROOT` to a durable path in production.
+- `STORAGE_BACKEND=s3` is scaffolded for future S3/MinIO support but is not fully implemented in this phase.
 - `HOST` defaults to `127.0.0.1` in the Docker production path to avoid exposing backend port `3000` publicly when using host networking.
 - If you intentionally want the backend reachable directly from outside the VM, set `HOST=0.0.0.0` in `server/.env.docker` and restrict access with firewall rules.
 

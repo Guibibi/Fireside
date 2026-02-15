@@ -21,6 +21,7 @@ Yankcord is a self-hosted, minimal chat app. One server instance = one community
 - Native sender codec expansion is shipped: additive codec negotiation, strict codec mode, codec telemetry, codec readiness rollout (`VP8`/`VP9`/`AV1` ready).
 - Phase 5.1 is shipped: channel list now renders separate `Text Channels` and `Voice Channels` sections while preserving existing unread and voice presence behavior.
 - Phase 5.2 is shipped: native-style context menus for channels, messages, and members with keyboard (Context Menu key / Shift+F10), right-click, and long-press invocation, plus focus restoration after dismissal.
+- Phase 5.3 is shipped: media uploads now persist metadata in Postgres, local derivative processing/cleanup are active, and S3-compatible storage is scaffolded for follow-up implementation.
 
 ---
 
@@ -74,6 +75,7 @@ Yankcord is a self-hosted, minimal chat app. One server instance = one community
 7. Message reactions
 8. GIF search support
 9. Voice participant avatars polish
+10. Streaming watch UX rework
 
 ### 5.1 Separate text and voice channel groups in UI (completed)
 
@@ -96,7 +98,7 @@ Yankcord is a self-hosted, minimal chat app. One server instance = one community
 - Server/client: enforce role-aware actions (show/enable only when permitted, re-check on server).
 - UX: use confirmation affordances for destructive actions.
 
-### 5.3 Media storage + optimization foundation
+### 5.3 Media storage + optimization foundation (completed)
 
 **Goal**
 - Add a self-hosted media pipeline with local storage first and optional S3-compatible backend later.
@@ -178,6 +180,34 @@ Yankcord is a self-hosted, minimal chat app. One server instance = one community
 - Client: show avatar tiles/rows for active voice participants.
 - Client: preserve speaking-state emphasis and active-media affordances.
 - Server/client: reuse existing presence and voice state streams without protocol breakage.
+
+### 5.11 Streaming watch UX rework
+
+**Goal**
+- Improve stream discoverability and viewing ergonomics in voice channels while keeping watch behavior fully user-initiated.
+
+**Implementation details**
+- Presence affordance: show a distinct `LIVE` badge next to each member actively streaming in the voice channel participant view; support multiple concurrent streamers.
+- Hover discovery: hovering a streaming member row opens a compact right-side popover with streamer context and a primary `Watch Stream` action.
+- Explicit opt-in: when a stream session starts, other members remain in `Not watching`; stream playback/audio never auto-starts without a click on `Watch Stream`.
+- Focused watch mode: clicking `Watch Stream` opens the stream in a maximized layout that temporarily replaces chat and member list surfaces.
+- Focused controls: include `Fullscreen` and top-right `X` controls in focused mode; controls must remain visible on hover/focus and keyboard reachable.
+- Exit behavior: clicking `X` exits focused mode, restores the last chat + member list layout, and keeps the stream in a docked mini-player at bottom-right.
+- Mini-player controls: hovering/focusing the mini-player reveals `Stop Watching Stream`; activating it stops local viewing and dismisses the mini-player.
+- Stream end handling: if the streamer ends/disconnects, close focused/mini-player views automatically, restore standard layout, and show optional user-facing feedback (`Stream ended`).
+- Layout resilience: preserve watch state correctly across channel switches and panel toggles (focused -> mini-player on close; mini-player persists until explicit stop or stream end).
+- Accessibility and copy: support keyboard navigation and screen-reader labels for all stream controls; keep control copy consistent (`Watch Stream`, `Fullscreen`, `Stop Watching Stream`).
+
+**Viewer state model**
+- `Not watching`: user sees `LIVE` affordances only; no active playback.
+- `Watching (focused)`: stream occupies the primary content area; chat/member panels hidden.
+- `Watching (mini-player)`: chat/member panels visible while stream remains docked.
+
+**State transitions**
+- `Not watching` -> `Watching (focused)`: user clicks `Watch Stream`.
+- `Watching (focused)` -> `Watching (mini-player)`: user clicks focused `X`.
+- `Watching (mini-player)` -> `Not watching`: user clicks `Stop Watching Stream`.
+- `Watching (focused|mini-player)` -> `Not watching`: streamer stops stream or disconnects.
 
 ---
 

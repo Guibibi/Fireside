@@ -32,3 +32,19 @@ pub struct Message {
     pub created_at: DateTime<Utc>,
     pub edited_at: Option<DateTime<Utc>>,
 }
+
+#[derive(Debug, Serialize, Deserialize, Clone, sqlx::FromRow)]
+pub struct MediaAsset {
+    pub id: Uuid,
+    pub owner_id: Uuid,
+    pub parent_id: Option<Uuid>,
+    pub derivative_kind: Option<String>,
+    pub mime_type: String,
+    pub bytes: i64,
+    pub checksum: String,
+    pub storage_key: String,
+    pub status: String,
+    pub error_message: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}

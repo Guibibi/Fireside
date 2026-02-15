@@ -7,6 +7,8 @@ pub struct AppConfig {
     pub database: DatabaseConfig,
     pub jwt: JwtConfig,
     pub media: MediaConfig,
+    #[serde(default)]
+    pub storage: StorageConfig,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -38,8 +40,68 @@ pub struct MediaConfig {
     pub native_rtp_announced_ip: Option<String>,
 }
 
+#[derive(Debug, Deserialize, Clone)]
+pub struct StorageConfig {
+    #[serde(default = "default_storage_backend")]
+    pub backend: String,
+    #[serde(default = "default_storage_local_root")]
+    pub local_root: String,
+    #[serde(default = "default_media_max_upload_bytes")]
+    pub max_upload_bytes: usize,
+    #[serde(default = "default_media_cleanup_interval_seconds")]
+    pub cleanup_interval_seconds: u64,
+    #[serde(default = "default_media_failed_retention_hours")]
+    pub failed_retention_hours: i64,
+    #[serde(default)]
+    pub s3: S3Config,
+}
+
+#[derive(Debug, Deserialize, Clone, Default)]
+pub struct S3Config {
+    pub endpoint: Option<String>,
+    pub region: Option<String>,
+    pub bucket: Option<String>,
+    pub access_key_id: Option<String>,
+    pub secret_access_key: Option<String>,
+    #[serde(default)]
+    pub force_path_style: bool,
+}
+
 fn default_native_rtp_listen_ip() -> String {
     "127.0.0.1".to_string()
+}
+
+fn default_storage_backend() -> String {
+    "local".to_string()
+}
+
+fn default_storage_local_root() -> String {
+    "data/media".to_string()
+}
+
+fn default_media_max_upload_bytes() -> usize {
+    10 * 1024 * 1024
+}
+
+fn default_media_cleanup_interval_seconds() -> u64 {
+    900
+}
+
+fn default_media_failed_retention_hours() -> i64 {
+    24
+}
+
+impl Default for StorageConfig {
+    fn default() -> Self {
+        Self {
+            backend: default_storage_backend(),
+            local_root: default_storage_local_root(),
+            max_upload_bytes: default_media_max_upload_bytes(),
+            cleanup_interval_seconds: default_media_cleanup_interval_seconds(),
+            failed_retention_hours: default_media_failed_retention_hours(),
+            s3: S3Config::default(),
+        }
+    }
 }
 
 impl AppConfig {
@@ -86,6 +148,40 @@ impl AppConfig {
                     native_rtp_announced_ip: std::env::var("NATIVE_RTP_ANNOUNCED_IP")
                         .ok()
                         .or_else(|| std::env::var("WEBRTC_ANNOUNCED_IP").ok()),
+                },
+                storage: StorageConfig {
+                    backend: std::env::var("STORAGE_BACKEND")
+                        .unwrap_or_else(|_| default_storage_backend()),
+                    local_root: std::env::var("STORAGE_LOCAL_ROOT")
+                        .unwrap_or_else(|_| default_storage_local_root()),
+                    max_upload_bytes: std::env::var("MEDIA_MAX_UPLOAD_BYTES")
+                        .unwrap_or_else(|_| default_media_max_upload_bytes().to_string())
+                        .parse()
+                        .expect("MEDIA_MAX_UPLOAD_BYTES must be a number"),
+                    cleanup_interval_seconds: std::env::var("MEDIA_CLEANUP_INTERVAL_SECONDS")
+                        .unwrap_or_else(|_| default_media_cleanup_interval_seconds().to_string())
+                        .parse()
+                        .expect("MEDIA_CLEANUP_INTERVAL_SECONDS must be a number"),
+                    failed_retention_hours: std::env::var("MEDIA_FAILED_RETENTION_HOURS")
+                        .unwrap_or_else(|_| default_media_failed_retention_hours().to_string())
+                        .parse()
+                        .expect("MEDIA_FAILED_RETENTION_HOURS must be a number"),
+                    s3: S3Config {
+                        endpoint: std::env::var("S3_ENDPOINT").ok(),
+                        region: std::env::var("S3_REGION").ok(),
+                        bucket: std::env::var("S3_BUCKET").ok(),
+                        access_key_id: std::env::var("S3_ACCESS_KEY_ID").ok(),
+                        secret_access_key: std::env::var("S3_SECRET_ACCESS_KEY").ok(),
+                        force_path_style: std::env::var("S3_FORCE_PATH_STYLE")
+                            .ok()
+                            .map(|value| {
+                                matches!(
+                                    value.to_ascii_lowercase().as_str(),
+                                    "1" | "true" | "yes" | "on"
+                                )
+                            })
+                            .unwrap_or(false),
+                    },
                 },
             }
         }

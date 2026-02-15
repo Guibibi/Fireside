@@ -4,6 +4,8 @@ mod errors;
 mod media;
 mod models;
 mod routes;
+mod storage;
+mod uploads;
 mod ws;
 
 use axum::Router;
@@ -13,6 +15,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::{mpsc, RwLock};
+use tokio::time::{interval, Duration};
 use tower_http::cors::{Any, CorsLayer};
 use uuid::Uuid;
 
@@ -27,6 +30,7 @@ pub struct AppState {
     pub db: sqlx::PgPool,
     pub config: Arc<AppConfig>,
     pub media: Arc<media::MediaService>,
+    pub uploads: Arc<uploads::UploadService>,
     pub active_usernames: Arc<RwLock<HashSet<String>>>,
     pub ws_connections: Arc<RwLock<HashMap<Uuid, mpsc::UnboundedSender<String>>>>,
     pub connection_usernames: Arc<RwLock<HashMap<Uuid, String>>>,
@@ -74,10 +78,21 @@ async fn main() {
     )
     .await;
 
+    let storage_backend = storage::create_storage_backend(&config.storage)
+        .await
+        .expect("Failed to initialize storage backend");
+
+    let upload_service = uploads::UploadService::new(
+        pool.clone(),
+        storage_backend,
+        config.storage.max_upload_bytes,
+    );
+
     let state = AppState {
         db: pool,
         config: config.clone(),
         media: Arc::new(media_service),
+        uploads: Arc::new(upload_service),
         active_usernames: Arc::new(RwLock::new(HashSet::new())),
         ws_connections: Arc::new(RwLock::new(HashMap::new())),
         connection_usernames: Arc::new(RwLock::new(HashMap::new())),
@@ -87,6 +102,8 @@ async fn main() {
         media_signal_rate_by_connection: Arc::new(RwLock::new(HashMap::new())),
     };
 
+    start_derivative_cleanup_job(state.clone());
+
     let cors = CorsLayer::new()
         .allow_origin(Any)
         .allow_methods(Any)
@@ -95,6 +112,10 @@ async fn main() {
     let app = Router::new()
         .nest("/api", routes::auth_routes::router())
         .nest("/api", routes::channel_routes::router())
+        .nest(
+            "/api",
+            routes::media_routes::router(config.storage.max_upload_bytes),
+        )
         .nest("/api", routes::user_routes::router())
         .route("/ws", axum::routing::get(ws::ws_upgrade))
         .layer(cors)
@@ -110,6 +131,31 @@ async fn main() {
         .expect("Failed to bind");
 
     axum::serve(listener, app).await.expect("Server error");
+}
+
+fn start_derivative_cleanup_job(state: AppState) {
+    tokio::spawn(async move {
+        let mut ticker = interval(Duration::from_secs(
+            state.config.storage.cleanup_interval_seconds,
+        ));
+
+        loop {
+            ticker.tick().await;
+            match state
+                .uploads
+                .cleanup_derivatives(state.config.storage.failed_retention_hours)
+                .await
+            {
+                Ok(deleted) if deleted > 0 => {
+                    tracing::info!(deleted, "Media derivative cleanup removed stale rows");
+                }
+                Ok(_) => {}
+                Err(error) => {
+                    tracing::warn!(error = ?error, "Media derivative cleanup iteration failed");
+                }
+            }
+        }
+    });
 }
 
 async fn seed_default_channel(pool: &sqlx::PgPool) -> Result<(), sqlx::Error> {
