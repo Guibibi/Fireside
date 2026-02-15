@@ -10,7 +10,17 @@ use super::metrics::NativeSenderSharedMetrics;
 #[cfg(all(target_os = "windows", feature = "native-nvenc"))]
 mod imp {
     use std::ffi::c_void;
+    use std::mem::MaybeUninit;
     use std::sync::atomic::Ordering;
+
+    /// Zero-initialize an NVENC struct by writing zero bytes directly,
+    /// bypassing Rust's validity checks on `NonZero` fields that would
+    /// cause `std::mem::zeroed()` to panic in debug builds.
+    unsafe fn nvenc_zeroed<T>() -> T {
+        let mut val = MaybeUninit::<T>::uninit();
+        std::ptr::write_bytes(val.as_mut_ptr(), 0u8, 1);
+        val.assume_init()
+    }
 
     use cudarc::driver::CudaContext;
     use nvidia_video_codec_sdk::sys::nvEncodeAPI::{
@@ -264,7 +274,7 @@ mod imp {
                 let api = &*ENCODE_API;
 
                 // Open encoder session with D3D11 device
-                let mut open_params: NV_ENC_OPEN_ENCODE_SESSION_EX_PARAMS = std::mem::zeroed();
+                let mut open_params: NV_ENC_OPEN_ENCODE_SESSION_EX_PARAMS = nvenc_zeroed();
                 open_params.version =
                     nvidia_video_codec_sdk::sys::nvEncodeAPI::NV_ENC_OPEN_ENCODE_SESSION_EX_PARAMS_VER;
                 open_params.deviceType = NV_ENC_DEVICE_TYPE::NV_ENC_DEVICE_TYPE_DIRECTX;
@@ -281,18 +291,10 @@ mod imp {
                 }
 
                 // Get preset config for H264 baseline
-                // NV_ENC_PRESET_CONFIG contains NonZero fields so we cannot
-                // use mem::zeroed().  Allocate uninit, write only the version
-                // tags the API requires, then let NVENC fill the rest.
-                let mut preset_config_mu =
-                    std::mem::MaybeUninit::<NV_ENC_PRESET_CONFIG>::uninit();
-                let pc_ptr = preset_config_mu.as_mut_ptr();
-                // Zero the whole allocation so padding / unused fields are
-                // deterministic, then stamp the version fields.
-                std::ptr::write_bytes(pc_ptr, 0u8, 1);
-                (*pc_ptr).version =
+                let mut preset_config: NV_ENC_PRESET_CONFIG = nvenc_zeroed();
+                preset_config.version =
                     nvidia_video_codec_sdk::sys::nvEncodeAPI::NV_ENC_PRESET_CONFIG_VER;
-                (*pc_ptr).presetCfg.version =
+                preset_config.presetCfg.version =
                     nvidia_video_codec_sdk::sys::nvEncodeAPI::NV_ENC_CONFIG_VER;
 
                 let status = (api.get_encode_preset_config_ex)(
@@ -300,7 +302,7 @@ mod imp {
                     NV_ENC_CODEC_H264_GUID,
                     NV_ENC_PRESET_P4_GUID,
                     NV_ENC_TUNING_INFO::NV_ENC_TUNING_INFO_ULTRA_LOW_LATENCY,
-                    pc_ptr,
+                    &mut preset_config,
                 );
                 if !nvenc_status_ok(status) {
                     let _ = (api.destroy_encoder)(encoder);
@@ -309,7 +311,6 @@ mod imp {
                         status
                     ));
                 }
-                let preset_config = preset_config_mu.assume_init();
 
                 let mut encode_config = preset_config.presetCfg;
                 // Disable B-frames for low latency
@@ -325,7 +326,7 @@ mod imp {
                 encode_config.rcParams.vbvBufferSize = bitrate_bps / target_fps;
 
                 // Initialize encoder
-                let mut init_params: NV_ENC_INITIALIZE_PARAMS = std::mem::zeroed();
+                let mut init_params: NV_ENC_INITIALIZE_PARAMS = nvenc_zeroed();
                 init_params.version =
                     nvidia_video_codec_sdk::sys::nvEncodeAPI::NV_ENC_INITIALIZE_PARAMS_VER;
                 init_params.encodeGUID = NV_ENC_CODEC_H264_GUID;
@@ -350,7 +351,7 @@ mod imp {
                 }
 
                 // Create output bitstream buffer
-                let mut create_bitstream: NV_ENC_CREATE_BITSTREAM_BUFFER = std::mem::zeroed();
+                let mut create_bitstream: NV_ENC_CREATE_BITSTREAM_BUFFER = nvenc_zeroed();
                 create_bitstream.version =
                     nvidia_video_codec_sdk::sys::nvEncodeAPI::NV_ENC_CREATE_BITSTREAM_BUFFER_VER;
 
@@ -390,7 +391,7 @@ mod imp {
             unsafe {
                 let api = &*ENCODE_API;
 
-                let mut register: NV_ENC_REGISTER_RESOURCE = std::mem::zeroed();
+                let mut register: NV_ENC_REGISTER_RESOURCE = nvenc_zeroed();
                 register.version =
                     nvidia_video_codec_sdk::sys::nvEncodeAPI::NV_ENC_REGISTER_RESOURCE_VER;
                 register.resourceType =
@@ -435,7 +436,7 @@ mod imp {
                 let api = &*ENCODE_API;
 
                 // Map the registered resource for encoding
-                let mut map_input: NV_ENC_MAP_INPUT_RESOURCE = std::mem::zeroed();
+                let mut map_input: NV_ENC_MAP_INPUT_RESOURCE = nvenc_zeroed();
                 map_input.version =
                     nvidia_video_codec_sdk::sys::nvEncodeAPI::NV_ENC_MAP_INPUT_RESOURCE_VER;
                 map_input.registeredResource = self.registered_resource;
@@ -454,7 +455,7 @@ mod imp {
                 let mapped_buffer_fmt = map_input.mappedBufferFmt;
 
                 // Encode the picture
-                let mut pic_params: NV_ENC_PIC_PARAMS = std::mem::zeroed();
+                let mut pic_params: NV_ENC_PIC_PARAMS = nvenc_zeroed();
                 pic_params.version =
                     nvidia_video_codec_sdk::sys::nvEncodeAPI::NV_ENC_PIC_PARAMS_VER;
                 pic_params.inputWidth = self.width;
@@ -488,7 +489,7 @@ mod imp {
                 }
 
                 // Lock and read the bitstream output
-                let mut lock_bitstream: NV_ENC_LOCK_BITSTREAM = std::mem::zeroed();
+                let mut lock_bitstream: NV_ENC_LOCK_BITSTREAM = nvenc_zeroed();
                 lock_bitstream.version =
                     nvidia_video_codec_sdk::sys::nvEncodeAPI::NV_ENC_LOCK_BITSTREAM_VER;
                 lock_bitstream.outputBitstream = self.output_bitstream;
