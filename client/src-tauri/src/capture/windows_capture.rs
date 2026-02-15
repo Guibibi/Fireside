@@ -54,7 +54,24 @@ pub struct NativeCaptureStartRequest {
     pub source_id: String,
 }
 
-#[derive(Debug, Clone)]
+use super::gpu_frame::GpuTextureHandle;
+
+/// Frame payload: either CPU bytes or a GPU-resident texture.
+#[allow(dead_code)]
+pub enum NativeFrameData {
+    CpuBgra(Vec<u8>),
+    GpuTexture(GpuTextureHandle),
+}
+
+impl std::fmt::Debug for NativeFrameData {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::CpuBgra(data) => f.debug_tuple("CpuBgra").field(&data.len()).finish(),
+            Self::GpuTexture(_) => f.debug_tuple("GpuTexture").finish(),
+        }
+    }
+}
+
 pub struct NativeFramePacket {
     pub source_id: String,
     pub width: u32,
@@ -62,7 +79,39 @@ pub struct NativeFramePacket {
     pub timestamp_ms: u64,
     pub pixel_format: String,
     pub bgra_len: Option<usize>,
-    pub bgra: Option<Vec<u8>>,
+    pub frame_data: Option<NativeFrameData>,
+}
+
+impl std::fmt::Debug for NativeFramePacket {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NativeFramePacket")
+            .field("source_id", &self.source_id)
+            .field("width", &self.width)
+            .field("height", &self.height)
+            .field("timestamp_ms", &self.timestamp_ms)
+            .field("frame_data", &self.frame_data)
+            .finish()
+    }
+}
+
+impl NativeFramePacket {
+    /// Get the CPU BGRA bytes, performing GPU readback if needed.
+    #[allow(dead_code)]
+    pub fn as_cpu_bgra(&self) -> Option<&[u8]> {
+        match &self.frame_data {
+            Some(NativeFrameData::CpuBgra(data)) => Some(data),
+            _ => None,
+        }
+    }
+
+    /// Get a reference to the GPU texture handle, if this frame is GPU-resident.
+    #[allow(dead_code)]
+    pub fn gpu_texture(&self) -> Option<&GpuTextureHandle> {
+        match &self.frame_data {
+            Some(NativeFrameData::GpuTexture(handle)) => Some(handle),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -126,6 +175,17 @@ fn dispatch_frame(packet: NativeFramePacket) {
         }
     }
 }
+
+/// Dispatch a frame from an external capture source (e.g. DXGI DD)
+/// into the shared frame channel.
+#[cfg(target_os = "windows")]
+pub fn dispatch_frame_external(packet: NativeFramePacket) {
+    dispatch_frame(packet);
+}
+
+#[cfg(not(target_os = "windows"))]
+#[allow(dead_code)]
+pub fn dispatch_frame_external(_packet: NativeFramePacket) {}
 
 #[cfg(target_os = "windows")]
 pub fn install_frame_sink(sender: SyncSender<NativeFramePacket>) -> Result<(), String> {
@@ -299,12 +359,12 @@ impl GraphicsCaptureApiHandler for NativeFrameHandler {
     ) -> Result<(), Self::Error> {
         self.frame_count = self.frame_count.saturating_add(1);
 
-        let (bgra, bgra_len) = match frame.buffer() {
+        let (frame_data, bgra_len) = match frame.buffer() {
             Ok(mut buffer) => match buffer.as_nopadding_buffer() {
                 Ok(bytes) => {
                     let copied = bytes.to_vec();
                     let len = copied.len();
-                    (Some(copied), Some(len))
+                    (Some(NativeFrameData::CpuBgra(copied)), Some(len))
                 }
                 Err(error) => {
                     emit_event(NativeCaptureEvent {
@@ -334,7 +394,7 @@ impl GraphicsCaptureApiHandler for NativeFrameHandler {
             timestamp_ms: unix_timestamp_ms(),
             pixel_format: "bgra8".to_string(),
             bgra_len,
-            bgra,
+            frame_data,
         });
 
         let now = Instant::now();

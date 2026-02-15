@@ -4,7 +4,7 @@ use std::sync::mpsc::Receiver;
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::capture::windows_capture::{self, NativeFramePacket};
+use crate::capture::windows_capture::{self, NativeFrameData, NativeFramePacket};
 
 use super::encoder_backend::{
     create_encoder_backend_for_codec, create_openh264_backend, NativeCodecTarget,
@@ -382,9 +382,9 @@ impl AdaptiveDegradationState {
         self.frame_index = self.frame_index.saturating_add(1);
         match self.level {
             0 => false,
-            1 => self.frame_index % 2 == 0,
-            2 => self.frame_index % 3 != 0,
-            _ => self.frame_index % 4 != 0,
+            1 => self.frame_index.is_multiple_of(2),
+            2 => !self.frame_index.is_multiple_of(3),
+            _ => !self.frame_index.is_multiple_of(4),
         }
     }
 
@@ -708,7 +708,7 @@ pub fn run_native_sender_worker(
                     .last_frame_timestamp_ms
                     .store(packet.timestamp_ms, Ordering::Relaxed);
 
-                let Some(bgra) = packet.bgra.as_ref() else {
+                let Some(frame_data) = &packet.frame_data else {
                     shared.dropped_missing_bgra.fetch_add(1, Ordering::Relaxed);
                     continue;
                 };
@@ -718,6 +718,71 @@ pub fn run_native_sender_worker(
                     shared.dropped_before_encode.fetch_add(1, Ordering::Relaxed);
                     continue;
                 }
+
+                // Phase 3: Try GPU encode first for GPU-resident textures
+                if let NativeFrameData::GpuTexture(handle) = frame_data {
+                    use super::encoder_backend::GpuEncodeResult;
+                    match encoder.encode_gpu_frame(handle, &shared) {
+                        GpuEncodeResult::Encoded(nals) => {
+                            // GPU encode succeeded — packetize and send
+                            let encoded_bytes: usize = nals.iter().map(|n| n.len()).sum();
+                            let bitrate_cap_kbps = degradation_state
+                                .bitrate_cap_kbps(config.target_bitrate_kbps, &degradation_tuning);
+                            if !bitrate_limiter.allow(
+                                encoded_bytes,
+                                unix_timestamp_ms(),
+                                bitrate_cap_kbps,
+                            ) {
+                                shared.dropped_during_send.fetch_add(1, Ordering::Relaxed);
+                                continue;
+                            }
+
+                            shared.encoded_frames.fetch_add(1, Ordering::Relaxed);
+                            shared
+                                .encoded_bytes
+                                .fetch_add(encoded_bytes as u64, Ordering::Relaxed);
+                            shared
+                                .last_frame_width
+                                .store(handle.width as u64, Ordering::Relaxed);
+                            shared
+                                .last_frame_height
+                                .store(handle.height as u64, Ordering::Relaxed);
+
+                            let rtp_packets =
+                                packetizer.send_encoded_frames(&nals, packet.timestamp_ms);
+                            shared
+                                .rtp_packets_sent
+                                .fetch_add(rtp_packets as u64, Ordering::Relaxed);
+
+                            shared.processed_packets.fetch_add(1, Ordering::Relaxed);
+                            continue;
+                        }
+                        GpuEncodeResult::NoOutput => {
+                            // Pipeline ramp-up, no output yet
+                            continue;
+                        }
+                        GpuEncodeResult::NotSupported => {
+                            // Fall through to CPU readback path below
+                        }
+                    }
+                }
+
+                // Resolve frame data to CPU BGRA bytes
+                let bgra_owned;
+                let bgra: &[u8] = match frame_data {
+                    NativeFrameData::CpuBgra(data) => data,
+                    NativeFrameData::GpuTexture(handle) => match handle.readback_bgra() {
+                        Ok(data) => {
+                            bgra_owned = data;
+                            &bgra_owned
+                        }
+                        Err(e) => {
+                            shared.encode_errors.fetch_add(1, Ordering::Relaxed);
+                            eprintln!("[native-sender] event=gpu_readback_error detail=\"{e}\"");
+                            continue;
+                        }
+                    },
+                };
 
                 if let Some(expected_len) = packet.bgra_len {
                     if expected_len != bgra.len() {
@@ -750,8 +815,7 @@ pub fn run_native_sender_worker(
                 }
 
                 // Resolution cap: always cap to max encode resolution before degradation scaling
-                let cap_divisor =
-                    resolution_cap_divisor(packet.width, packet.height);
+                let cap_divisor = resolution_cap_divisor(packet.width, packet.height);
                 let (capped_input, capped_w, capped_h) =
                     resolution_cap_buffer.downscale(bgra, packet.width, packet.height, cap_divisor);
 
@@ -771,7 +835,7 @@ pub fn run_native_sender_worker(
                     encoder.encode_frame(encode_input, encode_width, encode_height, &shared);
                 let Some(frames) = encoded_frames else {
                     consecutive_encode_failures = consecutive_encode_failures.saturating_add(1);
-                    if active_encoder_backend == "nvenc"
+                    if (active_encoder_backend == "nvenc" || active_encoder_backend == "nvenc_sdk")
                         && encoder_selection.requested_backend == "auto"
                         && consecutive_encode_failures >= nvenc_runtime_fallback_encode_failures
                     {
@@ -847,7 +911,7 @@ pub fn run_native_sender_worker(
                 shared.processed_packets.fetch_add(1, Ordering::Relaxed);
 
                 let processed = shared.processed_packets.load(Ordering::Relaxed);
-                if processed % 120 == 0 {
+                if processed.is_multiple_of(120) {
                     eprintln!(
                         "[native-sender] event=sender_tick source={} processed={} encoded={} rtp_packets={} encode_latency_ms={} frame={}x{}",
                         config.source_id,

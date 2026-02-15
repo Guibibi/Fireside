@@ -204,7 +204,7 @@ impl VideoEncoderBackend for Av1EncoderBackend {
         height: u32,
         shared: &NativeSenderSharedMetrics,
     ) -> Option<Vec<Vec<u8>>> {
-        if width == 0 || height == 0 || width % 2 != 0 || height % 2 != 0 {
+        if width == 0 || height == 0 || !width.is_multiple_of(2) || !height.is_multiple_of(2) {
             shared.encode_errors.fetch_add(1, Ordering::Relaxed);
             return None;
         }

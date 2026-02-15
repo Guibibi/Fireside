@@ -4,8 +4,23 @@ use super::h264_encoder::{
 };
 use super::metrics::NativeSenderSharedMetrics;
 use super::nvenc_encoder::try_build_nvenc_backend;
+use super::nvenc_sdk::try_build_nvenc_sdk_backend;
 use super::vp8_encoder::try_build_vp8_backend;
 use super::vp9_encoder::try_build_vp9_backend;
+
+use crate::capture::gpu_frame::GpuTextureHandle;
+
+/// Result of attempting to encode a GPU-resident texture directly.
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+pub enum GpuEncodeResult {
+    /// Encoder does not support GPU texture input; fall back to CPU readback.
+    NotSupported,
+    /// Encoder accepted the frame but produced no output yet (pipeline ramp-up).
+    NoOutput,
+    /// Successfully encoded: NAL units ready for packetization.
+    Encoded(Vec<Vec<u8>>),
+}
 
 #[derive(Debug, Clone, Copy)]
 pub struct CodecDescriptor {
@@ -25,6 +40,21 @@ pub trait VideoEncoderBackend: Send {
         shared: &NativeSenderSharedMetrics,
     ) -> Option<Vec<Vec<u8>>>;
     fn request_keyframe(&mut self) -> bool;
+
+    /// Try to encode a GPU-resident texture directly (zero-copy path).
+    /// Default implementation returns `NotSupported`, causing the caller
+    /// to fall back to CPU readback + `encode_frame`.
+    ///
+    /// Note: This method is available on all platforms but returns NotSupported
+    /// on non-Windows platforms. The GpuTextureHandle is cfg-gated internally.
+    #[allow(unused_variables)]
+    fn encode_gpu_frame(
+        &mut self,
+        handle: &GpuTextureHandle,
+        shared: &NativeSenderSharedMetrics,
+    ) -> GpuEncodeResult {
+        GpuEncodeResult::NotSupported
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -72,6 +102,7 @@ enum EncoderPreference {
     Auto,
     OpenH264,
     Nvenc,
+    NvencSdk,
 }
 
 impl EncoderPreference {
@@ -80,6 +111,7 @@ impl EncoderPreference {
         match normalized.as_str() {
             "openh264" | "open_h264" | "software" => Self::OpenH264,
             "nvenc" => Self::Nvenc,
+            "nvenc_sdk" => Self::NvencSdk,
             _ => Self::Auto,
         }
     }
@@ -89,6 +121,7 @@ impl EncoderPreference {
             Self::Auto => "auto",
             Self::OpenH264 => "openh264",
             Self::Nvenc => "nvenc",
+            Self::NvencSdk => "nvenc_sdk",
         }
     }
 }
@@ -103,7 +136,37 @@ pub fn create_encoder_backend(
         .unwrap_or(EncoderPreference::Auto);
     let requested_backend = preference.as_label();
 
+    // Explicit nvenc_sdk request
+    if preference == EncoderPreference::NvencSdk {
+        return match try_build_nvenc_sdk_backend(target_fps, target_bitrate_kbps) {
+            Ok(backend) => Ok((
+                backend,
+                EncoderBackendSelection {
+                    requested_backend,
+                    selected_backend: "nvenc_sdk",
+                    fallback_reason: None,
+                },
+            )),
+            Err(error) => Err(error),
+        };
+    }
+
     if preference != EncoderPreference::OpenH264 {
+        // Auto path: try nvenc_sdk first, then nvenc (FFmpeg), then openh264
+        let nvenc_sdk_error = match try_build_nvenc_sdk_backend(target_fps, target_bitrate_kbps) {
+            Ok(backend) => {
+                return Ok((
+                    backend,
+                    EncoderBackendSelection {
+                        requested_backend,
+                        selected_backend: "nvenc_sdk",
+                        fallback_reason: None,
+                    },
+                ));
+            }
+            Err(e) => Some(e),
+        };
+
         match try_build_nvenc_backend(target_fps, target_bitrate_kbps) {
             Ok(backend) => {
                 return Ok((
@@ -118,13 +181,20 @@ pub fn create_encoder_backend(
             Err(error) if preference == EncoderPreference::Nvenc => {
                 return Err(error);
             }
-            Err(error) => {
+            Err(nvenc_error) => {
+                // Combine both errors for the fallback reason
+                let fallback_reason = match nvenc_sdk_error {
+                    Some(sdk_err) => {
+                        Some(format!("nvenc_sdk: {}; nvenc: {}", sdk_err, nvenc_error))
+                    }
+                    None => Some(nvenc_error),
+                };
                 return Ok((
                     create_openh264_backend(target_fps, target_bitrate_kbps),
                     EncoderBackendSelection {
                         requested_backend,
                         selected_backend: "openh264",
-                        fallback_reason: Some(error),
+                        fallback_reason,
                     },
                 ));
             }

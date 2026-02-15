@@ -16,7 +16,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 
 [features]
 default = []
-native-nvenc = []
+native-nvenc = ["dep:nvidia-video-codec-sdk", "dep:cudarc"]
 native-diagnostic-udp-mirror = []
 
 [build-dependencies]
@@ -31,3 +31,11 @@ openh264 = "0.9.3"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows-capture = "1.5.0"
+nvidia-video-codec-sdk = { version = "0.4", optional = true }
+cudarc = { version = "0.16", optional = true, default-features = false, features = ["driver"] }
+windows = { version = "0.58", features = [
+    "Win32_Graphics_Direct3D",
+    "Win32_Graphics_Direct3D11",
+    "Win32_Graphics_Dxgi",
+    "Win32_Graphics_Dxgi_Common",
+] }
