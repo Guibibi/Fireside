@@ -1,6 +1,18 @@
 import { clearAuthSession, getWsUrl, token } from "../stores/auth";
 import type { Channel } from "../stores/chat";
 
+export interface MessageAttachment {
+  media_id: string;
+  mime_type: string;
+  bytes: number;
+  width: number | null;
+  height: number | null;
+  status: "processing" | "ready" | "failed";
+  thumbnail_url: string | null;
+  display_url: string | null;
+  original_url: string;
+}
+
 export type ServerMessage =
   | { type: "authenticated"; user_id: string; username: string }
   | { type: "error"; message: string }
@@ -16,6 +28,7 @@ export type ServerMessage =
     content: string;
     created_at: string;
     edited_at?: string | null;
+    attachments?: MessageAttachment[];
   }
   | {
     type: "message_edited";

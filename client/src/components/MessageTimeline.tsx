@@ -1,0 +1,210 @@
+import { For, Show } from "solid-js";
+import type { Channel } from "../stores/chat";
+import { username } from "../stores/auth";
+import {
+  handleLongPressEnd,
+  handleLongPressStart,
+  openContextMenu,
+  setContextMenuTarget,
+} from "../stores/contextMenu";
+import AsyncContent from "./AsyncContent";
+import UserAvatar from "./UserAvatar";
+import type { ChannelMessage, MessageDayGroup } from "./messageTypes";
+
+interface MessageTimelineProps {
+  activeChannel: Channel | null | undefined;
+  loading: boolean;
+  error: unknown;
+  groupedMessages: MessageDayGroup[];
+  stickyDateLabel: string;
+  editingMessageId: string | null;
+  editDraft: string;
+  savingMessageId: string | null;
+  deletingMessageId: string | null;
+  onScroll: () => void;
+  onListRef: (element: HTMLDivElement) => void;
+  onDaySeparatorRef: (key: string, element: HTMLLIElement) => void;
+  onBeginEdit: (message: ChannelMessage) => void;
+  onRemoveMessage: (message: ChannelMessage) => void;
+  onSaveEdit: (messageId: string) => void;
+  onCancelEdit: () => void;
+  onEditDraftInput: (value: string) => void;
+  toAbsoluteMediaUrl: (path: string) => string;
+}
+
+export default function MessageTimeline(props: MessageTimelineProps) {
+  return (
+    <>
+      <header class="message-area-header">
+        <Show when={props.activeChannel} fallback={<p class="message-area-title">Select a channel</p>}>
+          <>
+            <p class="message-area-title">
+              <span class="message-area-prefix">{props.activeChannel?.kind === "voice" ? "~" : "#"}</span>
+              <span>{props.activeChannel?.name}</span>
+            </p>
+            <Show when={props.activeChannel?.description?.trim()}>
+              <p class="message-area-description">{props.activeChannel?.description}</p>
+            </Show>
+          </>
+        </Show>
+      </header>
+      <div class="messages" ref={props.onListRef} onScroll={props.onScroll}>
+        <Show when={props.stickyDateLabel}>
+          <div class="messages-sticky-date">{props.stickyDateLabel}</div>
+        </Show>
+        <AsyncContent
+          loading={props.loading}
+          loadingText="Loading messages..."
+          error={props.error}
+          errorText="Failed to load messages"
+          empty={props.groupedMessages.length === 0}
+          emptyText="No messages yet"
+        >
+          <ul class="message-items">
+            <For each={props.groupedMessages}>
+              {(group) => (
+                <>
+                  <li class="message-day-separator" ref={(element) => props.onDaySeparatorRef(group.key, element)}>
+                    <span>{group.label}</span>
+                  </li>
+                  <For each={group.messages}>
+                    {(message) => (
+                      <li
+                        class="message-item"
+                        onContextMenu={(event) => {
+                          event.preventDefault();
+                          openContextMenu(event.clientX, event.clientY, "message", message.id, message);
+                        }}
+                        onFocus={() => setContextMenuTarget("message", message.id, message)}
+                        onTouchStart={(event) => {
+                          const touch = event.touches[0];
+                          handleLongPressStart(touch.clientX, touch.clientY, "message", message.id, message);
+                        }}
+                        onTouchEnd={handleLongPressEnd}
+                      >
+                        <UserAvatar username={message.author_username} class="message-avatar" size={36} />
+                        <div class="message-meta">
+                          <span class="message-author">{message.author_username}</span>
+                          <time class="message-time">
+                            {new Date(message.created_at).toLocaleTimeString([], {
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
+                          </time>
+                          <Show when={message.edited_at}>
+                            <span class="message-edited">(edited)</span>
+                          </Show>
+                          <Show when={message.author_username === username()}>
+                            <div class="message-actions">
+                              <button
+                                type="button"
+                                class="message-action"
+                                onClick={() => props.onBeginEdit(message)}
+                                disabled={!!props.savingMessageId || !!props.deletingMessageId}
+                              >
+                                edit
+                              </button>
+                              <button
+                                type="button"
+                                class="message-action message-action-danger"
+                                onClick={() => props.onRemoveMessage(message)}
+                                disabled={!!props.savingMessageId || !!props.deletingMessageId}
+                              >
+                                delete
+                              </button>
+                            </div>
+                          </Show>
+                        </div>
+                        <Show
+                          when={props.editingMessageId === message.id}
+                          fallback={(
+                            <>
+                              <Show when={message.content.trim().length > 0}>
+                                <p class="message-content">{message.content}</p>
+                              </Show>
+                              <Show when={message.attachments.length > 0}>
+                                <div class="message-attachments">
+                                  <For each={message.attachments}>
+                                    {(attachment) => (
+                                      <figure class="message-attachment" data-status={attachment.status}>
+                                        <Show
+                                          when={attachment.status === "ready" && (attachment.thumbnail_url || attachment.display_url)}
+                                          fallback={<div class="message-attachment-placeholder">Image processing...</div>}
+                                        >
+                                          <a
+                                            href={props.toAbsoluteMediaUrl(attachment.display_url ?? attachment.original_url)}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                          >
+                                            <img
+                                              src={props.toAbsoluteMediaUrl(
+                                                attachment.thumbnail_url ?? attachment.display_url ?? attachment.original_url,
+                                              )}
+                                              alt="Shared attachment"
+                                              loading="lazy"
+                                            />
+                                          </a>
+                                        </Show>
+                                        <figcaption>
+                                          <a
+                                            href={props.toAbsoluteMediaUrl(attachment.original_url)}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                          >
+                                            Open
+                                          </a>
+                                          <a
+                                            href={props.toAbsoluteMediaUrl(attachment.original_url)}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            download="attachment"
+                                          >
+                                            Download
+                                          </a>
+                                        </figcaption>
+                                      </figure>
+                                    )}
+                                  </For>
+                                </div>
+                              </Show>
+                            </>
+                          )}
+                        >
+                          <form
+                            class="message-edit"
+                            onSubmit={(event) => {
+                              event.preventDefault();
+                              props.onSaveEdit(message.id);
+                            }}
+                          >
+                            <input
+                              type="text"
+                              value={props.editDraft}
+                              onInput={(event) => props.onEditDraftInput(event.currentTarget.value)}
+                              maxlength={4000}
+                              disabled={props.savingMessageId === message.id || !!props.deletingMessageId}
+                            />
+                            <button type="submit" disabled={props.savingMessageId === message.id || !!props.deletingMessageId}>
+                              save
+                            </button>
+                            <button
+                              type="button"
+                              onClick={props.onCancelEdit}
+                              disabled={props.savingMessageId === message.id || !!props.deletingMessageId}
+                            >
+                              cancel
+                            </button>
+                          </form>
+                        </Show>
+                      </li>
+                    )}
+                  </For>
+                </>
+              )}
+            </For>
+          </ul>
+        </AsyncContent>
+      </div>
+    </>
+  );
+}

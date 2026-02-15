@@ -199,6 +199,52 @@
   grid-column: 2;
 }
 
+.message-attachments {
+  grid-column: 2;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-md);
+}
+
+.message-attachment {
+  margin: 0;
+  width: min(300px, 100%);
+  border: 1px solid var(--cloud-dark);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.message-attachment img {
+  display: block;
+  width: 100%;
+  max-height: 220px;
+  object-fit: cover;
+}
+
+.message-attachment-placeholder {
+  min-height: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-md);
+  color: var(--mist);
+  font-size: 0.8rem;
+}
+
+.message-attachment figcaption {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-sm) var(--space-md);
+  font-size: 0.75rem;
+  border-top: 1px solid var(--cloud-dark);
+}
+
+.message-attachment figcaption a {
+  color: var(--mist);
+}
+
 .message-edit {
   display: flex;
   gap: var(--space-sm);
@@ -222,6 +268,51 @@
   padding: var(--space-xl);
   border-top: 1px solid var(--cloud-dark);
   background: rgba(0, 0, 0, 0.15);
+}
+
+.message-attach-button {
+  white-space: nowrap;
+}
+
+.message-attach-input {
+  display: none;
+}
+
+.message-upload-queue {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  margin: 0 var(--space-xl);
+  padding: var(--space-md);
+  border: 1px solid var(--cloud-dark);
+  border-radius: var(--radius-md);
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.message-upload-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+}
+
+.message-upload-name {
+  font-size: 0.85rem;
+  color: var(--snow);
+}
+
+.message-upload-meta {
+  font-size: 0.75rem;
+  color: var(--mist);
+}
+
+.message-upload-item[data-status="failed"] .message-upload-meta {
+  color: var(--coral);
+}
+
+.message-upload-remove {
+  padding: var(--space-xs) var(--space-sm);
+  font-size: 0.75rem;
 }
 
 .message-input input {

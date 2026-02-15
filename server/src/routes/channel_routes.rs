@@ -8,6 +8,10 @@ use uuid::Uuid;
 
 use crate::auth::validate_token;
 use crate::errors::AppError;
+use crate::message_attachments::{
+    load_message_attachments_by_message, persist_message_attachments_in_tx,
+    resolve_uploads_for_message, MessageAttachmentPayload,
+};
 use crate::models::{Channel, ChannelKind, Message};
 use crate::ws::broadcast::{
     broadcast_channel_message, broadcast_global_message, remove_channel_subscribers,
@@ -28,6 +32,8 @@ pub struct CreateChannelRequest {
 #[derive(Deserialize)]
 pub struct SendMessageRequest {
     pub content: String,
+    #[serde(default)]
+    pub attachment_media_ids: Vec<Uuid>,
 }
 
 #[derive(Deserialize)]
@@ -41,7 +47,18 @@ pub struct MessageQuery {
     pub limit: Option<i64>,
 }
 
-#[derive(Serialize, sqlx::FromRow)]
+#[derive(sqlx::FromRow)]
+pub struct MessageWithAuthorRow {
+    pub id: Uuid,
+    pub channel_id: Uuid,
+    pub author_id: Uuid,
+    pub author_username: String,
+    pub content: String,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub edited_at: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+#[derive(Serialize)]
 pub struct MessageWithAuthor {
     pub id: Uuid,
     pub channel_id: Uuid,
@@ -50,6 +67,7 @@ pub struct MessageWithAuthor {
     pub content: String,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub edited_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub attachments: Vec<MessageAttachmentPayload>,
 }
 
 pub fn router() -> Router<AppState> {
@@ -314,7 +332,7 @@ async fn get_messages(
     let _username = extract_username(&headers, &state.config.jwt.secret)?;
     let limit = query.limit.unwrap_or(50).min(100);
 
-    let messages: Vec<MessageWithAuthor> = if let Some(before) = query.before {
+    let messages: Vec<MessageWithAuthorRow> = if let Some(before) = query.before {
         sqlx::query_as(
             "SELECT m.id, m.channel_id, m.author_id, u.username AS author_username, m.content, m.created_at, m.edited_at
              FROM messages m
@@ -340,7 +358,28 @@ async fn get_messages(
         .await?
     };
 
-    Ok(Json(messages))
+    let message_ids: Vec<Uuid> = messages.iter().map(|message| message.id).collect();
+    let attachments_by_message =
+        load_message_attachments_by_message(&state.db, &message_ids).await?;
+
+    let with_attachments = messages
+        .into_iter()
+        .map(|message| MessageWithAuthor {
+            id: message.id,
+            channel_id: message.channel_id,
+            author_id: message.author_id,
+            author_username: message.author_username,
+            content: message.content,
+            created_at: message.created_at,
+            edited_at: message.edited_at,
+            attachments: attachments_by_message
+                .get(&message.id)
+                .cloned()
+                .unwrap_or_default(),
+        })
+        .collect();
+
+    Ok(Json(with_attachments))
 }
 
 async fn send_message(
@@ -352,12 +391,22 @@ async fn send_message(
     let username = extract_username(&headers, &state.config.jwt.secret)?;
     let user_id = lookup_user_id(&state, &username).await?;
     let trimmed_content = body.content.trim();
+    let resolved_attachments =
+        resolve_uploads_for_message(&state, user_id, &body.attachment_media_ids).await?;
 
-    if trimmed_content.is_empty() || trimmed_content.len() > 4000 {
+    if trimmed_content.len() > 4000 {
         return Err(AppError::BadRequest(
-            "Message content must be between 1 and 4000 characters".into(),
+            "Message content must be 4000 characters or fewer".into(),
         ));
     }
+
+    if trimmed_content.is_empty() && resolved_attachments.is_empty() {
+        return Err(AppError::BadRequest(
+            "Message content cannot be empty without attachments".into(),
+        ));
+    }
+
+    let mut tx = state.db.begin().await?;
 
     let message: Message = sqlx::query_as(
         "INSERT INTO messages (id, channel_id, author_id, content) VALUES ($1, $2, $3, $4) RETURNING *",
@@ -366,8 +415,11 @@ async fn send_message(
     .bind(channel_id)
     .bind(user_id)
     .bind(trimmed_content)
-    .fetch_one(&state.db)
+    .fetch_one(&mut *tx)
     .await?;
+
+    persist_message_attachments_in_tx(&mut tx, message.id, &resolved_attachments).await?;
+    tx.commit().await?;
 
     Ok(Json(message))
 }

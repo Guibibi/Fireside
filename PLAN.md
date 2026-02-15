@@ -22,6 +22,8 @@ Yankcord is a self-hosted, minimal chat app. One server instance = one community
 - Phase 5.1 is shipped: channel list now renders separate `Text Channels` and `Voice Channels` sections while preserving existing unread and voice presence behavior.
 - Phase 5.2 is shipped: native-style context menus for channels, messages, and members with keyboard (Context Menu key / Shift+F10), right-click, and long-press invocation, plus focus restoration after dismissal.
 - Phase 5.3 is shipped: media uploads now persist metadata in Postgres, local derivative processing/cleanup are active, and S3-compatible storage is scaffolded for follow-up implementation.
+- Phase 5.4 is shipped: users can upload constrained profile avatars, server-side avatar derivatives are generated, and avatar rendering is enabled across core identity surfaces.
+- Phase 5.5 is shipped: chat supports image attachments with upload validation, message-level attachment metadata, and timeline preview/open/download UX.
 
 ---
 
@@ -140,18 +142,7 @@ Yankcord is a self-hosted, minimal chat app. One server instance = one community
 - Server: CRUD APIs for emoji set and shortcode uniqueness validation.
 - Client: emoji picker + `:shortcode:` parsing/rendering in composer and message body.
 
-### 5.7 Per-voice-channel codec configuration
-
-**Goal**
-- Let operators configure preferred voice codec policy per voice channel.
-
-**Implementation details**
-- Server: add channel-level codec policy fields with migration-safe defaults.
-- Negotiation precedence: channel policy > user preference > runtime auto fallback.
-- Compatibility: when channel policy is absent, preserve current behavior.
-- Client: expose codec config in channel settings with clear capability/compatibility messaging.
-
-### 5.8 Message reactions
+### 5.7 Message reactions
 
 **Goal**
 - Add lightweight emoji reactions with real-time updates.
@@ -161,7 +152,7 @@ Yankcord is a self-hosted, minimal chat app. One server instance = one community
 - Data model: enforce per-user uniqueness per message/reaction key.
 - Client: render reaction chips, counts, and active-user state.
 
-### 5.9 GIF search support
+### 5.8 GIF search support
 
 **Goal**
 - Add GIF picker integration for rich inline content.
@@ -171,7 +162,7 @@ Yankcord is a self-hosted, minimal chat app. One server instance = one community
 - Server: treat GIF embeds as attachment metadata payloads with validation.
 - Client: render GIF embeds consistently with other attachment types.
 
-### 5.10 Voice participant avatars
+### 5.9 Voice participant avatars
 
 **Goal**
 - Improve voice UI legibility with participant avatars and speaking emphasis.
@@ -181,7 +172,7 @@ Yankcord is a self-hosted, minimal chat app. One server instance = one community
 - Client: preserve speaking-state emphasis and active-media affordances.
 - Server/client: reuse existing presence and voice state streams without protocol breakage.
 
-### 5.11 Streaming watch UX rework
+### 5.10 Streaming watch UX rework
 
 **Goal**
 - Improve stream discoverability and viewing ergonomics in voice channels while keeping watch behavior fully user-initiated.

@@ -5,39 +5,41 @@ Long-term roadmap and completed milestone tracking live in `PLAN.md`.
 
 ## Active Phase
 
-- Phase 5.4: User avatars
+- Phase 5.6: Custom emojis/icons
 
 ## Phase Goal
 
-- Add real avatar uploads with server-side image constraints and optimized avatar variants.
-- Surface avatar rendering in message, member, and profile dock surfaces with fallback initials.
+- Add custom emoji management and `:shortcode:` usage in messages without breaking existing message transport behavior.
 
 ## Scope
 
 - Backend
-  - Add authenticated avatar upload endpoint (`POST /api/users/me/avatar`) with constraints (`jpeg|png|webp`, max `2 MB`).
-  - Process avatar images into square `webp` derivatives (`avatar_256`, `avatar_64`) and strip source metadata by re-encoding.
-  - Persist and expose avatar URL on user payloads (`/api/users`, `/api/users/me`, `/api/users/me` patch response).
-  - Add media retrieval endpoint for derivatives (`GET /api/media/{media_id}/{variant}`).
+  - Add emoji asset CRUD endpoints with shortcode uniqueness checks.
+  - Enforce emoji upload constraints (`png|webp|gif`, max `512 KB`, bounded dimensions).
+  - Persist emoji metadata and ownership for instance-scoped emoji sets.
 - Client
-  - Add shared user profile/avatar state store keyed by username.
-  - Load avatar profiles from `/api/users` and hydrate current user profile from `/api/users/me`.
-  - Replace placeholder avatar UX in settings with real avatar upload flow.
-  - Render avatars in message timeline, member list, voice participants, and user dock with fallback initials.
+  - Add emoji picker UI and insert selected shortcode into composer.
+  - Parse/render `:shortcode:` tokens in message timeline with fallback to plain text for unknown codes.
+  - Keep edit/delete/realtime behavior compatible with emoji-rich messages.
+
+## Ordered Checklist
+
+- [ ] Add emoji schema + migration for shortcode and media linkage.
+- [ ] Implement emoji CRUD API + server-side validation.
+- [ ] Build emoji picker + shortcode insertion in composer.
+- [ ] Render shortcode tokens as emoji assets in message timeline.
+- [ ] Validate upload limits and duplicate shortcode behavior.
+- [ ] Run backend + frontend validation commands and capture blockers.
 
 ## Touch Points
 
-- `server/src/routes/user_routes.rs`
-- `server/src/routes/media_routes.rs`
+- `server/src/routes/emoji_routes.rs`
+- `server/src/routes/mod.rs`
 - `server/src/uploads/mod.rs`
-- `server/src/main.rs`
-- `client/src/stores/userProfiles.ts`
-- `client/src/components/UserAvatar.tsx`
-- `client/src/components/UserSettingsDock.tsx`
+- `server/src/ws/messages.rs`
 - `client/src/components/MessageArea.tsx`
-- `client/src/components/MemberList.tsx`
-- `client/src/components/VoicePanel.tsx`
-- `client/src/styles/avatars.css`
+- `client/src/components/EmojiPicker.tsx`
+- `client/src/api/http.ts`
 
 ## Validation Commands
 
@@ -51,20 +53,16 @@ Long-term roadmap and completed milestone tracking live in `PLAN.md`.
 
 ## Last Completed Phase
 
-- Phase 5.3: Media storage + optimization foundation
-
-## Completion Snapshot (Phase 5.3)
-
-- Added storage config + environment/config file wiring.
-- Added storage abstraction with `local` backend and scaffolded `s3` backend.
-- Added `media_assets` migration and metadata lifecycle state tracking.
-- Added authenticated media upload endpoint and derivative generation pipeline.
-- Added periodic cleanup job for orphaned/failed derivatives.
-- Ran backend validation:
-  - `cargo fmt --all --manifest-path server/Cargo.toml -- --check`
-  - `cargo clippy --manifest-path server/Cargo.toml --all-targets -- -D warnings`
-  - `cargo test --manifest-path server/Cargo.toml`
-
-## Next Step After Phase 5.4
-
 - Phase 5.5: Image support in chat
+
+## Completion Snapshot (Phase 5.5)
+
+- Added message attachment persistence via `message_attachments` and additive WS/history payload fields.
+- Added MIME sniffing for uploads to enforce content-based image type validation.
+- Added composer image upload queue with upload/processing/failure states.
+- Added chat timeline image attachment rendering with open/download actions.
+- Kept existing text messaging/edit/delete flows compatible with attachment messages.
+
+## Next Step After Phase 5.6
+
+- Phase 5.7: Per-voice-channel codec configuration

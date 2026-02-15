@@ -21,6 +21,10 @@ use super::media_signal::{
 use super::messages::{ClientMessage, ServerMessage, VoicePresenceChannel};
 use super::voice::{broadcast_closed_producers, broadcast_voice_activity_to_channel};
 use crate::auth::validate_token;
+use crate::message_attachments::{
+    load_message_attachments_by_message, persist_message_attachments_in_tx,
+    resolve_uploads_for_message,
+};
 use crate::AppState;
 
 const WS_IDLE_TIMEOUT: Duration = Duration::from_secs(45);
@@ -364,8 +368,17 @@ async fn handle_client_message(
         ClientMessage::SendMessage {
             channel_id,
             content,
+            attachment_media_ids,
         } => {
-            handle_send_message(state, claims, channel_id, content, out_tx).await;
+            handle_send_message(
+                state,
+                claims,
+                channel_id,
+                content,
+                attachment_media_ids,
+                out_tx,
+            )
+            .await;
         }
         ClientMessage::TypingStart { channel_id } => {
             let response = ServerMessage::TypingStart {
@@ -478,14 +491,15 @@ async fn handle_send_message(
     claims: &crate::auth::Claims,
     channel_id: Uuid,
     content: String,
+    attachment_media_ids: Vec<Uuid>,
     out_tx: &mpsc::UnboundedSender<String>,
 ) {
     let trimmed = content.trim();
-    if trimmed.is_empty() || trimmed.len() > 4000 {
+    if trimmed.len() > 4000 {
         send_server_message(
             out_tx,
             ServerMessage::Error {
-                message: "Message content must be between 1 and 4000 characters".into(),
+                message: "Message content must be 4000 characters or fewer".into(),
             },
         );
         return;
@@ -508,18 +522,107 @@ async fn handle_send_message(
         return;
     };
 
-    let message_row: Option<(Uuid, chrono::DateTime<chrono::Utc>)> = sqlx::query_as(
+    let resolved_attachments =
+        match resolve_uploads_for_message(state, user_id, &attachment_media_ids).await {
+            Ok(attachments) => attachments,
+            Err(error) => {
+                let message = match error {
+                    crate::errors::AppError::BadRequest(message)
+                    | crate::errors::AppError::Unauthorized(message)
+                    | crate::errors::AppError::NotFound(message)
+                    | crate::errors::AppError::Conflict(message)
+                    | crate::errors::AppError::Internal(message) => message,
+                };
+                send_server_message(out_tx, ServerMessage::Error { message });
+                return;
+            }
+        };
+
+    if trimmed.is_empty() && resolved_attachments.is_empty() {
+        send_server_message(
+            out_tx,
+            ServerMessage::Error {
+                message: "Message content cannot be empty without attachments".into(),
+            },
+        );
+        return;
+    }
+
+    let mut tx = match state.db.begin().await {
+        Ok(tx) => tx,
+        Err(error) => {
+            tracing::error!(
+                channel_id = %channel_id,
+                username = %claims.username,
+                error = ?error,
+                "Failed to begin transaction for message send"
+            );
+            send_server_message(
+                out_tx,
+                ServerMessage::Error {
+                    message: "Failed to save message".into(),
+                },
+            );
+            return;
+        }
+    };
+
+    let message_row: Result<(Uuid, chrono::DateTime<chrono::Utc>), sqlx::Error> = sqlx::query_as(
         "INSERT INTO messages (id, channel_id, author_id, content) VALUES ($1, $2, $3, $4) RETURNING id, created_at",
     )
     .bind(Uuid::new_v4())
     .bind(channel_id)
     .bind(user_id)
     .bind(trimmed)
-    .fetch_one(&state.db)
-    .await
-    .ok();
+    .fetch_one(&mut *tx)
+    .await;
 
-    let Some((message_id, created_at)) = message_row else {
+    let (message_id, created_at) = match message_row {
+        Ok(row) => row,
+        Err(error) => {
+            tracing::error!(
+                channel_id = %channel_id,
+                username = %claims.username,
+                error = ?error,
+                "Failed to insert message row"
+            );
+            send_server_message(
+                out_tx,
+                ServerMessage::Error {
+                    message: "Failed to save message".into(),
+                },
+            );
+            return;
+        }
+    };
+
+    if let Err(error) =
+        persist_message_attachments_in_tx(&mut tx, message_id, &resolved_attachments).await
+    {
+        tracing::error!(
+            message_id = %message_id,
+            channel_id = %channel_id,
+            username = %claims.username,
+            error = ?error,
+            "Failed to persist message attachments"
+        );
+        send_server_message(
+            out_tx,
+            ServerMessage::Error {
+                message: "Failed to save message attachments".into(),
+            },
+        );
+        return;
+    }
+
+    if let Err(error) = tx.commit().await {
+        tracing::error!(
+            message_id = %message_id,
+            channel_id = %channel_id,
+            username = %claims.username,
+            error = ?error,
+            "Failed to commit message transaction"
+        );
         send_server_message(
             out_tx,
             ServerMessage::Error {
@@ -527,6 +630,14 @@ async fn handle_send_message(
             },
         );
         return;
+    }
+
+    let attachments = match load_message_attachments_by_message(&state.db, &[message_id]).await {
+        Ok(by_message) => by_message.get(&message_id).cloned().unwrap_or_default(),
+        Err(error) => {
+            tracing::warn!(message_id = %message_id, error = ?error, "Failed to load message attachments for websocket payload");
+            Vec::new()
+        }
     };
 
     let response = ServerMessage::NewMessage {
@@ -536,6 +647,7 @@ async fn handle_send_message(
         author_username: claims.username.clone(),
         content: trimmed.to_string(),
         created_at: created_at.to_rfc3339(),
+        attachments,
     };
 
     broadcast_channel_message(state, channel_id, response, None).await;

@@ -24,3 +24,7 @@ Thumbs.db
 
 # Tauri
 src-tauri/target/
+
+# Local uploaded media
+data/media/
+server/data/media/

@@ -34,10 +34,11 @@ impl UploadService {
     pub async fn upload_image(
         &self,
         owner_id: Uuid,
-        mime_type: String,
+        _declared_mime_type: String,
         bytes: Vec<u8>,
     ) -> Result<UploadResult, AppError> {
-        validate_mime_type(&mime_type)?;
+        let mime_type = sniff_mime_type(&bytes)?;
+        validate_mime_type(mime_type)?;
 
         if bytes.is_empty() {
             return Err(AppError::BadRequest("Upload payload is empty".into()));
@@ -51,7 +52,7 @@ impl UploadService {
         }
 
         let media_id = Uuid::new_v4();
-        let storage_key = format!("original/{media_id}.{}", extension_for_mime(&mime_type));
+        let storage_key = format!("original/{media_id}.{}", extension_for_mime(mime_type));
         let checksum = sha256_hex(&bytes);
 
         sqlx::query(
@@ -60,14 +61,14 @@ impl UploadService {
         )
         .bind(media_id)
         .bind(owner_id)
-        .bind(&mime_type)
+        .bind(mime_type)
         .bind(bytes.len() as i64)
         .bind(&checksum)
         .bind(&storage_key)
         .execute(&self.db)
         .await?;
 
-        if let Err(error) = self.storage.put(&storage_key, bytes, &mime_type).await {
+        if let Err(error) = self.storage.put(&storage_key, bytes, mime_type).await {
             self.mark_failed(
                 media_id,
                 &format!("Failed to persist original upload: {error:?}"),
@@ -98,10 +99,11 @@ impl UploadService {
     pub async fn upload_avatar(
         &self,
         owner_id: Uuid,
-        mime_type: String,
+        _declared_mime_type: String,
         bytes: Vec<u8>,
     ) -> Result<UploadResult, AppError> {
-        validate_avatar_mime_type(&mime_type)?;
+        let mime_type = sniff_mime_type(&bytes)?;
+        validate_avatar_mime_type(mime_type)?;
 
         if bytes.is_empty() {
             return Err(AppError::BadRequest("Upload payload is empty".into()));
@@ -115,7 +117,7 @@ impl UploadService {
         }
 
         let media_id = Uuid::new_v4();
-        let storage_key = format!("original/{media_id}.{}", extension_for_mime(&mime_type));
+        let storage_key = format!("original/{media_id}.{}", extension_for_mime(mime_type));
         let checksum = sha256_hex(&bytes);
 
         sqlx::query(
@@ -124,14 +126,14 @@ impl UploadService {
         )
         .bind(media_id)
         .bind(owner_id)
-        .bind(&mime_type)
+        .bind(mime_type)
         .bind(bytes.len() as i64)
         .bind(&checksum)
         .bind(&storage_key)
         .execute(&self.db)
         .await?;
 
-        if let Err(error) = self.storage.put(&storage_key, bytes, &mime_type).await {
+        if let Err(error) = self.storage.put(&storage_key, bytes, mime_type).await {
             self.mark_failed(
                 media_id,
                 &format!("Failed to persist avatar upload: {error:?}"),
@@ -206,6 +208,48 @@ impl UploadService {
                 .execute(&self.db)
                 .await?;
             deleted_count += 1;
+        }
+
+        Ok(deleted_count)
+    }
+
+    pub async fn cleanup_orphan_message_uploads(
+        &self,
+        unattached_retention_hours: i64,
+    ) -> Result<u64, AppError> {
+        let parent_rows: Vec<(Uuid,)> = sqlx::query_as(
+            "SELECT p.id
+             FROM media_assets p
+             WHERE p.derivative_kind IS NULL
+               AND (
+                    (
+                        p.status IN ('ready', 'failed')
+                        AND p.updated_at < now() - make_interval(hours => $1)
+                    )
+                    OR (
+                        p.status = 'processing'
+                        AND p.updated_at < now() - make_interval(hours => $1 * 4)
+                    )
+               )
+               AND NOT EXISTS (
+                    SELECT 1 FROM message_attachments ma WHERE ma.media_id = p.id
+               )
+               AND NOT EXISTS (
+                    SELECT 1
+                    FROM media_assets d
+                    WHERE d.parent_id = p.id
+                      AND d.derivative_kind IN ('avatar_64', 'avatar_256')
+               )",
+        )
+        .bind(unattached_retention_hours)
+        .fetch_all(&self.db)
+        .await?;
+
+        let mut deleted_count = 0_u64;
+        for (parent_id,) in parent_rows {
+            if self.delete_media_family(parent_id).await? {
+                deleted_count += 1;
+            }
         }
 
         Ok(deleted_count)
@@ -347,32 +391,47 @@ impl UploadService {
         .await?;
 
         for (parent_id,) in parent_rows {
-            let assets: Vec<(String,)> = sqlx::query_as(
-                "SELECT storage_key FROM media_assets WHERE id = $1 OR parent_id = $1",
-            )
-            .bind(parent_id)
-            .fetch_all(&self.db)
-            .await?;
-
-            for (storage_key,) in assets {
-                if let Err(error) = self.storage.delete(&storage_key).await {
-                    tracing::warn!(
-                        owner_id = %owner_id,
-                        parent_id = %parent_id,
-                        storage_key = %storage_key,
-                        error = ?error,
-                        "Failed to delete old avatar object"
-                    );
-                }
+            if let Err(error) = self.delete_media_family(parent_id).await {
+                tracing::warn!(
+                    owner_id = %owner_id,
+                    parent_id = %parent_id,
+                    error = ?error,
+                    "Failed to delete old avatar object"
+                );
             }
-
-            sqlx::query("DELETE FROM media_assets WHERE id = $1 OR parent_id = $1")
-                .bind(parent_id)
-                .execute(&self.db)
-                .await?;
         }
 
         Ok(())
+    }
+
+    async fn delete_media_family(&self, parent_id: Uuid) -> Result<bool, AppError> {
+        let assets: Vec<(String,)> =
+            sqlx::query_as("SELECT storage_key FROM media_assets WHERE id = $1 OR parent_id = $1")
+                .bind(parent_id)
+                .fetch_all(&self.db)
+                .await?;
+
+        if assets.is_empty() {
+            return Ok(false);
+        }
+
+        for (storage_key,) in assets {
+            if let Err(error) = self.storage.delete(&storage_key).await {
+                tracing::warn!(
+                    parent_id = %parent_id,
+                    storage_key = %storage_key,
+                    error = ?error,
+                    "Failed to delete media object"
+                );
+            }
+        }
+
+        sqlx::query("DELETE FROM media_assets WHERE id = $1 OR parent_id = $1")
+            .bind(parent_id)
+            .execute(&self.db)
+            .await?;
+
+        Ok(true)
     }
 }
 
@@ -402,6 +461,37 @@ fn extension_for_mime(mime_type: &str) -> &'static str {
         "image/gif" => "gif",
         _ => "bin",
     }
+}
+
+fn sniff_mime_type(bytes: &[u8]) -> Result<&'static str, AppError> {
+    if bytes.len() >= 3 && bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF {
+        return Ok("image/jpeg");
+    }
+
+    if bytes.len() >= 8
+        && bytes[0] == 0x89
+        && bytes[1] == b'P'
+        && bytes[2] == b'N'
+        && bytes[3] == b'G'
+        && bytes[4] == 0x0D
+        && bytes[5] == 0x0A
+        && bytes[6] == 0x1A
+        && bytes[7] == 0x0A
+    {
+        return Ok("image/png");
+    }
+
+    if bytes.len() >= 6 && (&bytes[..6] == b"GIF87a" || &bytes[..6] == b"GIF89a") {
+        return Ok("image/gif");
+    }
+
+    if bytes.len() >= 12 && &bytes[..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
+        return Ok("image/webp");
+    }
+
+    Err(AppError::BadRequest(
+        "Unsupported image payload. Allowed: JPEG, PNG, WEBP, GIF".into(),
+    ))
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {

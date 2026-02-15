@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::message_attachments::MessageAttachmentPayload;
 use crate::models::Channel;
 
 #[derive(Debug, Serialize)]
@@ -16,7 +17,12 @@ pub enum ClientMessage {
     Authenticate { token: String },
 
     #[serde(rename = "send_message")]
-    SendMessage { channel_id: Uuid, content: String },
+    SendMessage {
+        channel_id: Uuid,
+        content: String,
+        #[serde(default)]
+        attachment_media_ids: Vec<Uuid>,
+    },
 
     #[serde(rename = "subscribe_channel")]
     SubscribeChannel { channel_id: Uuid },
@@ -75,6 +81,7 @@ pub enum ServerMessage {
         author_username: String,
         content: String,
         created_at: String,
+        attachments: Vec<MessageAttachmentPayload>,
     },
 
     #[serde(rename = "message_edited")]

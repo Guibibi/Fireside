@@ -1,64 +1,36 @@
-import { For, Show, createEffect, createMemo, createResource, createSignal, onCleanup, onMount } from "solid-js";
+import { Show, createEffect, createMemo, createResource, createSignal, onCleanup, onMount } from "solid-js";
 import { del, get, patch } from "../api/http";
 import { connect, onMessage, send } from "../api/ws";
-import { errorMessage } from "../utils/error";
-import AsyncContent from "./AsyncContent";
-import { username } from "../stores/auth";
+import { getApiBaseUrl, token, username } from "../stores/auth";
 import { activeChannelId, type Channel } from "../stores/chat";
-import { openContextMenu, registerContextMenuHandlers, handleLongPressStart, handleLongPressEnd, setContextMenuTarget } from "../stores/contextMenu";
-import VideoStage from "./VideoStage";
-import UserAvatar from "./UserAvatar";
+import { registerContextMenuHandlers } from "../stores/contextMenu";
 import { setUserProfiles, upsertUserProfile } from "../stores/userProfiles";
+import { errorMessage } from "../utils/error";
+import MessageComposer from "./MessageComposer";
+import MessageTimeline from "./MessageTimeline";
+import VideoStage from "./VideoStage";
+import { useTypingPresence } from "./useTypingPresence";
+import {
+  toAbsoluteMediaUrl,
+  uploadError,
+  uploadMediaFile,
+  validateImageAttachment,
+  waitForMediaDerivative,
+} from "./messageAttachments";
+import {
+  type ChannelMessage,
+  type MessageDayGroup,
+  type PendingAttachment,
+  type UsersResponse,
+  formatMessageDayLabel,
+  getMessageDayKey,
+  typingText,
+} from "./messageTypes";
 
-interface ChannelMessage {
+interface EditedMessageResponse {
   id: string;
-  channel_id: string;
-  author_id: string;
-  author_username: string;
   content: string;
-  created_at: string;
   edited_at?: string | null;
-}
-
-interface MessageDayGroup {
-  key: string;
-  label: string;
-  messages: ChannelMessage[];
-}
-
-interface UsersResponse {
-  users?: { username: string; avatar_url: string | null }[];
-}
-
-function getMessageDayKey(createdAt: string) {
-  const date = new Date(createdAt);
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-function formatMessageDayLabel(dayKey: string) {
-  const [year, month, day] = dayKey.split("-").map(Number);
-  const date = new Date(year, month - 1, day);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  const diffDays = Math.round((date.getTime() - today.getTime()) / 86400000);
-  if (diffDays === 0) {
-    return "Today";
-  }
-
-  if (diffDays === -1) {
-    return "Yesterday";
-  }
-
-  return date.toLocaleDateString([], {
-    weekday: "long",
-    month: "short",
-    day: "numeric",
-    ...(date.getFullYear() !== today.getFullYear() ? { year: "numeric" } : {}),
-  });
 }
 
 async function fetchMessages(channelId: string | null) {
@@ -81,147 +53,46 @@ export default function MessageArea() {
   const [draft, setDraft] = createSignal("");
   const [wsError, setWsError] = createSignal("");
   const [messages, setMessages] = createSignal<ChannelMessage[]>([]);
-  const [typingUsernames, setTypingUsernames] = createSignal<string[]>([]);
   const [editingMessageId, setEditingMessageId] = createSignal<string | null>(null);
   const [editDraft, setEditDraft] = createSignal("");
   const [savingMessageId, setSavingMessageId] = createSignal<string | null>(null);
   const [deletingMessageId, setDeletingMessageId] = createSignal<string | null>(null);
   const [isSending, setIsSending] = createSignal(false);
   const [stickyDateLabel, setStickyDateLabel] = createSignal("");
+  const [pendingAttachments, setPendingAttachments] = createSignal<PendingAttachment[]>([]);
+
   let listRef: HTMLDivElement | undefined;
-  let activeTypingChannelId: string | null = null;
-  let typingHeartbeatTimer: ReturnType<typeof setInterval> | null = null;
   let previousMessageCount = 0;
-  const typingExpiryTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const daySeparatorRefs = new Map<string, HTMLLIElement>();
+
+  const typing = useTypingPresence({
+    draft,
+    setDraft,
+    activeChannelId,
+    sendMessage: send,
+  });
+
+  const hasBlockingAttachment = createMemo(() => pendingAttachments().some((attachment) => (
+    attachment.status === "uploading"
+  )));
+  const hasFailedAttachment = createMemo(() => pendingAttachments().some((attachment) => attachment.status === "failed"));
 
   const [history] = createResource(activeChannelId, fetchMessages);
   const [activeChannel] = createResource(activeChannelId, fetchActiveChannel);
+
   const groupedMessages = createMemo<MessageDayGroup[]>(() => {
     const groups: MessageDayGroup[] = [];
-
     for (const message of messages()) {
       const dayKey = getMessageDayKey(message.created_at);
       const previousGroup = groups[groups.length - 1];
-
       if (!previousGroup || previousGroup.key !== dayKey) {
-        groups.push({
-          key: dayKey,
-          label: formatMessageDayLabel(dayKey),
-          messages: [message],
-        });
+        groups.push({ key: dayKey, label: formatMessageDayLabel(dayKey), messages: [message] });
         continue;
       }
-
       previousGroup.messages.push(message);
     }
-
     return groups;
   });
-
-  function updateStickyDate() {
-    const groups = groupedMessages();
-    if (!listRef || groups.length === 0) {
-      setStickyDateLabel("");
-      return;
-    }
-
-    const scrollTop = listRef.scrollTop;
-    let nextLabel = groups[0].label;
-
-    for (const group of groups) {
-      const separator = daySeparatorRefs.get(group.key);
-      if (!separator) {
-        continue;
-      }
-
-      if (separator.offsetTop <= scrollTop + 8) {
-        nextLabel = group.label;
-      } else {
-        break;
-      }
-    }
-
-    setStickyDateLabel(nextLabel);
-  }
-
-  function clearTypingExpiryTimer(typingUsername: string) {
-    const timer = typingExpiryTimers.get(typingUsername);
-    if (timer) {
-      clearTimeout(timer);
-      typingExpiryTimers.delete(typingUsername);
-    }
-  }
-
-  function removeTypingUser(typingUsername: string) {
-    clearTypingExpiryTimer(typingUsername);
-    setTypingUsernames((current) => current.filter((entry) => entry !== typingUsername));
-  }
-
-  function touchTypingUser(typingUsername: string) {
-    setTypingUsernames((current) => (
-      current.includes(typingUsername) ? current : [...current, typingUsername]
-    ));
-
-    clearTypingExpiryTimer(typingUsername);
-    typingExpiryTimers.set(typingUsername, setTimeout(() => {
-      removeTypingUser(typingUsername);
-    }, 3000));
-  }
-
-  function clearTypingUsers() {
-    typingExpiryTimers.forEach((timer) => clearTimeout(timer));
-    typingExpiryTimers.clear();
-    setTypingUsernames([]);
-  }
-
-  function startTypingHeartbeat() {
-    if (typingHeartbeatTimer) {
-      return;
-    }
-
-    typingHeartbeatTimer = setInterval(() => {
-      const channelId = activeChannelId();
-      const hasDraft = draft().trim().length > 0;
-
-      if (!channelId || !hasDraft || activeTypingChannelId !== channelId) {
-        return;
-      }
-
-      send({ type: "typing_start", channel_id: channelId });
-    }, 2000);
-  }
-
-  function stopTypingBroadcast() {
-    if (typingHeartbeatTimer) {
-      clearInterval(typingHeartbeatTimer);
-      typingHeartbeatTimer = null;
-    }
-
-    if (activeTypingChannelId) {
-      send({ type: "typing_stop", channel_id: activeTypingChannelId });
-      activeTypingChannelId = null;
-    }
-  }
-
-  function handleDraftInput(value: string) {
-    setDraft(value);
-
-    const channelId = activeChannelId();
-    const hasContent = value.trim().length > 0;
-    if (!channelId || !hasContent) {
-      stopTypingBroadcast();
-      return;
-    }
-
-    if (activeTypingChannelId !== channelId) {
-      stopTypingBroadcast();
-      send({ type: "typing_start", channel_id: channelId });
-      activeTypingChannelId = channelId;
-    }
-
-    startTypingHeartbeat();
-  }
 
   function beginEdit(message: ChannelMessage) {
     setEditingMessageId(message.id);
@@ -244,11 +115,9 @@ export default function MessageArea() {
     setWsError("");
     setSavingMessageId(messageId);
     try {
-      const updated = await patch<ChannelMessage>(`/messages/${messageId}`, { content });
+      const updated = await patch<EditedMessageResponse>(`/messages/${messageId}`, { content });
       setMessages((current) => current.map((message) => (
-        message.id === updated.id
-          ? { ...message, content: updated.content, edited_at: updated.edited_at }
-          : message
+        message.id === updated.id ? { ...message, content: updated.content, edited_at: updated.edited_at } : message
       )));
       cancelEdit();
     } catch (error) {
@@ -263,8 +132,7 @@ export default function MessageArea() {
       return;
     }
 
-    const confirmed = window.confirm("Delete this message?");
-    if (!confirmed) {
+    if (!window.confirm("Delete this message?")) {
       return;
     }
 
@@ -283,25 +151,131 @@ export default function MessageArea() {
     }
   }
 
-  function typingText() {
-    const names = typingUsernames();
-    if (names.length === 0) {
-      return "";
+  function removePendingAttachment(clientId: string) {
+    setPendingAttachments((current) => current.filter((attachment) => attachment.client_id !== clientId));
+  }
+
+  function upsertPendingAttachment(clientId: string, next: Partial<PendingAttachment>) {
+    setPendingAttachments((current) => current.map((attachment) => (
+      attachment.client_id === clientId ? { ...attachment, ...next } : attachment
+    )));
+  }
+
+  async function uploadAttachment(file: File) {
+    const validationError = validateImageAttachment(file);
+    if (validationError) {
+      setWsError(validationError);
+      return;
     }
 
-    if (names.length === 1) {
-      return `${names[0]} is typing...`;
+    const clientId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    setPendingAttachments((current) => [
+      ...current,
+      {
+        client_id: clientId,
+        media_id: null,
+        filename: file.name,
+        mime_type: file.type,
+        status: "uploading",
+        error: null,
+      },
+    ]);
+
+    const currentToken = token();
+    if (!currentToken) {
+      upsertPendingAttachment(clientId, { status: "failed", error: "Not authenticated" });
+      return;
     }
 
-    if (names.length === 2) {
-      return `${names[0]} and ${names[1]} are typing...`;
+    const apiBaseUrl = getApiBaseUrl();
+    try {
+      const payload = await uploadMediaFile(apiBaseUrl, currentToken, file);
+      upsertPendingAttachment(clientId, {
+        media_id: payload.id,
+        status: payload.status === "ready" ? "ready" : "processing",
+        error: null,
+      });
+
+      if (payload.status !== "ready") {
+        void waitForMediaDerivative(apiBaseUrl, payload.id)
+          .then(() => {
+            upsertPendingAttachment(clientId, { status: "ready", error: null });
+          })
+          .catch(() => undefined);
+      }
+    } catch (error) {
+      upsertPendingAttachment(clientId, { status: "failed", error: uploadError(error) });
+    }
+  }
+
+  function handleAttachmentInput(event: Event) {
+    const input = event.currentTarget as HTMLInputElement;
+    const files = input.files;
+    if (!files || files.length === 0) {
+      return;
     }
 
-    return `${names[0]}, ${names[1]}, and ${names.length - 2} others are typing...`;
+    setWsError("");
+    for (const file of Array.from(files)) {
+      void uploadAttachment(file);
+    }
+    input.value = "";
+  }
+
+  function updateStickyDate() {
+    const groups = groupedMessages();
+    if (!listRef || groups.length === 0) {
+      setStickyDateLabel("");
+      return;
+    }
+
+    const scrollTop = listRef.scrollTop;
+    let nextLabel = groups[0].label;
+    for (const group of groups) {
+      const separator = daySeparatorRefs.get(group.key);
+      if (!separator) {
+        continue;
+      }
+
+      if (separator.offsetTop <= scrollTop + 8) {
+        nextLabel = group.label;
+      } else {
+        break;
+      }
+    }
+
+    setStickyDateLabel(nextLabel);
+  }
+
+  function handleSubmit(event: Event) {
+    event.preventDefault();
+    setWsError("");
+
+    const channelId = activeChannelId();
+    const content = draft().trim();
+    const attachmentIds = pendingAttachments()
+      .filter((attachment) => attachment.status !== "uploading" && attachment.status !== "failed" && attachment.media_id)
+      .map((attachment) => attachment.media_id as string);
+
+    if (!channelId || hasBlockingAttachment() || hasFailedAttachment()) {
+      return;
+    }
+
+    if (!content && attachmentIds.length === 0) {
+      return;
+    }
+
+    setIsSending(true);
+    send({ type: "send_message", channel_id: channelId, content, attachment_media_ids: attachmentIds });
+    typing.stopTypingBroadcast();
+    setDraft("");
+    setPendingAttachments([]);
+    queueMicrotask(() => setIsSending(false));
   }
 
   onMount(() => {
     connect();
+
     void get<UsersResponse>("/users")
       .then((response) => {
         if (response.users) {
@@ -312,16 +286,16 @@ export default function MessageArea() {
 
     registerContextMenuHandlers({
       message: {
-        onEdit: (msgData) => {
-          const msg = messages().find((m) => m.id === msgData.id);
-          if (msg) {
-            beginEdit(msg);
+        onEdit: (messageData) => {
+          const message = messages().find((entry) => entry.id === messageData.id);
+          if (message) {
+            beginEdit(message);
           }
         },
-        onDelete: (msgData) => {
-          const msg = messages().find((m) => m.id === msgData.id);
-          if (msg) {
-            void removeMessage(msg);
+        onDelete: (messageData) => {
+          const message = messages().find((entry) => entry.id === messageData.id);
+          if (message) {
+            void removeMessage(message);
           }
         },
       },
@@ -335,8 +309,7 @@ export default function MessageArea() {
 
       if (msg.type === "new_message") {
         upsertUserProfile({ username: msg.author_username, avatar_url: null });
-        removeTypingUser(msg.author_username);
-
+        typing.removeTypingUser(msg.author_username);
         if (msg.channel_id !== activeChannelId()) {
           return;
         }
@@ -356,10 +329,10 @@ export default function MessageArea() {
               content: msg.content,
               created_at: msg.created_at,
               edited_at: msg.edited_at ?? null,
+              attachments: msg.attachments ?? [],
             },
           ];
         });
-
         return;
       }
 
@@ -367,11 +340,8 @@ export default function MessageArea() {
         if (msg.channel_id !== activeChannelId()) {
           return;
         }
-
         setMessages((current) => current.map((message) => (
-          message.id === msg.id
-            ? { ...message, content: msg.content, edited_at: msg.edited_at }
-            : message
+          message.id === msg.id ? { ...message, content: msg.content, edited_at: msg.edited_at } : message
         )));
         return;
       }
@@ -380,7 +350,6 @@ export default function MessageArea() {
         if (msg.channel_id !== activeChannelId()) {
           return;
         }
-
         setMessages((current) => current.filter((message) => message.id !== msg.id));
         if (editingMessageId() === msg.id) {
           cancelEdit();
@@ -392,49 +361,36 @@ export default function MessageArea() {
         if (msg.channel_id !== activeChannelId() || msg.username === username()) {
           return;
         }
-
-        touchTypingUser(msg.username);
+        typing.touchTypingUser(msg.username);
         return;
       }
 
-      if (msg.type === "typing_stop") {
-        if (msg.channel_id !== activeChannelId()) {
-          return;
-        }
-
-        removeTypingUser(msg.username);
+      if (msg.type === "typing_stop" && msg.channel_id === activeChannelId()) {
+        typing.removeTypingUser(msg.username);
       }
     });
 
     onCleanup(() => {
-      stopTypingBroadcast();
-      clearTypingUsers();
+      typing.dispose();
       unsubscribe();
     });
   });
 
   createEffect(() => {
     const channelId = activeChannelId();
-
-    if (activeTypingChannelId && activeTypingChannelId !== channelId) {
-      stopTypingBroadcast();
-    }
-
-    clearTypingUsers();
-
+    typing.handleChannelChanged(channelId);
     setMessages([]);
     cancelEdit();
     setDeletingMessageId(null);
+    setPendingAttachments([]);
     setWsError("");
     previousMessageCount = 0;
     daySeparatorRefs.clear();
     setStickyDateLabel("");
 
-    if (!channelId) {
-      return;
+    if (channelId) {
+      send({ type: "subscribe_channel", channel_id: channelId });
     }
-
-    send({ type: "subscribe_channel", channel_id: channelId });
   });
 
   createEffect(() => {
@@ -446,11 +402,9 @@ export default function MessageArea() {
     const historyAscending = [...loadedHistory].reverse();
     setMessages((current) => {
       const mergedById = new Map<string, ChannelMessage>();
-
       for (const message of historyAscending) {
-        mergedById.set(message.id, message);
+        mergedById.set(message.id, { ...message, attachments: message.attachments ?? [] });
       }
-
       for (const message of current) {
         mergedById.set(message.id, message);
       }
@@ -472,177 +426,61 @@ export default function MessageArea() {
       });
     }
     previousMessageCount = count;
-
-    queueMicrotask(() => {
-      updateStickyDate();
-    });
+    queueMicrotask(updateStickyDate);
   });
 
   createEffect(() => {
     groupedMessages();
-    queueMicrotask(() => {
-      updateStickyDate();
-    });
+    queueMicrotask(updateStickyDate);
   });
-
-  function handleSubmit(e: Event) {
-    e.preventDefault();
-    setWsError("");
-
-    const channelId = activeChannelId();
-    const content = draft().trim();
-    if (!channelId || !content) {
-      return;
-    }
-
-    setIsSending(true);
-    send({ type: "send_message", channel_id: channelId, content });
-    stopTypingBroadcast();
-    setDraft("");
-    queueMicrotask(() => setIsSending(false));
-  }
 
   return (
     <div class="message-area">
-      <header class="message-area-header">
-        <Show when={activeChannel()} fallback={<p class="message-area-title">Select a channel</p>}>
-          <>
-            <p class="message-area-title">
-              <span class="message-area-prefix">{activeChannel()?.kind === "voice" ? "~" : "#"}</span>
-              <span>{activeChannel()?.name}</span>
-            </p>
-            <Show when={activeChannel()?.description?.trim()}>
-              <p class="message-area-description">{activeChannel()?.description}</p>
-            </Show>
-          </>
-        </Show>
-      </header>
-      <div class="messages" ref={listRef} onScroll={updateStickyDate}>
-        <Show when={stickyDateLabel()}>
-          <div class="messages-sticky-date">{stickyDateLabel()}</div>
-        </Show>
-        <AsyncContent
-          loading={history.loading}
-          loadingText="Loading messages..."
-          error={history.error}
-          errorText="Failed to load messages"
-          empty={messages().length === 0}
-          emptyText="No messages yet"
-        >
-          <ul class="message-items">
-            <For each={groupedMessages()}>
-              {(group) => (
-                <>
-                  <li
-                    class="message-day-separator"
-                    ref={(element) => {
-                      daySeparatorRefs.set(group.key, element);
-                    }}
-                  >
-                    <span>{group.label}</span>
-                  </li>
-                  <For each={group.messages}>
-                    {(message) => (
-                      <li
-                        class="message-item"
-                        onContextMenu={(e) => {
-                          e.preventDefault();
-                          openContextMenu(e.clientX, e.clientY, "message", message.id, message);
-                        }}
-                        onFocus={() => setContextMenuTarget("message", message.id, message)}
-                        onTouchStart={(e) => {
-                          const touch = e.touches[0];
-                          handleLongPressStart(touch.clientX, touch.clientY, "message", message.id, message);
-                        }}
-                        onTouchEnd={handleLongPressEnd}
-                      >
-                        <UserAvatar username={message.author_username} class="message-avatar" size={36} />
-                        <div class="message-meta">
-                          <span class="message-author">{message.author_username}</span>
-                          <time class="message-time">
-                            {new Date(message.created_at).toLocaleTimeString([], {
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            })}
-                          </time>
-                          <Show when={message.edited_at}>
-                            <span class="message-edited">(edited)</span>
-                          </Show>
-                          <Show when={message.author_username === username()}>
-                            <div class="message-actions">
-                              <button
-                                type="button"
-                                class="message-action"
-                                onClick={() => beginEdit(message)}
-                                disabled={!!savingMessageId() || !!deletingMessageId()}
-                              >
-                                edit
-                              </button>
-                              <button
-                                type="button"
-                                class="message-action message-action-danger"
-                                onClick={() => void removeMessage(message)}
-                                disabled={!!savingMessageId() || !!deletingMessageId()}
-                              >
-                                delete
-                              </button>
-                            </div>
-                          </Show>
-                        </div>
-                        <Show
-                          when={editingMessageId() === message.id}
-                          fallback={<p class="message-content">{message.content}</p>}
-                        >
-                          <form class="message-edit" onSubmit={(e) => {
-                            e.preventDefault();
-                            void saveEdit(message.id);
-                          }}>
-                            <input
-                              type="text"
-                              value={editDraft()}
-                              onInput={(e) => setEditDraft(e.currentTarget.value)}
-                              maxlength={4000}
-                              disabled={savingMessageId() === message.id || !!deletingMessageId()}
-                            />
-                            <button
-                              type="submit"
-                              disabled={savingMessageId() === message.id || !!deletingMessageId()}
-                            >
-                              save
-                            </button>
-                            <button
-                              type="button"
-                              onClick={cancelEdit}
-                              disabled={savingMessageId() === message.id || !!deletingMessageId()}
-                            >
-                              cancel
-                            </button>
-                          </form>
-                        </Show>
-                      </li>
-                    )}
-                  </For>
-                </>
-              )}
-            </For>
-          </ul>
-        </AsyncContent>
-      </div>
+      <MessageTimeline
+        activeChannel={activeChannel()}
+        loading={history.loading}
+        error={history.error}
+        groupedMessages={groupedMessages()}
+        stickyDateLabel={stickyDateLabel()}
+        editingMessageId={editingMessageId()}
+        editDraft={editDraft()}
+        savingMessageId={savingMessageId()}
+        deletingMessageId={deletingMessageId()}
+        onScroll={updateStickyDate}
+        onListRef={(element) => {
+          listRef = element;
+        }}
+        onDaySeparatorRef={(key, element) => {
+          daySeparatorRefs.set(key, element);
+        }}
+        onBeginEdit={beginEdit}
+        onRemoveMessage={(message) => {
+          void removeMessage(message);
+        }}
+        onSaveEdit={(messageId) => {
+          void saveEdit(messageId);
+        }}
+        onCancelEdit={cancelEdit}
+        onEditDraftInput={setEditDraft}
+        toAbsoluteMediaUrl={(path) => toAbsoluteMediaUrl(getApiBaseUrl(), path)}
+      />
       <VideoStage />
-      <form class="message-input" onSubmit={handleSubmit}>
-        <input
-          type="text"
-          placeholder={activeChannelId() ? "Send a message..." : "Select a channel to start messaging"}
-          value={draft()}
-          onInput={(e) => handleDraftInput(e.currentTarget.value)}
-          disabled={!activeChannelId() || !!savingMessageId() || !!deletingMessageId()}
-        />
-        <button type="submit" disabled={!activeChannelId() || isSending() || !!savingMessageId() || !!deletingMessageId()}>
-          Send
-        </button>
-      </form>
-      <Show when={typingUsernames().length > 0}>
-        <p class="typing-indicator">{typingText()}</p>
+      <MessageComposer
+        activeChannelId={activeChannelId()}
+        draft={draft()}
+        isSending={isSending()}
+        savingMessageId={savingMessageId()}
+        deletingMessageId={deletingMessageId()}
+        pendingAttachments={pendingAttachments()}
+        hasBlockingAttachment={hasBlockingAttachment()}
+        hasFailedAttachment={hasFailedAttachment()}
+        onSubmit={handleSubmit}
+        onDraftInput={typing.handleDraftInput}
+        onAttachmentInput={handleAttachmentInput}
+        onRemoveAttachment={removePendingAttachment}
+      />
+      <Show when={typing.typingUsernames().length > 0}>
+        <p class="typing-indicator">{typingText(typing.typingUsernames())}</p>
       </Show>
       <Show when={wsError()}>
         <p class="error message-error">{wsError()}</p>

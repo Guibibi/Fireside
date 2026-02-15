@@ -2,6 +2,7 @@ mod auth;
 mod config;
 mod errors;
 mod media;
+mod message_attachments;
 mod models;
 mod routes;
 mod storage;
@@ -154,6 +155,23 @@ fn start_derivative_cleanup_job(state: AppState) {
                 Ok(_) => {}
                 Err(error) => {
                     tracing::warn!(error = ?error, "Media derivative cleanup iteration failed");
+                }
+            }
+
+            match state
+                .uploads
+                .cleanup_orphan_message_uploads(state.config.storage.failed_retention_hours)
+                .await
+            {
+                Ok(deleted) if deleted > 0 => {
+                    tracing::info!(
+                        deleted,
+                        "Orphan message upload cleanup removed stale media families"
+                    );
+                }
+                Ok(_) => {}
+                Err(error) => {
+                    tracing::warn!(error = ?error, "Orphan message upload cleanup iteration failed");
                 }
             }
         }
