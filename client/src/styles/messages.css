@@ -42,7 +42,6 @@
   min-height: 0;
   overflow-y: auto;
   padding: var(--space-xl);
-  scroll-behavior: smooth;
 }
 
 .messages-sticky-date {
@@ -60,6 +59,18 @@
   font-size: 0.72rem;
   letter-spacing: 0.02em;
   text-transform: uppercase;
+}
+
+.messages-history-status {
+  width: fit-content;
+  margin: 0 auto var(--space-md);
+  padding: 0.22rem 0.7rem;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--cloud-dark);
+  background: rgba(18, 17, 26, 0.65);
+  color: var(--mist);
+  font-size: 0.7rem;
+  letter-spacing: 0.01em;
 }
 
 /* Scrollbar */

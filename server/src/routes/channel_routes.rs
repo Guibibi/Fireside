@@ -337,8 +337,9 @@ async fn get_messages(
             "SELECT m.id, m.channel_id, m.author_id, u.username AS author_username, m.content, m.created_at, m.edited_at
              FROM messages m
              JOIN users u ON u.id = m.author_id
-             WHERE m.channel_id = $1 AND m.created_at < (SELECT created_at FROM messages WHERE id = $2)
-             ORDER BY m.created_at DESC LIMIT $3",
+             WHERE m.channel_id = $1
+               AND (m.created_at, m.id) < (SELECT created_at, id FROM messages WHERE id = $2)
+             ORDER BY m.created_at DESC, m.id DESC LIMIT $3",
         )
         .bind(channel_id)
         .bind(before)
@@ -350,7 +351,7 @@ async fn get_messages(
             "SELECT m.id, m.channel_id, m.author_id, u.username AS author_username, m.content, m.created_at, m.edited_at
              FROM messages m
              JOIN users u ON u.id = m.author_id
-             WHERE m.channel_id = $1 ORDER BY m.created_at DESC LIMIT $2",
+             WHERE m.channel_id = $1 ORDER BY m.created_at DESC, m.id DESC LIMIT $2",
         )
         .bind(channel_id)
         .bind(limit)

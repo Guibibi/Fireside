@@ -33,12 +33,19 @@ interface EditedMessageResponse {
   edited_at?: string | null;
 }
 
-async function fetchMessages(channelId: string | null) {
-  if (!channelId) {
-    return [] as ChannelMessage[];
+const MESSAGE_PAGE_SIZE = 20;
+
+async function fetchMessagesPage(channelId: string, before?: string) {
+  const params = new URLSearchParams({ limit: String(MESSAGE_PAGE_SIZE) });
+  if (before) {
+    params.set("before", before);
   }
 
-  return get<ChannelMessage[]>(`/channels/${channelId}/messages`);
+  return get<ChannelMessage[]>(`/channels/${channelId}/messages?${params.toString()}`);
+}
+
+function setListScrollTopInstant(list: HTMLDivElement, top: number) {
+  list.scrollTo({ top, behavior: "auto" });
 }
 
 async function fetchActiveChannel(channelId: string | null) {
@@ -60,9 +67,21 @@ export default function MessageArea() {
   const [isSending, setIsSending] = createSignal(false);
   const [stickyDateLabel, setStickyDateLabel] = createSignal("");
   const [pendingAttachments, setPendingAttachments] = createSignal<PendingAttachment[]>([]);
+  const [historyLoading, setHistoryLoading] = createSignal(false);
+  const [historyError, setHistoryError] = createSignal<unknown>(null);
+  const [loadingOlderMessages, setLoadingOlderMessages] = createSignal(false);
+  const [hasOlderMessages, setHasOlderMessages] = createSignal(true);
 
   let listRef: HTMLDivElement | undefined;
+  let messageItemsRef: HTMLUListElement | undefined;
   let previousMessageCount = 0;
+  let latestHistoryRequest = 0;
+  let isPrependingHistory = false;
+  let hasAnchoredInitialBottom = false;
+  let lastKnownScrollTop = 0;
+  let shouldStickToBottom = true;
+  let bottomAnchorTimer: ReturnType<typeof setInterval> | null = null;
+  let bottomResizeObserver: ResizeObserver | null = null;
   const daySeparatorRefs = new Map<string, HTMLLIElement>();
 
   const typing = useTypingPresence({
@@ -77,7 +96,6 @@ export default function MessageArea() {
   )));
   const hasFailedAttachment = createMemo(() => pendingAttachments().some((attachment) => attachment.status === "failed"));
 
-  const [history] = createResource(activeChannelId, fetchMessages);
   const [activeChannel] = createResource(activeChannelId, fetchActiveChannel);
 
   const groupedMessages = createMemo<MessageDayGroup[]>(() => {
@@ -247,6 +265,229 @@ export default function MessageArea() {
     setStickyDateLabel(nextLabel);
   }
 
+  function clearBottomAnchorTimer() {
+    if (!bottomAnchorTimer) {
+      return;
+    }
+
+    clearInterval(bottomAnchorTimer);
+    bottomAnchorTimer = null;
+  }
+
+  function clearBottomResizeObserver() {
+    bottomResizeObserver?.disconnect();
+    bottomResizeObserver = null;
+  }
+
+  function isNearBottom(list: HTMLDivElement, threshold = 32) {
+    return list.scrollHeight - (list.scrollTop + list.clientHeight) <= threshold;
+  }
+
+  function stickToBottomIfNeeded() {
+    if (!listRef || !shouldStickToBottom) {
+      return;
+    }
+
+    setListScrollTopInstant(listRef, listRef.scrollHeight);
+    lastKnownScrollTop = listRef.scrollTop;
+  }
+
+  function attachBottomResizeObserver() {
+    clearBottomResizeObserver();
+    if (!listRef || typeof ResizeObserver === "undefined") {
+      return;
+    }
+
+    bottomResizeObserver = new ResizeObserver(() => {
+      queueMicrotask(() => {
+        stickToBottomIfNeeded();
+      });
+    });
+
+    bottomResizeObserver.observe(listRef);
+    if (messageItemsRef) {
+      bottomResizeObserver.observe(messageItemsRef);
+    }
+  }
+
+  function startBottomAnchorPulse(channelId: string, requestId: number) {
+    clearBottomAnchorTimer();
+    let attempts = 0;
+
+    bottomAnchorTimer = setInterval(() => {
+      attempts += 1;
+
+      if (!listRef || channelId !== activeChannelId() || requestId !== latestHistoryRequest || !shouldStickToBottom) {
+        if (attempts >= 12 || !shouldStickToBottom) {
+          clearBottomAnchorTimer();
+        }
+        return;
+      }
+
+      setListScrollTopInstant(listRef, listRef.scrollHeight);
+      lastKnownScrollTop = listRef.scrollTop;
+
+      if (attempts >= 12) {
+        clearBottomAnchorTimer();
+      }
+    }, 80);
+  }
+
+  function mergeMessagesById(historyChunk: ChannelMessage[], currentMessages: ChannelMessage[]) {
+    const mergedById = new Map<string, ChannelMessage>();
+    for (const message of historyChunk) {
+      mergedById.set(message.id, { ...message, attachments: message.attachments ?? [] });
+    }
+
+    for (const message of currentMessages) {
+      mergedById.set(message.id, { ...message, attachments: message.attachments ?? [] });
+    }
+
+    return Array.from(mergedById.values()).sort((a, b) => (
+      new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+    ));
+  }
+
+  async function loadInitialMessages(channelId: string) {
+    const requestId = ++latestHistoryRequest;
+    setHistoryLoading(true);
+    setHistoryError(null);
+    setHasOlderMessages(true);
+
+    try {
+      const loadedHistory = await fetchMessagesPage(channelId);
+      if (requestId !== latestHistoryRequest || channelId !== activeChannelId()) {
+        return;
+      }
+
+      setHasOlderMessages(loadedHistory.length >= MESSAGE_PAGE_SIZE);
+      setMessages((current) => mergeMessagesById(loadedHistory, current));
+      shouldStickToBottom = true;
+
+      queueMicrotask(() => {
+        if (requestId !== latestHistoryRequest || channelId !== activeChannelId() || !listRef) {
+          return;
+        }
+
+        setListScrollTopInstant(listRef, listRef.scrollHeight);
+        lastKnownScrollTop = listRef.scrollTop;
+        hasAnchoredInitialBottom = true;
+        requestAnimationFrame(() => {
+          if (requestId !== latestHistoryRequest || channelId !== activeChannelId() || !listRef) {
+            return;
+          }
+
+          setListScrollTopInstant(listRef, listRef.scrollHeight);
+          lastKnownScrollTop = listRef.scrollTop;
+        });
+
+        startBottomAnchorPulse(channelId, requestId);
+        void fillViewportWithHistory(channelId, requestId);
+      });
+    } catch (error) {
+      if (requestId === latestHistoryRequest && channelId === activeChannelId()) {
+        setHistoryError(error);
+      }
+    } finally {
+      if (requestId === latestHistoryRequest && channelId === activeChannelId()) {
+        setHistoryLoading(false);
+      }
+    }
+  }
+
+  async function loadOlderMessages() {
+    const channelId = activeChannelId();
+    if (!channelId || loadingOlderMessages() || historyLoading() || !hasOlderMessages()) {
+      return;
+    }
+
+    const oldestMessage = messages()[0];
+    if (!oldestMessage) {
+      return;
+    }
+
+    const previousScrollHeight = listRef?.scrollHeight ?? 0;
+    const previousScrollTop = listRef?.scrollTop ?? 0;
+
+    setLoadingOlderMessages(true);
+    try {
+      const loadedHistory = await fetchMessagesPage(channelId, oldestMessage.id);
+      if (channelId !== activeChannelId()) {
+        return;
+      }
+
+      if (loadedHistory.length === 0) {
+        setHasOlderMessages(false);
+        return;
+      }
+
+      setHasOlderMessages(loadedHistory.length >= MESSAGE_PAGE_SIZE);
+      isPrependingHistory = true;
+      setMessages((current) => mergeMessagesById(loadedHistory, current));
+      queueMicrotask(() => {
+        if (channelId !== activeChannelId() || !listRef) {
+          isPrependingHistory = false;
+          return;
+        }
+
+        const scrollHeightDelta = listRef.scrollHeight - previousScrollHeight;
+        setListScrollTopInstant(listRef, previousScrollTop + scrollHeightDelta);
+        lastKnownScrollTop = listRef.scrollTop;
+        isPrependingHistory = false;
+      });
+    } catch (error) {
+      if (channelId === activeChannelId()) {
+        setWsError(errorMessage(error, "Failed to load older messages"));
+      }
+    } finally {
+      if (channelId === activeChannelId()) {
+        setLoadingOlderMessages(false);
+      }
+    }
+  }
+
+  async function fillViewportWithHistory(channelId: string, requestId: number) {
+    let attempts = 0;
+
+    while (attempts < 10) {
+      if (!listRef || channelId !== activeChannelId() || requestId !== latestHistoryRequest || !hasOlderMessages()) {
+        return;
+      }
+
+      if (listRef.scrollHeight > listRef.clientHeight + 1) {
+        return;
+      }
+
+      await loadOlderMessages();
+      attempts += 1;
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => resolve());
+      });
+    }
+  }
+
+  function handleTimelineScroll(_event: Event) {
+    updateStickyDate();
+    if (!listRef) {
+      return;
+    }
+
+    shouldStickToBottom = isNearBottom(listRef);
+    const currentScrollTop = listRef.scrollTop;
+    const isScrollingUp = currentScrollTop < lastKnownScrollTop;
+    lastKnownScrollTop = currentScrollTop;
+
+    if (!hasAnchoredInitialBottom || !isScrollingUp) {
+      return;
+    }
+
+    if (!listRef || listRef.scrollTop > 120) {
+      return;
+    }
+
+    void loadOlderMessages();
+  }
+
   function handleSubmit(event: Event) {
     event.preventDefault();
     setWsError("");
@@ -371,6 +612,8 @@ export default function MessageArea() {
     });
 
     onCleanup(() => {
+      clearBottomAnchorTimer();
+      clearBottomResizeObserver();
       typing.dispose();
       unsubscribe();
     });
@@ -384,44 +627,34 @@ export default function MessageArea() {
     setDeletingMessageId(null);
     setPendingAttachments([]);
     setWsError("");
+    setHistoryError(null);
+    setHistoryLoading(false);
+    setLoadingOlderMessages(false);
+    setHasOlderMessages(true);
     previousMessageCount = 0;
+    latestHistoryRequest += 1;
+    isPrependingHistory = false;
+    hasAnchoredInitialBottom = false;
+    lastKnownScrollTop = 0;
+    shouldStickToBottom = true;
+    clearBottomAnchorTimer();
     daySeparatorRefs.clear();
     setStickyDateLabel("");
 
     if (channelId) {
       send({ type: "subscribe_channel", channel_id: channelId });
+      void loadInitialMessages(channelId);
     }
   });
 
   createEffect(() => {
-    const loadedHistory = history();
-    if (!loadedHistory) {
-      return;
-    }
-
-    const historyAscending = [...loadedHistory].reverse();
-    setMessages((current) => {
-      const mergedById = new Map<string, ChannelMessage>();
-      for (const message of historyAscending) {
-        mergedById.set(message.id, { ...message, attachments: message.attachments ?? [] });
-      }
-      for (const message of current) {
-        mergedById.set(message.id, message);
-      }
-
-      return Array.from(mergedById.values()).sort((a, b) => (
-        new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-      ));
-    });
-  });
-
-  createEffect(() => {
-    messages();
-    const count = messages().length;
-    if (count > previousMessageCount) {
+    const nextMessages = messages();
+    const count = nextMessages.length;
+    if (count > previousMessageCount && !isPrependingHistory && shouldStickToBottom) {
       queueMicrotask(() => {
         if (listRef) {
-          listRef.scrollTop = listRef.scrollHeight;
+          setListScrollTopInstant(listRef, listRef.scrollHeight);
+          lastKnownScrollTop = listRef.scrollTop;
         }
       });
     }
@@ -438,17 +671,25 @@ export default function MessageArea() {
     <div class="message-area">
       <MessageTimeline
         activeChannel={activeChannel()}
-        loading={history.loading}
-        error={history.error}
+        loading={historyLoading()}
+        error={historyError()}
         groupedMessages={groupedMessages()}
         stickyDateLabel={stickyDateLabel()}
+        loadingOlderMessages={loadingOlderMessages()}
+        hasOlderMessages={hasOlderMessages()}
         editingMessageId={editingMessageId()}
         editDraft={editDraft()}
         savingMessageId={savingMessageId()}
         deletingMessageId={deletingMessageId()}
-        onScroll={updateStickyDate}
+        onScroll={handleTimelineScroll}
         onListRef={(element) => {
           listRef = element;
+          lastKnownScrollTop = element.scrollTop;
+          attachBottomResizeObserver();
+        }}
+        onItemsRef={(element) => {
+          messageItemsRef = element;
+          attachBottomResizeObserver();
         }}
         onDaySeparatorRef={(key, element) => {
           daySeparatorRefs.set(key, element);

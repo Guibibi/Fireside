@@ -18,12 +18,15 @@ interface MessageTimelineProps {
   error: unknown;
   groupedMessages: MessageDayGroup[];
   stickyDateLabel: string;
+  loadingOlderMessages: boolean;
+  hasOlderMessages: boolean;
   editingMessageId: string | null;
   editDraft: string;
   savingMessageId: string | null;
   deletingMessageId: string | null;
-  onScroll: () => void;
+  onScroll: (event: Event) => void;
   onListRef: (element: HTMLDivElement) => void;
+  onItemsRef: (element: HTMLUListElement) => void;
   onDaySeparatorRef: (key: string, element: HTMLLIElement) => void;
   onBeginEdit: (message: ChannelMessage) => void;
   onRemoveMessage: (message: ChannelMessage) => void;
@@ -103,6 +106,11 @@ export default function MessageTimeline(props: MessageTimelineProps) {
         </Show>
       </header>
       <div class="messages" ref={props.onListRef} onScroll={props.onScroll}>
+        <Show when={props.groupedMessages.length > 0 && (props.hasOlderMessages || props.loadingOlderMessages)}>
+          <div class="messages-history-status">
+            {props.loadingOlderMessages ? "Loading older messages..." : "Scroll up to load older messages"}
+          </div>
+        </Show>
         <Show when={props.stickyDateLabel}>
           <div class="messages-sticky-date">{props.stickyDateLabel}</div>
         </Show>
@@ -114,7 +122,7 @@ export default function MessageTimeline(props: MessageTimelineProps) {
           empty={props.groupedMessages.length === 0}
           emptyText="No messages yet"
         >
-          <ul class="message-items">
+          <ul class="message-items" ref={props.onItemsRef}>
             <For each={props.groupedMessages}>
               {(group) => (
                 <>
