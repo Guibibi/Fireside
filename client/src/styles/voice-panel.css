@@ -75,14 +75,24 @@
   color: var(--pearl);
 }
 
+.voice-participant-connected {
+  padding: var(--space-md) var(--space-md);
+}
+
 .voice-participant-avatar {
   margin-right: var(--space-sm);
+  flex-shrink: 0;
 }
 
 .voice-participant-name {
   display: inline-flex;
   align-items: center;
   min-width: 0;
+}
+
+.voice-participant-connected .voice-participant-name {
+  font-size: 0.95rem;
+  font-weight: 600;
 }
 
 .voice-you {

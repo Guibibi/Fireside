@@ -8,7 +8,12 @@ import {
   setVoiceActionState,
   voiceActionState,
 } from "../stores/voice";
-import { openContextMenu } from "../stores/contextMenu";
+import {
+  handleLongPressEnd,
+  handleLongPressStart,
+  openContextMenu,
+  setContextMenuTarget,
+} from "../stores/contextMenu";
 import UserAvatar from "./UserAvatar";
 
 export default function VoicePanel() {
@@ -16,6 +21,7 @@ export default function VoicePanel() {
   const viewedParticipants = createMemo(() => participantsInChannel(viewedChannelId()));
   const canJoin = createMemo(() => !!activeChannelId() && voiceActionState() === "idle");
   const canLeave = createMemo(() => !!joinedVoiceChannelId() && voiceActionState() === "idle");
+  const isConnected = createMemo(() => !!joinedVoiceChannelId());
 
   function handleJoin() {
     const channelId = activeChannelId();
@@ -64,14 +70,25 @@ export default function VoicePanel() {
           <For each={viewedParticipants()}>
             {(participant) => (
               <li
-                class="voice-participant"
+                class={`voice-participant${isConnected() ? " voice-participant-connected" : ""}`}
                 onContextMenu={(e) => {
                   e.preventDefault();
                   openContextMenu(e.clientX, e.clientY, "member", participant, { username: participant });
                 }}
+                onFocus={() => setContextMenuTarget("member", participant, { username: participant })}
+                onTouchStart={(e) => {
+                  const touch = e.touches[0];
+                  handleLongPressStart(touch.clientX, touch.clientY, "member", participant, { username: participant });
+                }}
+                onTouchEnd={handleLongPressEnd}
+                onTouchCancel={handleLongPressEnd}
               >
                 <span class="voice-participant-name">
-                  <UserAvatar username={participant} class="voice-participant-avatar" size={24} />
+                  <UserAvatar
+                    username={participant}
+                    class="voice-participant-avatar"
+                    size={isConnected() ? 32 : 24}
+                  />
                   <span>{participant}</span>
                 </span>
                 <Show when={participant === username()}>

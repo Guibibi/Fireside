@@ -235,6 +235,19 @@
   color: var(--soft);
   padding: var(--space-xs) var(--space-sm);
   border-radius: var(--radius-sm);
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s var(--ease-soft), color 0.15s var(--ease-soft);
+}
+
+.channel-voice-member:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--snow);
+}
+
+.channel-voice-member-connected {
+  font-size: 0.9rem;
+  font-weight: 600;
 }
 
 .channel-voice-member-dot {
@@ -254,6 +267,7 @@
 
 .channel-voice-member-avatar {
   --avatar-size: 18px;
+  flex-shrink: 0;
 }
 
 @keyframes gentlePulse {

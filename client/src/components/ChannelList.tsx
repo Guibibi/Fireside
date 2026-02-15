@@ -92,7 +92,13 @@ import {
     manualBitrateKbps,
     previewResolutionConstraints,
 } from "./channel-list";
-import { registerContextMenuHandlers } from "../stores/contextMenu";
+import {
+    handleLongPressEnd,
+    handleLongPressStart,
+    openContextMenu,
+    registerContextMenuHandlers,
+    setContextMenuTarget,
+} from "../stores/contextMenu";
 import UserAvatar from "./UserAvatar";
 
 async function fetchChannels() {
@@ -1042,15 +1048,37 @@ export default function ChannelList() {
                                                             channel.id,
                                                         )}
                                                     >
-                                                        {(username) => (
-                                                            <li class="channel-voice-member">
+                                                        {(memberUsername) => (
+                                                            <li
+                                                                class={`channel-voice-member${joinedVoiceChannelId() === channel.id ? " channel-voice-member-connected" : ""}`}
+                                                                onContextMenu={(event) => {
+                                                                    event.preventDefault();
+                                                                    event.stopPropagation();
+                                                                    openContextMenu(event.clientX, event.clientY, "member", memberUsername, { username: memberUsername });
+                                                                }}
+                                                                onFocus={() => setContextMenuTarget("member", memberUsername, { username: memberUsername })}
+                                                                onTouchStart={(event) => {
+                                                                    const touch = event.touches[0];
+                                                                    handleLongPressStart(touch.clientX, touch.clientY, "member", memberUsername, { username: memberUsername });
+                                                                }}
+                                                                onTouchEnd={handleLongPressEnd}
+                                                                onTouchCancel={handleLongPressEnd}
+                                                            >
                                                                 <span
-                                                                    class={`channel-voice-member-dot${isVoiceMemberSpeaking(channel.id, username) ? " is-speaking" : ""}`}
+                                                                    class={`channel-voice-member-dot${isVoiceMemberSpeaking(channel.id, memberUsername) ? " is-speaking" : ""}`}
                                                                     aria-hidden="true"
                                                                 />
-                                                                <UserAvatar username={username} class="channel-voice-member-avatar" size={18} />
+                                                                <UserAvatar
+                                                                    username={memberUsername}
+                                                                    class="channel-voice-member-avatar"
+                                                                    size={
+                                                                        joinedVoiceChannelId() === channel.id
+                                                                            ? 24
+                                                                            : 18
+                                                                    }
+                                                                />
                                                                 <span>
-                                                                    {username}
+                                                                    {memberUsername}
                                                                 </span>
                                                             </li>
                                                         )}
