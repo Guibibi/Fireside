@@ -1,9 +1,13 @@
 import type { Transport } from "mediasoup-client/types";
 import { preferredAudioOutputDeviceId } from "../../stores/settings";
+import { clampUserVolume, getUserVolume } from "../../stores/userVolume";
 import { isSpeakerSelectionSupported } from "./devices";
 import { requestMediaSignal } from "./signaling";
 import {
+  consumerGainNodes,
   consumerIdByProducerId,
+  consumerSourceNodes,
+  consumerUsernameByConsumerId,
   device,
   initializedForChannelId,
   producerRoutingModeById,
@@ -11,9 +15,11 @@ import {
   producerUsernameById,
   queuedProducerAnnouncements,
   recvTransport,
+  remotePlaybackAudioContext,
   remoteAudioElements,
   remoteConsumers,
   remoteVideoTilesByProducerId,
+  setRemotePlaybackAudioContext,
   speakersMuted,
 } from "./state";
 import { notifyVideoTilesSubscribers } from "./subscriptions";
@@ -41,6 +47,31 @@ function ensureAudioElement(consumerId: string): HTMLAudioElement {
   return audio;
 }
 
+function getOrCreateRemotePlaybackAudioContext(): AudioContext {
+  if (remotePlaybackAudioContext && remotePlaybackAudioContext.state !== "closed") {
+    return remotePlaybackAudioContext;
+  }
+
+  const nextContext = new AudioContext();
+  setRemotePlaybackAudioContext(nextContext);
+  void nextContext.resume().catch(() => undefined);
+  return nextContext;
+}
+
+function maybeCloseRemotePlaybackAudioContext() {
+  if (consumerSourceNodes.size > 0 || consumerGainNodes.size > 0) {
+    return;
+  }
+
+  if (!remotePlaybackAudioContext || remotePlaybackAudioContext.state === "closed") {
+    setRemotePlaybackAudioContext(null);
+    return;
+  }
+
+  void remotePlaybackAudioContext.close().catch(() => undefined);
+  setRemotePlaybackAudioContext(null);
+}
+
 export function disposeRemoteConsumer(consumerId: string) {
   const consumer = remoteConsumers.get(consumerId);
   if (consumer) {
@@ -57,6 +88,21 @@ export function disposeRemoteConsumer(consumerId: string) {
       }
     }
   }
+
+  const sourceNode = consumerSourceNodes.get(consumerId);
+  if (sourceNode) {
+    sourceNode.disconnect();
+    consumerSourceNodes.delete(consumerId);
+  }
+
+  const gainNode = consumerGainNodes.get(consumerId);
+  if (gainNode) {
+    gainNode.disconnect();
+    consumerGainNodes.delete(consumerId);
+  }
+
+  consumerUsernameByConsumerId.delete(consumerId);
+  maybeCloseRemotePlaybackAudioContext();
 
   const audio = remoteAudioElements.get(consumerId);
   if (audio) {
@@ -112,6 +158,11 @@ export async function consumeRemoteProducer(channelId: string, producerId: strin
 
   if (description.kind === "audio") {
     const audio = ensureAudioElement(consumer.id);
+    const username = producerUsernameById.get(description.producer_id);
+    if (username) {
+      consumerUsernameByConsumerId.set(consumer.id, username);
+    }
+
     audio.srcObject = new MediaStream([consumer.track]);
     void audio.play().catch(() => undefined);
   } else {
@@ -132,9 +183,41 @@ export async function consumeRemoteProducer(channelId: string, producerId: strin
     await requestMediaSignal(channelId, "media_resume_consumer", {
       consumer_id: consumer.id,
     });
+
+    if (description.kind === "audio") {
+      const audio = remoteAudioElements.get(consumer.id);
+      if (audio && audio.srcObject) {
+        const audioCtx = getOrCreateRemotePlaybackAudioContext();
+        const stream = audio.srcObject as MediaStream;
+        const source = audioCtx.createMediaStreamSource(stream);
+        consumerSourceNodes.set(consumer.id, source);
+
+        const gainNode = audioCtx.createGain();
+        consumerGainNodes.set(consumer.id, gainNode);
+
+        const username = producerUsernameById.get(description.producer_id);
+        const volume = username ? getUserVolume(username) : 100;
+        gainNode.gain.value = volume / 100;
+
+        const destination = audioCtx.createMediaStreamDestination();
+        source.connect(gainNode);
+        gainNode.connect(destination);
+
+        audio.srcObject = destination.stream;
+      }
+    }
   } catch (error) {
     disposeRemoteConsumer(consumer.id);
     throw error;
+  }
+}
+
+export function updateUserGainNodes(username: string, volume: number) {
+  const gain = clampUserVolume(volume) / 100;
+  for (const [consumerId, gainNode] of consumerGainNodes) {
+    if (consumerUsernameByConsumerId.get(consumerId) === username) {
+      gainNode.gain.value = gain;
+    }
   }
 }
 

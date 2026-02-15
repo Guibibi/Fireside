@@ -1,13 +1,23 @@
-import { For, Show, createEffect, onCleanup, onMount } from "solid-js";
+import { For, Show, Switch, Match, createEffect, onCleanup, onMount } from "solid-js";
+import type { JSX } from "solid-js";
 import { Portal } from "solid-js/web";
 
-export interface ContextMenuItem {
+export interface ContextMenuButtonItem {
+  kind?: "button";
   label: string;
   onClick: () => void;
   disabled?: boolean;
   danger?: boolean;
   dividerAfter?: boolean;
 }
+
+export interface ContextMenuCustomItem {
+  kind: "custom";
+  render: () => JSX.Element;
+  dividerAfter?: boolean;
+}
+
+export type ContextMenuItem = ContextMenuButtonItem | ContextMenuCustomItem;
 
 export interface ContextMenuProps {
   items: ContextMenuItem[];
@@ -63,7 +73,7 @@ export default function ContextMenu(props: ContextMenuProps) {
     }
   });
 
-  function handleItemClick(item: ContextMenuItem, e: MouseEvent) {
+  function handleItemClick(item: ContextMenuButtonItem, e: MouseEvent) {
     e.stopPropagation();
     if (item.disabled) {
       return;
@@ -85,22 +95,35 @@ export default function ContextMenu(props: ContextMenuProps) {
         }}
       >
         <For each={props.items}>
-          {(item) => (
-            <>
-              <button
-                type="button"
-                class={`context-menu-item${item.disabled ? " is-disabled" : ""}${item.danger ? " is-danger" : ""}`}
-                onClick={(e) => handleItemClick(item, e)}
-                disabled={item.disabled}
-                role="menuitem"
-              >
-                {item.label}
-              </button>
-              <Show when={item.dividerAfter}>
-                <div class="context-menu-divider" />
-              </Show>
-            </>
-          )}
+          {(item) => {
+            const isCustom = () => item.kind === "custom";
+            const buttonItem = () => item as ContextMenuButtonItem;
+            const customItem = () => item as ContextMenuCustomItem;
+
+            return (
+              <>
+                <Switch>
+                  <Match when={isCustom()}>
+                    {customItem().render()}
+                  </Match>
+                  <Match when={!isCustom()}>
+                    <button
+                      type="button"
+                      class={`context-menu-item${buttonItem().disabled ? " is-disabled" : ""}${buttonItem().danger ? " is-danger" : ""}`}
+                      onClick={(e) => handleItemClick(buttonItem(), e)}
+                      disabled={buttonItem().disabled}
+                      role="menuitem"
+                    >
+                      {buttonItem().label}
+                    </button>
+                  </Match>
+                </Switch>
+                <Show when={item.dividerAfter}>
+                  <div class="context-menu-divider" />
+                </Show>
+              </>
+            );
+          }}
         </For>
       </div>
     </Portal>

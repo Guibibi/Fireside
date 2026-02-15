@@ -199,6 +199,7 @@ Yankcord is a self-hosted, minimal chat app. One server instance = one community
 
 - When running the web version (non-Tauri), automatically default the instance address to the current website origin.
 - Skip the server address input step for web deployments while preserving it for desktop app users.
+  - For tauri user, they should be prompted to select their instance, and then presented with the username and password
 
 ### Voice Channel Join/Leave Sounds
 
@@ -253,6 +254,9 @@ Yankcord is a self-hosted, minimal chat app. One server instance = one community
 - Improve scannability in busy channels with long history.
 - Sticky date header while scrolling through messages.
 
+### Auto-updater
+- Add an auto updater for the tauri build to allow distribution of new version easily.
+- User tauri update plugin https://v2.tauri.app/plugin/updater/
 ---
 
 ## Validation Baseline

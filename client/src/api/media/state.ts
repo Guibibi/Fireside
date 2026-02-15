@@ -76,6 +76,12 @@ export const producerRoutingModeById = new Map<string, RoutingMode>();
 export const remoteVideoTilesByProducerId = new Map<string, RemoteVideoTile>();
 export const pendingRequests = new Map<string, PendingRequest>();
 
+// Per-user volume: GainNode routing state
+export let remotePlaybackAudioContext: AudioContext | null = null;
+export const consumerSourceNodes = new Map<string, MediaStreamAudioSourceNode>();
+export const consumerGainNodes = new Map<string, GainNode>();
+export const consumerUsernameByConsumerId = new Map<string, string>();
+
 // Subscribers
 export const videoTilesSubscribers = new Set<(tiles: RemoteVideoTile[]) => void>();
 export const cameraStateSubscribers = new Set<(snapshot: CameraStateSnapshot) => void>();
@@ -127,3 +133,4 @@ export function setMicSpeakingLastSent(value: boolean) { micSpeakingLastSent = v
 
 export function setDeviceChangeListenerRegistered(value: boolean) { deviceChangeListenerRegistered = value; }
 export function setHandlingDeviceChange(value: boolean) { handlingDeviceChange = value; }
+export function setRemotePlaybackAudioContext(value: AudioContext | null) { remotePlaybackAudioContext = value; }

@@ -8,6 +8,7 @@ import {
   setVoiceActionState,
   voiceActionState,
 } from "../stores/voice";
+import { openContextMenu } from "../stores/contextMenu";
 
 export default function VoicePanel() {
   const viewedChannelId = createMemo(() => joinedVoiceChannelId() ?? activeChannelId());
@@ -61,7 +62,13 @@ export default function VoicePanel() {
         <ul class="voice-participants">
           <For each={viewedParticipants()}>
             {(participant) => (
-              <li class="voice-participant">
+              <li
+                class="voice-participant"
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  openContextMenu(e.clientX, e.clientY, "member", participant, { username: participant });
+                }}
+              >
                 <span>{participant}</span>
                 <Show when={participant === username()}>
                   <span class="voice-you">you</span>
