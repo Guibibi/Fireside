@@ -185,6 +185,7 @@ export default function UserSettingsDock() {
     setAudioError("");
     try {
       await resetPreferredAudioDevices();
+      updateIncomingVoiceGainNodes(100);
     } catch (error) {
       setAudioError(errorMessage(error, "Failed to reset audio preferences"));
     }

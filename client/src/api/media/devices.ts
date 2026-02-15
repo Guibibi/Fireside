@@ -2,6 +2,8 @@ import {
   preferredAudioInputDeviceId,
   preferredAudioOutputDeviceId,
   preferredCameraDeviceId,
+  saveVoiceIncomingVolume,
+  saveVoiceOutgoingVolume,
   savePreferredAudioInputDeviceId,
   savePreferredAudioOutputDeviceId,
   savePreferredCameraDeviceId,
@@ -41,6 +43,7 @@ import {
   activateMicrophoneProcessing,
   createProcessedMicrophoneTrack,
   disposePendingMicrophoneProcessing,
+  updateOutgoingMicrophoneGain,
 } from "./microphoneProcessing";
 
 export function isSpeakerSelectionSupported(): boolean {
@@ -223,6 +226,9 @@ export async function resetPreferredAudioDevices() {
   savePreferredAudioInputDeviceId(null);
   savePreferredAudioOutputDeviceId(null);
   savePreferredCameraDeviceId(null);
+  saveVoiceIncomingVolume(100);
+  saveVoiceOutgoingVolume(100);
+  updateOutgoingMicrophoneGain(100);
 
   if (initializedForChannelId && sendTransport) {
     await setPreferredMicrophoneDevice(null);

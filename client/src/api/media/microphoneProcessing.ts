@@ -1,6 +1,7 @@
 interface MicrophoneProcessingSession {
   context: AudioContext;
   gainNode: GainNode;
+  sourceTrack: MediaStreamTrack;
   track: MediaStreamTrack;
 }
 
@@ -19,6 +20,7 @@ export function disposeMicrophoneProcessing() {
     return;
   }
 
+  activeSession.sourceTrack.stop();
   activeSession.track.stop();
   if (activeSession.context.state !== "closed") {
     void activeSession.context.close().catch(() => undefined);
@@ -44,16 +46,19 @@ export function createProcessedMicrophoneTrack(stream: MediaStream, volume: numb
 
   const [processedTrack] = destinationNode.stream.getAudioTracks();
   if (!processedTrack) {
+    sourceTrack.stop();
     void audioContext.close().catch(() => undefined);
     throw new Error("Processed microphone track was not available");
   }
 
+  sourceTrack.enabled = !muted;
   processedTrack.enabled = !muted;
   void audioContext.resume().catch(() => undefined);
 
   return {
     context: audioContext,
     gainNode,
+    sourceTrack,
     track: processedTrack,
   };
 }
@@ -64,10 +69,20 @@ export function activateMicrophoneProcessing(session: MicrophoneProcessingSessio
 }
 
 export function disposePendingMicrophoneProcessing(session: MicrophoneProcessingSession) {
+  session.sourceTrack.stop();
   session.track.stop();
   if (session.context.state !== "closed") {
     void session.context.close().catch(() => undefined);
   }
+}
+
+export function disposeMicrophoneProcessingForTrack(track: MediaStreamTrack): boolean {
+  if (!activeSession || activeSession.track !== track) {
+    return false;
+  }
+
+  disposeMicrophoneProcessing();
+  return true;
 }
 
 export function updateOutgoingMicrophoneGain(volume: number) {
@@ -76,4 +91,13 @@ export function updateOutgoingMicrophoneGain(volume: number) {
   }
 
   activeSession.gainNode.gain.value = clampVoiceVolume(volume) / 100;
+}
+
+export function updateOutgoingMicrophoneMuted(muted: boolean) {
+  if (!activeSession) {
+    return;
+  }
+
+  activeSession.sourceTrack.enabled = !muted;
+  activeSession.track.enabled = !muted;
 }

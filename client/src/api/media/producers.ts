@@ -23,6 +23,7 @@ import {
 import {
   activateMicrophoneProcessing,
   createProcessedMicrophoneTrack,
+  disposeMicrophoneProcessingForTrack,
   disposePendingMicrophoneProcessing,
 } from "./microphoneProcessing";
 import { voiceOutgoingVolume } from "../../stores/settings";
@@ -204,6 +205,18 @@ export async function startLocalAudioProducer(channelId: string) {
   if (initializedForChannelId !== channelId) {
     produced.close();
     setMicProducer(null);
+    stopMicLevelMonitoring(channelId);
+    const disposed = disposeMicrophoneProcessingForTrack(processingSession.track);
+    if (!disposed) {
+      disposePendingMicrophoneProcessing(processingSession);
+    }
+    stream.getTracks().forEach((track) => track.stop());
+    if (micTrack === processingSession.track) {
+      setMicTrack(null);
+    }
+    if (micStream === stream) {
+      setMicStream(null);
+    }
   }
 }
 

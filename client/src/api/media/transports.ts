@@ -54,7 +54,7 @@ import {
 } from "./state";
 import { clearRemoteVideoTiles, notifyCameraStateSubscribers, notifyScreenStateSubscribers } from "./subscriptions";
 import { stopMicLevelMonitoring } from "./voiceActivity";
-import { disposeMicrophoneProcessing } from "./microphoneProcessing";
+import { disposeMicrophoneProcessing, updateOutgoingMicrophoneMuted } from "./microphoneProcessing";
 
 function wireTransportConnect(channelId: string, transport: Transport) {
   transport.on("connect", ({ dtlsParameters }, callback, errback) => {
@@ -271,6 +271,7 @@ export async function initializeMediaTransports(channelId: string) {
 
 export function setMicrophoneMuted(muted: boolean) {
   setMicrophoneMutedState(muted);
+  updateOutgoingMicrophoneMuted(muted);
   if (micTrack) {
     micTrack.enabled = !muted;
   }

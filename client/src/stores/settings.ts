@@ -271,4 +271,6 @@ export function resetAudioPreferences() {
   savePreferredAudioInputDeviceId(null);
   savePreferredAudioOutputDeviceId(null);
   savePreferredCameraDeviceId(null);
+  saveVoiceIncomingVolume(100);
+  saveVoiceOutgoingVolume(100);
 }
