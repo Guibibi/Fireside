@@ -75,6 +75,16 @@
   color: var(--pearl);
 }
 
+.voice-participant-avatar {
+  margin-right: var(--space-sm);
+}
+
+.voice-participant-name {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+}
+
 .voice-you {
   font-family: var(--font-mono);
   font-size: 0.7rem;

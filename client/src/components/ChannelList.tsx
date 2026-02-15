@@ -93,6 +93,7 @@ import {
     previewResolutionConstraints,
 } from "./channel-list";
 import { registerContextMenuHandlers } from "../stores/contextMenu";
+import UserAvatar from "./UserAvatar";
 
 async function fetchChannels() {
     return get<Channel[]>("/channels");
@@ -1047,6 +1048,7 @@ export default function ChannelList() {
                                                                     class={`channel-voice-member-dot${isVoiceMemberSpeaking(channel.id, username) ? " is-speaking" : ""}`}
                                                                     aria-hidden="true"
                                                                 />
+                                                                <UserAvatar username={username} class="channel-voice-member-avatar" size={18} />
                                                                 <span>
                                                                     {username}
                                                                 </span>

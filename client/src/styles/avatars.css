@@ -1,0 +1,23 @@
+.user-avatar {
+  --avatar-size: 32px;
+  width: var(--avatar-size);
+  height: var(--avatar-size);
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: rgba(107, 116, 235, 0.18);
+  color: rgba(255, 255, 255, 0.92);
+  font-size: calc(var(--avatar-size) * 0.42);
+  font-weight: 700;
+  line-height: 1;
+  flex: 0 0 var(--avatar-size);
+}
+
+.user-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}

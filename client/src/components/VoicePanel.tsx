@@ -9,6 +9,7 @@ import {
   voiceActionState,
 } from "../stores/voice";
 import { openContextMenu } from "../stores/contextMenu";
+import UserAvatar from "./UserAvatar";
 
 export default function VoicePanel() {
   const viewedChannelId = createMemo(() => joinedVoiceChannelId() ?? activeChannelId());
@@ -69,7 +70,10 @@ export default function VoicePanel() {
                   openContextMenu(e.clientX, e.clientY, "member", participant, { username: participant });
                 }}
               >
-                <span>{participant}</span>
+                <span class="voice-participant-name">
+                  <UserAvatar username={participant} class="voice-participant-avatar" size={24} />
+                  <span>{participant}</span>
+                </span>
                 <Show when={participant === username()}>
                   <span class="voice-you">you</span>
                 </Show>

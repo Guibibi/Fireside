@@ -61,6 +61,10 @@
   min-width: 0;
 }
 
+.member-avatar {
+  flex-shrink: 0;
+}
+
 .member-status-dot {
   width: 8px;
   height: 8px;

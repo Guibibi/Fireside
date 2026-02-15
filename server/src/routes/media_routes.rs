@@ -1,4 +1,12 @@
-use axum::{extract::DefaultBodyLimit, extract::Multipart, routing::post, Json, Router};
+use axum::{
+    body::Body,
+    extract::DefaultBodyLimit,
+    extract::Multipart,
+    http::{header, HeaderValue, StatusCode},
+    response::Response,
+    routing::{get, post},
+    Json, Router,
+};
 use serde::Serialize;
 use uuid::Uuid;
 
@@ -15,7 +23,53 @@ struct UploadMediaResponse {
 pub fn router(max_upload_bytes: usize) -> Router<AppState> {
     Router::new()
         .route("/media/upload", post(upload_media))
+        .route("/media/{media_id}/{variant}", get(get_media_asset))
         .layer(DefaultBodyLimit::max(max_upload_bytes))
+}
+
+async fn get_media_asset(
+    axum::extract::State(state): axum::extract::State<AppState>,
+    axum::extract::Path((media_id, variant)): axum::extract::Path<(Uuid, String)>,
+) -> Result<Response, AppError> {
+    let record: Option<(String, String)> = if variant == "original" {
+        sqlx::query_as(
+            "SELECT storage_key, mime_type
+             FROM media_assets
+             WHERE id = $1 AND derivative_kind IS NULL AND status = 'ready'",
+        )
+        .bind(media_id)
+        .fetch_optional(&state.db)
+        .await?
+    } else {
+        sqlx::query_as(
+            "SELECT storage_key, mime_type
+             FROM media_assets
+             WHERE parent_id = $1 AND derivative_kind = $2 AND status = 'ready'",
+        )
+        .bind(media_id)
+        .bind(&variant)
+        .fetch_optional(&state.db)
+        .await?
+    };
+
+    let (storage_key, mime_type) =
+        record.ok_or_else(|| AppError::NotFound("Media asset not found".into()))?;
+
+    let bytes = state.storage.read(&storage_key).await?;
+
+    let mut response = Response::new(Body::from(bytes));
+    *response.status_mut() = StatusCode::OK;
+    response.headers_mut().insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_str(&mime_type)
+            .map_err(|_| AppError::Internal("Invalid content type for media response".into()))?,
+    );
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("public, max-age=300"),
+    );
+
+    Ok(response)
 }
 
 async fn upload_media(

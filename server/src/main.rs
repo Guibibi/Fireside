@@ -30,6 +30,7 @@ pub struct AppState {
     pub db: sqlx::PgPool,
     pub config: Arc<AppConfig>,
     pub media: Arc<media::MediaService>,
+    pub storage: Arc<dyn storage::StorageBackend>,
     pub uploads: Arc<uploads::UploadService>,
     pub active_usernames: Arc<RwLock<HashSet<String>>>,
     pub ws_connections: Arc<RwLock<HashMap<Uuid, mpsc::UnboundedSender<String>>>>,
@@ -84,7 +85,7 @@ async fn main() {
 
     let upload_service = uploads::UploadService::new(
         pool.clone(),
-        storage_backend,
+        storage_backend.clone(),
         config.storage.max_upload_bytes,
     );
 
@@ -92,6 +93,7 @@ async fn main() {
         db: pool,
         config: config.clone(),
         media: Arc::new(media_service),
+        storage: storage_backend,
         uploads: Arc::new(upload_service),
         active_usernames: Arc::new(RwLock::new(HashSet::new())),
         ws_connections: Arc::new(RwLock::new(HashMap::new())),

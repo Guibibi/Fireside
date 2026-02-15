@@ -88,14 +88,20 @@
 }
 
 .message-item {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-xs);
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: var(--space-md);
+  row-gap: var(--space-xs);
   padding: var(--space-md) var(--space-lg);
   border-radius: var(--radius-lg);
   background: rgba(255, 255, 255, 0.02);
   border: 1px solid transparent;
   transition: all 0.15s var(--ease-soft);
+}
+
+.message-avatar {
+  grid-row: 1 / span 2;
+  margin-top: 2px;
 }
 
 .message-day-separator {
@@ -127,6 +133,7 @@
   align-items: baseline;
   gap: var(--space-sm);
   flex-wrap: wrap;
+  grid-column: 2;
 }
 
 .message-author {
@@ -189,12 +196,14 @@
   white-space: pre-wrap;
   word-break: break-word;
   line-height: 1.65;
+  grid-column: 2;
 }
 
 .message-edit {
   display: flex;
   gap: var(--space-sm);
   align-items: center;
+  grid-column: 2;
 }
 
 .message-edit input {

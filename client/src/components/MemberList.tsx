@@ -4,9 +4,12 @@ import { connect, onMessage } from "../api/ws";
 import { activeChannelId } from "../stores/chat";
 import { participantsInChannel } from "../stores/voice";
 import { openContextMenu, registerContextMenuHandlers, handleLongPressStart, handleLongPressEnd, setContextMenuTarget } from "../stores/contextMenu";
+import UserAvatar from "./UserAvatar";
+import { setUserProfiles, upsertUserProfile } from "../stores/userProfiles";
 
 interface UsersResponse {
   usernames: string[];
+  users?: { username: string; avatar_url: string | null }[];
 }
 
 export default function MemberList() {
@@ -35,6 +38,9 @@ export default function MemberList() {
 
     void get<UsersResponse>("/users")
       .then((response) => {
+        if (response.users) {
+          setUserProfiles(response.users);
+        }
         setAllMembers([...response.usernames].sort((a, b) => a.localeCompare(b)));
       })
       .catch((error) => {
@@ -49,6 +55,7 @@ export default function MemberList() {
       }
 
       if (msg.type === "user_connected") {
+        upsertUserProfile({ username: msg.username, avatar_url: null });
         setOnlineMembers((current) => {
           if (current.includes(msg.username)) {
             return current;
@@ -96,6 +103,7 @@ export default function MemberList() {
                   }}
                   onTouchEnd={handleLongPressEnd}
                 >
+                  <UserAvatar username={member} class="member-avatar" size={28} />
                   <span class="member-name">
                     <span class="member-status-dot member-status-dot-online" aria-hidden="true" />
                     <span>{member}</span>
@@ -127,6 +135,7 @@ export default function MemberList() {
                   }}
                   onTouchEnd={handleLongPressEnd}
                 >
+                  <UserAvatar username={member} class="member-avatar" size={28} />
                   <span class="member-name">
                     <span class="member-status-dot member-status-dot-offline" aria-hidden="true" />
                     <span>{member}</span>

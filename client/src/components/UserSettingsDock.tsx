@@ -1,4 +1,4 @@
-import { Show, createSignal, onCleanup } from "solid-js";
+import { Show, createSignal, onMount } from "solid-js";
 import { useNavigate } from "@solidjs/router";
 import { patch } from "../api/http";
 import { errorMessage } from "../utils/error";
@@ -22,6 +22,8 @@ import { connect, disconnect } from "../api/ws";
 import { updateOutgoingMicrophoneGain } from "../api/media/microphoneProcessing";
 import {
   clearAuth,
+  getApiBaseUrl,
+  token,
   serverUrl,
   updateAuthIdentity,
   username as currentUsername,
@@ -36,11 +38,9 @@ import {
   showVoiceRejoinNotice,
 } from "../stores/voice";
 import {
-  avatarPlaceholderName,
   preferredAudioInputDeviceId,
   preferredAudioOutputDeviceId,
   preferredCameraDeviceId,
-  saveAvatarPlaceholderName,
   saveVoiceAutoLevelEnabled,
   saveVoiceIncomingVolume,
   saveVoiceJoinSoundEnabled,
@@ -53,10 +53,22 @@ import {
   voiceOutgoingVolume,
 } from "../stores/settings";
 import Modal from "./Modal";
+import UserAvatar from "./UserAvatar";
+import { renameUserProfile, setUserAvatar, upsertUserProfile } from "../stores/userProfiles";
 
 interface UpdateCurrentUserResponse {
   token: string;
   username: string;
+  avatar_url: string | null;
+}
+
+interface CurrentUserResponse {
+  username: string;
+  avatar_url: string | null;
+}
+
+interface UploadAvatarResponse {
+  avatar_url: string;
 }
 
 export default function UserSettingsDock() {
@@ -70,8 +82,7 @@ export default function UserSettingsDock() {
   const [audioInputs, setAudioInputs] = createSignal<AudioDeviceOption[]>([]);
   const [audioOutputs, setAudioOutputs] = createSignal<AudioDeviceOption[]>([]);
   const [cameraInputs, setCameraInputs] = createSignal<CameraDeviceOption[]>([]);
-  const [avatarPreviewUrl, setAvatarPreviewUrl] = createSignal<string | null>(null);
-  const [avatarPreviewBroken, setAvatarPreviewBroken] = createSignal(false);
+  const [isUploadingAvatar, setIsUploadingAvatar] = createSignal(false);
 
   const supportsSpeakerSelection = isSpeakerSelectionSupported();
 
@@ -81,6 +92,7 @@ export default function UserSettingsDock() {
     setAudioError("");
     setIsOpen(true);
     void refreshMediaDevices();
+    void refreshCurrentUserProfile();
   }
 
   function closeSettings() {
@@ -95,16 +107,25 @@ export default function UserSettingsDock() {
       return usernameValue.slice(0, 1).toUpperCase();
     }
 
-    const avatarNameValue = avatarPlaceholderName()?.trim();
-    if (avatarNameValue && avatarNameValue.length > 0) {
-      return avatarNameValue.slice(0, 1).toUpperCase();
-    }
-
     return "?";
   }
 
-  function hasAvatarPreview() {
-    return !!avatarPreviewUrl() && !avatarPreviewBroken();
+  async function refreshCurrentUserProfile() {
+    try {
+      const response = await fetch(`${getApiBaseUrl()}/users/me`, {
+        headers: {
+          Authorization: `Bearer ${token() ?? ""}`,
+        },
+      });
+      if (!response.ok) {
+        return;
+      }
+
+      const profile = await response.json() as CurrentUserResponse;
+      upsertUserProfile({ username: profile.username, avatar_url: profile.avatar_url });
+    } catch {
+      // no-op: avatar fetch failure should not block settings
+    }
   }
 
   async function refreshMediaDevices() {
@@ -143,7 +164,12 @@ export default function UserSettingsDock() {
         username: nextUsername,
       });
 
+      const previousUsername = currentUsername();
       updateAuthIdentity(response.token, response.username);
+      if (previousUsername && previousUsername !== response.username) {
+        renameUserProfile(previousUsername, response.username);
+      }
+      upsertUserProfile({ username: response.username, avatar_url: response.avatar_url });
       cleanupMediaTransports();
       if (wasInVoice) {
         setJoinedVoiceChannel(null);
@@ -191,32 +217,56 @@ export default function UserSettingsDock() {
     }
   }
 
-  function handleAvatarInput(event: Event) {
+  async function handleAvatarInput(event: Event) {
     const file = (event.currentTarget as HTMLInputElement).files?.[0];
     if (!file) {
       return;
     }
 
-    saveAvatarPlaceholderName(file.name);
-    const previousPreview = avatarPreviewUrl();
-    if (previousPreview) {
-      URL.revokeObjectURL(previousPreview);
+    if (file.size > 2 * 1024 * 1024) {
+      setProfileError("Avatar must be 2 MB or smaller");
+      return;
     }
 
-    setAvatarPreviewBroken(false);
-    setAvatarPreviewUrl(URL.createObjectURL(file));
-  }
-
-  function clearAvatarPlaceholder() {
-    const preview = avatarPreviewUrl();
-    if (preview) {
-      URL.revokeObjectURL(preview);
+    const contentType = file.type;
+    if (!["image/jpeg", "image/png", "image/webp"].includes(contentType)) {
+      setProfileError("Avatar must be JPEG, PNG, or WebP");
+      return;
     }
 
-    setAvatarPreviewUrl(null);
-    setAvatarPreviewBroken(false);
-    saveAvatarPlaceholderName(null);
+    setProfileError("");
+    setIsUploadingAvatar(true);
+
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const response = await fetch(`${getApiBaseUrl()}/users/me/avatar`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token() ?? ""}`,
+        },
+        body: form,
+      });
+
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({ error: response.statusText }));
+        throw new Error(body.error || response.statusText);
+      }
+
+      const payload = await response.json() as UploadAvatarResponse;
+      const cacheBustedUrl = `${payload.avatar_url}?v=${Date.now()}`;
+      const current = currentUsername();
+      if (current) {
+        setUserAvatar(current, cacheBustedUrl);
+      }
+    } catch (error) {
+      setProfileError(errorMessage(error, "Failed to upload avatar"));
+    } finally {
+      setIsUploadingAvatar(false);
+      (event.currentTarget as HTMLInputElement).value = "";
+    }
   }
+
 
   function handleVoiceJoinSoundToggle(event: Event) {
     saveVoiceJoinSoundEnabled((event.currentTarget as HTMLInputElement).checked);
@@ -254,21 +304,14 @@ export default function UserSettingsDock() {
     navigate("/connect");
   }
 
-  onCleanup(() => {
-    const preview = avatarPreviewUrl();
-    if (preview) {
-      URL.revokeObjectURL(preview);
-    }
+  onMount(() => {
+    void refreshCurrentUserProfile();
   });
 
   return (
     <>
       <div class="user-dock">
-        <div class={`user-dock-avatar${avatarPlaceholderName() ? " is-placeholder" : ""}`} aria-hidden="true">
-          <Show when={hasAvatarPreview()} fallback={<span>{avatarFallbackLabel()}</span>}>
-            <img src={avatarPreviewUrl() ?? ""} alt="" onError={() => setAvatarPreviewBroken(true)} />
-          </Show>
-        </div>
+        <UserAvatar username={currentUsername() ?? avatarFallbackLabel()} class="user-dock-avatar" size={42} />
         <div class="user-dock-meta">
           <p class="user-dock-name">{currentUsername() ?? "Unknown user"}</p>
           <p class="user-dock-subtitle">Online</p>
@@ -307,19 +350,12 @@ export default function UserSettingsDock() {
               />
               <p class="settings-help">Server URL: {serverUrl()}</p>
 
-              <label class="settings-label" for="settings-avatar">Avatar (placeholder)</label>
-              <input id="settings-avatar" type="file" accept="image/*" onChange={handleAvatarInput} />
-              <Show when={hasAvatarPreview()}>
-                <div class="settings-avatar-preview">
-                  <img src={avatarPreviewUrl() ?? ""} alt="Avatar preview" onError={() => setAvatarPreviewBroken(true)} />
-                </div>
-              </Show>
-              <Show when={avatarPlaceholderName()}>
-                <p class="settings-help">Selected: {avatarPlaceholderName()}</p>
-              </Show>
-              <Show when={avatarPlaceholderName()}>
-                <button type="button" class="settings-secondary" onClick={clearAvatarPlaceholder}>Clear avatar placeholder</button>
-              </Show>
+              <label class="settings-label" for="settings-avatar">Avatar</label>
+              <input id="settings-avatar" type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => void handleAvatarInput(event)} disabled={isUploadingAvatar()} />
+              <p class="settings-help">JPEG, PNG, or WebP. Max size 2 MB.</p>
+              <div class="settings-avatar-preview">
+                <UserAvatar username={currentUsername() ?? avatarFallbackLabel()} size={72} />
+              </div>
 
               <Show when={profileError()}>
                 <p class="error">{profileError()}</p>
@@ -330,6 +366,9 @@ export default function UserSettingsDock() {
                   {isSavingProfile() ? "Saving..." : "Save profile"}
                 </button>
               </div>
+              <Show when={isUploadingAvatar()}>
+                <p class="settings-help">Uploading avatar...</p>
+              </Show>
             </form>
 
             <section class="settings-section">

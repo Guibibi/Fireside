@@ -7,6 +7,8 @@ import { username } from "../stores/auth";
 import { activeChannelId, type Channel } from "../stores/chat";
 import { openContextMenu, registerContextMenuHandlers, handleLongPressStart, handleLongPressEnd, setContextMenuTarget } from "../stores/contextMenu";
 import VideoStage from "./VideoStage";
+import UserAvatar from "./UserAvatar";
+import { setUserProfiles, upsertUserProfile } from "../stores/userProfiles";
 
 interface ChannelMessage {
   id: string;
@@ -22,6 +24,10 @@ interface MessageDayGroup {
   key: string;
   label: string;
   messages: ChannelMessage[];
+}
+
+interface UsersResponse {
+  users?: { username: string; avatar_url: string | null }[];
 }
 
 function getMessageDayKey(createdAt: string) {
@@ -296,6 +302,13 @@ export default function MessageArea() {
 
   onMount(() => {
     connect();
+    void get<UsersResponse>("/users")
+      .then((response) => {
+        if (response.users) {
+          setUserProfiles(response.users);
+        }
+      })
+      .catch(() => undefined);
 
     registerContextMenuHandlers({
       message: {
@@ -321,6 +334,7 @@ export default function MessageArea() {
       }
 
       if (msg.type === "new_message") {
+        upsertUserProfile({ username: msg.author_username, avatar_url: null });
         removeTypingUser(msg.author_username);
 
         if (msg.channel_id !== activeChannelId()) {
@@ -542,6 +556,7 @@ export default function MessageArea() {
                         }}
                         onTouchEnd={handleLongPressEnd}
                       >
+                        <UserAvatar username={message.author_username} class="message-avatar" size={36} />
                         <div class="message-meta">
                           <span class="message-author">{message.author_username}</span>
                           <time class="message-time">
