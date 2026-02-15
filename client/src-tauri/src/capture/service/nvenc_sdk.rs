@@ -3,6 +3,8 @@ use super::encoder_backend::VideoEncoderBackend;
 #[cfg(all(target_os = "windows", feature = "native-nvenc"))]
 use super::encoder_backend::CodecDescriptor;
 #[cfg(all(target_os = "windows", feature = "native-nvenc"))]
+use super::encoder_backend::split_annex_b_nals;
+#[cfg(all(target_os = "windows", feature = "native-nvenc"))]
 use super::metrics::NativeSenderSharedMetrics;
 
 #[cfg(all(target_os = "windows", feature = "native-nvenc"))]
@@ -457,8 +459,8 @@ mod imp {
                 if self.force_idr {
                     pic_params.pictureType = NV_ENC_PIC_TYPE::NV_ENC_PIC_TYPE_IDR;
                     pic_params.encodePicFlags =
-                        nvidia_video_codec_sdk::sys::nvEncodeAPI::NV_ENC_PIC_FLAG_FORCEIDR
-                            | nvidia_video_codec_sdk::sys::nvEncodeAPI::NV_ENC_PIC_FLAG_OUTPUT_SPSPPS;
+                        nvidia_video_codec_sdk::sys::nvEncodeAPI::_NV_ENC_PIC_FLAGS::NV_ENC_PIC_FLAG_FORCEIDR as u32
+                            | nvidia_video_codec_sdk::sys::nvEncodeAPI::_NV_ENC_PIC_FLAGS::NV_ENC_PIC_FLAG_OUTPUT_SPSPPS as u32;
                     self.force_idr = false;
                 }
 
@@ -760,7 +762,7 @@ mod imp {
         Ok(Box::new(backend))
     }
 
-    use super::encoder_backend::split_annex_b_nals;
+    use super::split_annex_b_nals;
 }
 
 #[cfg(all(target_os = "windows", feature = "native-nvenc"))]

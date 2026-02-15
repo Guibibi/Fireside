@@ -1,7 +1,7 @@
 #[cfg(target_os = "windows")]
 use windows::Win32::Graphics::Direct3D11::{
-    ID3D11Device, ID3D11DeviceContext, ID3D11Texture2D, D3D11_CPU_ACCESS_READ, D3D11_MAP_READ,
-    D3D11_TEXTURE2D_DESC, D3D11_USAGE_STAGING,
+    ID3D11Device, ID3D11Texture2D, D3D11_CPU_ACCESS_READ, D3D11_MAP_READ,
+    D3D11_MAPPED_SUBRESOURCE, D3D11_TEXTURE2D_DESC, D3D11_USAGE_STAGING,
 };
 #[cfg(target_os = "windows")]
 use windows::Win32::Graphics::Dxgi::Common::DXGI_SAMPLE_DESC;
@@ -29,11 +29,10 @@ impl GpuTextureHandle {
     /// the encoder does not support direct GPU texture input.
     pub fn readback_bgra(&self) -> Result<Vec<u8>, String> {
         unsafe {
-            let context: ID3D11DeviceContext = {
-                let mut ctx = None;
-                self.device.GetImmediateContext(&mut ctx);
-                ctx.ok_or_else(|| "Failed to get D3D11 immediate context".to_string())?
-            };
+            let context = self
+                .device
+                .GetImmediateContext()
+                .map_err(|e| format!("Failed to get D3D11 immediate context: {e}"))?;
 
             // Create a staging texture matching the source dimensions
             let staging_desc = D3D11_TEXTURE2D_DESC {
@@ -48,7 +47,7 @@ impl GpuTextureHandle {
                 },
                 Usage: D3D11_USAGE_STAGING,
                 BindFlags: Default::default(),
-                CPUAccessFlags: D3D11_CPU_ACCESS_READ.into(),
+                CPUAccessFlags: D3D11_CPU_ACCESS_READ.0,
                 MiscFlags: Default::default(),
             };
 
@@ -63,8 +62,9 @@ impl GpuTextureHandle {
             context.CopyResource(&staging, &self.texture);
 
             // Map the staging texture for CPU read
-            let mapped = context
-                .Map(&staging, 0, D3D11_MAP_READ, 0)
+            let mut mapped: D3D11_MAPPED_SUBRESOURCE = std::mem::zeroed();
+            context
+                .Map(&staging, 0, D3D11_MAP_READ, 0, Some(&mut mapped))
                 .map_err(|e| format!("Failed to map staging texture: {e}"))?;
 
             let row_pitch = mapped.RowPitch as usize;

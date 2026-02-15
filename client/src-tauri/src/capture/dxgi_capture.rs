@@ -68,9 +68,8 @@ mod imp {
                             Err(_) => break,
                         };
 
-                        let mut desc = Default::default();
-                        output
-                            .GetDesc(&mut desc)
+                        let desc = output
+                            .GetDesc()
                             .map_err(|e| format!("DXGI: failed to get output desc: {e}"))?;
 
                         let name = String::from_utf16_lossy(&desc.DeviceName)
@@ -130,9 +129,8 @@ mod imp {
                 .DuplicateOutput(&device)
                 .map_err(|e| format!("DXGI: failed to duplicate output: {e}"))?;
 
-            let mut desc = Default::default();
-            output
-                .GetDesc(&mut desc)
+            let desc = output
+                .GetDesc()
                 .map_err(|e| format!("DXGI: failed to get output desc: {e}"))?;
 
             let width = (desc.DesktopCoordinates.right - desc.DesktopCoordinates.left) as u32;
@@ -424,8 +422,7 @@ mod imp {
                         Err(_) => break,
                     };
 
-                    let mut desc = Default::default();
-                    if output.GetDesc(&mut desc).is_ok() {
+                    if let Ok(desc) = output.GetDesc() {
                         let name = String::from_utf16_lossy(&desc.DeviceName)
                             .trim_end_matches('\0')
                             .to_string();

@@ -3,6 +3,8 @@ use super::encoder_backend::VideoEncoderBackend;
 #[cfg(all(target_os = "windows", feature = "native-nvenc"))]
 use super::encoder_backend::CodecDescriptor;
 #[cfg(all(target_os = "windows", feature = "native-nvenc"))]
+use super::encoder_backend::split_annex_b_nals;
+#[cfg(all(target_os = "windows", feature = "native-nvenc"))]
 use super::metrics::NativeSenderSharedMetrics;
 
 #[cfg(all(target_os = "windows", feature = "native-nvenc"))]
@@ -490,7 +492,7 @@ mod imp {
         })
     }
 
-    use super::encoder_backend::split_annex_b_nals;
+    use super::split_annex_b_nals;
 }
 
 #[cfg(all(target_os = "windows", feature = "native-nvenc"))]
