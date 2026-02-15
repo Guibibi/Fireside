@@ -1,6 +1,7 @@
 .PHONY: help dev build typecheck
 .PHONY: tauri-dev tauri-build tauri-build-release
 .PHONY: server-dev server-build server-fmt server-lint server-test
+.PHONY: server-start server-stop
 .PHONY: db-up db-down db-logs
 
 # Default target
@@ -23,6 +24,10 @@ help:
 	@echo "  server-fmt           - Format server code"
 	@echo "  server-lint          - Lint server code"
 	@echo "  server-test          - Run server tests"
+	@echo ""
+	@echo "Production (Docker):"
+	@echo "  server-start         - Start prod containers (no repo update)"
+	@echo "  server-stop          - Stop prod containers"
 	@echo ""
 	@echo "Database:"
 	@echo "  db-up                - Start PostgreSQL container"
@@ -71,6 +76,17 @@ server-lint:
 
 server-test:
 	cargo test --manifest-path server/Cargo.toml
+
+# Production Docker targets
+COMPOSE_FILE ?= docker-compose.prod.yml
+ENV_FILE ?= server/.env.docker
+REPO_DIR ?= /opt/yankcord
+
+server-start:
+	UPDATE_REPO=false REPO_DIR=$(REPO_DIR) bash scripts/deploy-docker.sh
+
+server-stop:
+	docker compose --env-file $(ENV_FILE) -f $(COMPOSE_FILE) down
 
 # Database targets (delegate to server/Makefile)
 db-up:
