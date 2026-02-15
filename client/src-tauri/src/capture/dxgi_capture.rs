@@ -119,7 +119,7 @@ mod imp {
             let mt: ID3D11Multithread = device
                 .cast()
                 .map_err(|e| format!("DXGI: failed to get ID3D11Multithread: {e}"))?;
-            mt.SetMultithreadProtected(true);
+            let _ = mt.SetMultithreadProtected(true);
 
             let output1: IDXGIOutput1 = output
                 .cast()
@@ -144,10 +144,6 @@ mod imp {
                 height,
                 cached_copy_texture: None,
             })
-        }
-
-        pub fn device(&self) -> &ID3D11Device {
-            &self.device
         }
 
         pub fn width(&self) -> u32 {
