@@ -454,7 +454,7 @@ mod imp {
 }
 
 #[cfg(target_os = "windows")]
-pub use imp::{list_dxgi_monitors, run_dxgi_capture_loop, DxgiCaptureSession};
+pub use imp::run_dxgi_capture_loop;
 
 #[cfg(not(target_os = "windows"))]
 #[allow(dead_code)]
