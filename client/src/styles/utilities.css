@@ -152,7 +152,7 @@
     padding: var(--space-lg);
   }
 
-  .message-input button {
+  .message-input button:not(.message-attach-button) {
     width: 100%;
   }
 }

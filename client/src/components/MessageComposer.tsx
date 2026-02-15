@@ -54,8 +54,14 @@ export default function MessageComposer(props: MessageComposerProps) {
           class="message-attach-button"
           onClick={() => fileInputRef?.click()}
           disabled={!props.activeChannelId || props.isSending || !!props.savingMessageId || !!props.deletingMessageId}
+          aria-label="Add image"
+          title="Add image"
         >
-          Add image
+          <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true">
+            <path d="M4 4.5A1.5 1.5 0 0 1 5.5 3h9A1.5 1.5 0 0 1 16 4.5v11a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 4 15.5z" fill="none" stroke="currentColor" stroke-width="1.6" />
+            <circle cx="8" cy="8" r="1.3" fill="currentColor" />
+            <path d="M6.5 14 10 10.5l2.2 2.2 1.8-1.8L16 13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
         </button>
         <input
           ref={fileInputRef}

@@ -322,7 +322,17 @@
 }
 
 .message-attach-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  min-width: 44px;
+  padding: 0;
   white-space: nowrap;
+}
+
+.message-attach-button svg {
+  display: block;
 }
 
 .message-attach-input {
@@ -373,6 +383,10 @@
 
 .message-input button {
   padding: var(--space-md) var(--space-2xl);
+}
+
+.message-input .message-attach-button {
+  padding: 0;
 }
 
 .message-error {
