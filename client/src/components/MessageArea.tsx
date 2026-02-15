@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createResource, createSignal, onCleanup, onMount } from "solid-js";
+import { For, Show, createEffect, createMemo, createResource, createSignal, onCleanup, onMount } from "solid-js";
 import { del, get, patch } from "../api/http";
 import { connect, onMessage, send } from "../api/ws";
 import { errorMessage } from "../utils/error";
@@ -16,6 +16,43 @@ interface ChannelMessage {
   content: string;
   created_at: string;
   edited_at?: string | null;
+}
+
+interface MessageDayGroup {
+  key: string;
+  label: string;
+  messages: ChannelMessage[];
+}
+
+function getMessageDayKey(createdAt: string) {
+  const date = new Date(createdAt);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function formatMessageDayLabel(dayKey: string) {
+  const [year, month, day] = dayKey.split("-").map(Number);
+  const date = new Date(year, month - 1, day);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const diffDays = Math.round((date.getTime() - today.getTime()) / 86400000);
+  if (diffDays === 0) {
+    return "Today";
+  }
+
+  if (diffDays === -1) {
+    return "Yesterday";
+  }
+
+  return date.toLocaleDateString([], {
+    weekday: "long",
+    month: "short",
+    day: "numeric",
+    ...(date.getFullYear() !== today.getFullYear() ? { year: "numeric" } : {}),
+  });
 }
 
 async function fetchMessages(channelId: string | null) {
@@ -44,14 +81,63 @@ export default function MessageArea() {
   const [savingMessageId, setSavingMessageId] = createSignal<string | null>(null);
   const [deletingMessageId, setDeletingMessageId] = createSignal<string | null>(null);
   const [isSending, setIsSending] = createSignal(false);
+  const [stickyDateLabel, setStickyDateLabel] = createSignal("");
   let listRef: HTMLDivElement | undefined;
   let activeTypingChannelId: string | null = null;
   let typingHeartbeatTimer: ReturnType<typeof setInterval> | null = null;
   let previousMessageCount = 0;
   const typingExpiryTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  const daySeparatorRefs = new Map<string, HTMLLIElement>();
 
   const [history] = createResource(activeChannelId, fetchMessages);
   const [activeChannel] = createResource(activeChannelId, fetchActiveChannel);
+  const groupedMessages = createMemo<MessageDayGroup[]>(() => {
+    const groups: MessageDayGroup[] = [];
+
+    for (const message of messages()) {
+      const dayKey = getMessageDayKey(message.created_at);
+      const previousGroup = groups[groups.length - 1];
+
+      if (!previousGroup || previousGroup.key !== dayKey) {
+        groups.push({
+          key: dayKey,
+          label: formatMessageDayLabel(dayKey),
+          messages: [message],
+        });
+        continue;
+      }
+
+      previousGroup.messages.push(message);
+    }
+
+    return groups;
+  });
+
+  function updateStickyDate() {
+    const groups = groupedMessages();
+    if (!listRef || groups.length === 0) {
+      setStickyDateLabel("");
+      return;
+    }
+
+    const scrollTop = listRef.scrollTop;
+    let nextLabel = groups[0].label;
+
+    for (const group of groups) {
+      const separator = daySeparatorRefs.get(group.key);
+      if (!separator) {
+        continue;
+      }
+
+      if (separator.offsetTop <= scrollTop + 8) {
+        nextLabel = group.label;
+      } else {
+        break;
+      }
+    }
+
+    setStickyDateLabel(nextLabel);
+  }
 
   function clearTypingExpiryTimer(typingUsername: string) {
     const timer = typingExpiryTimers.get(typingUsername);
@@ -327,6 +413,8 @@ export default function MessageArea() {
     setDeletingMessageId(null);
     setWsError("");
     previousMessageCount = 0;
+    daySeparatorRefs.clear();
+    setStickyDateLabel("");
 
     if (!channelId) {
       return;
@@ -370,6 +458,17 @@ export default function MessageArea() {
       });
     }
     previousMessageCount = count;
+
+    queueMicrotask(() => {
+      updateStickyDate();
+    });
+  });
+
+  createEffect(() => {
+    groupedMessages();
+    queueMicrotask(() => {
+      updateStickyDate();
+    });
   });
 
   function handleSubmit(e: Event) {
@@ -404,7 +503,10 @@ export default function MessageArea() {
           </>
         </Show>
       </header>
-      <div class="messages" ref={listRef}>
+      <div class="messages" ref={listRef} onScroll={updateStickyDate}>
+        <Show when={stickyDateLabel()}>
+          <div class="messages-sticky-date">{stickyDateLabel()}</div>
+        </Show>
         <AsyncContent
           loading={history.loading}
           loadingText="Loading messages..."
@@ -414,84 +516,98 @@ export default function MessageArea() {
           emptyText="No messages yet"
         >
           <ul class="message-items">
-            <For each={messages()}>
-              {(message) => (
-                <li
-                  class="message-item"
-                  onContextMenu={(e) => {
-                    e.preventDefault();
-                    openContextMenu(e.clientX, e.clientY, "message", message.id, message);
-                  }}
-                  onFocus={() => setContextMenuTarget("message", message.id, message)}
-                  onTouchStart={(e) => {
-                    const touch = e.touches[0];
-                    handleLongPressStart(touch.clientX, touch.clientY, "message", message.id, message);
-                  }}
-                  onTouchEnd={handleLongPressEnd}
-                >
-                  <div class="message-meta">
-                    <span class="message-author">{message.author_username}</span>
-                    <time class="message-time">
-                      {new Date(message.created_at).toLocaleTimeString([], {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
-                    </time>
-                    <Show when={message.edited_at}>
-                      <span class="message-edited">(edited)</span>
-                    </Show>
-                    <Show when={message.author_username === username()}>
-                      <div class="message-actions">
-                        <button
-                          type="button"
-                          class="message-action"
-                          onClick={() => beginEdit(message)}
-                          disabled={!!savingMessageId() || !!deletingMessageId()}
-                        >
-                          edit
-                        </button>
-                        <button
-                          type="button"
-                          class="message-action message-action-danger"
-                          onClick={() => void removeMessage(message)}
-                          disabled={!!savingMessageId() || !!deletingMessageId()}
-                        >
-                          delete
-                        </button>
-                      </div>
-                    </Show>
-                  </div>
-                  <Show
-                    when={editingMessageId() === message.id}
-                    fallback={<p class="message-content">{message.content}</p>}
+            <For each={groupedMessages()}>
+              {(group) => (
+                <>
+                  <li
+                    class="message-day-separator"
+                    ref={(element) => {
+                      daySeparatorRefs.set(group.key, element);
+                    }}
                   >
-                    <form class="message-edit" onSubmit={(e) => {
-                      e.preventDefault();
-                      void saveEdit(message.id);
-                    }}>
-                      <input
-                        type="text"
-                        value={editDraft()}
-                        onInput={(e) => setEditDraft(e.currentTarget.value)}
-                        maxlength={4000}
-                        disabled={savingMessageId() === message.id || !!deletingMessageId()}
-                      />
-                      <button
-                        type="submit"
-                        disabled={savingMessageId() === message.id || !!deletingMessageId()}
+                    <span>{group.label}</span>
+                  </li>
+                  <For each={group.messages}>
+                    {(message) => (
+                      <li
+                        class="message-item"
+                        onContextMenu={(e) => {
+                          e.preventDefault();
+                          openContextMenu(e.clientX, e.clientY, "message", message.id, message);
+                        }}
+                        onFocus={() => setContextMenuTarget("message", message.id, message)}
+                        onTouchStart={(e) => {
+                          const touch = e.touches[0];
+                          handleLongPressStart(touch.clientX, touch.clientY, "message", message.id, message);
+                        }}
+                        onTouchEnd={handleLongPressEnd}
                       >
-                        save
-                      </button>
-                      <button
-                        type="button"
-                        onClick={cancelEdit}
-                        disabled={savingMessageId() === message.id || !!deletingMessageId()}
-                      >
-                        cancel
-                      </button>
-                    </form>
-                  </Show>
-                </li>
+                        <div class="message-meta">
+                          <span class="message-author">{message.author_username}</span>
+                          <time class="message-time">
+                            {new Date(message.created_at).toLocaleTimeString([], {
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
+                          </time>
+                          <Show when={message.edited_at}>
+                            <span class="message-edited">(edited)</span>
+                          </Show>
+                          <Show when={message.author_username === username()}>
+                            <div class="message-actions">
+                              <button
+                                type="button"
+                                class="message-action"
+                                onClick={() => beginEdit(message)}
+                                disabled={!!savingMessageId() || !!deletingMessageId()}
+                              >
+                                edit
+                              </button>
+                              <button
+                                type="button"
+                                class="message-action message-action-danger"
+                                onClick={() => void removeMessage(message)}
+                                disabled={!!savingMessageId() || !!deletingMessageId()}
+                              >
+                                delete
+                              </button>
+                            </div>
+                          </Show>
+                        </div>
+                        <Show
+                          when={editingMessageId() === message.id}
+                          fallback={<p class="message-content">{message.content}</p>}
+                        >
+                          <form class="message-edit" onSubmit={(e) => {
+                            e.preventDefault();
+                            void saveEdit(message.id);
+                          }}>
+                            <input
+                              type="text"
+                              value={editDraft()}
+                              onInput={(e) => setEditDraft(e.currentTarget.value)}
+                              maxlength={4000}
+                              disabled={savingMessageId() === message.id || !!deletingMessageId()}
+                            />
+                            <button
+                              type="submit"
+                              disabled={savingMessageId() === message.id || !!deletingMessageId()}
+                            >
+                              save
+                            </button>
+                            <button
+                              type="button"
+                              onClick={cancelEdit}
+                              disabled={savingMessageId() === message.id || !!deletingMessageId()}
+                            >
+                              cancel
+                            </button>
+                          </form>
+                        </Show>
+                      </li>
+                    )}
+                  </For>
+                </>
               )}
             </For>
           </ul>

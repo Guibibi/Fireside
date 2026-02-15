@@ -28,9 +28,10 @@
 }
 
 .settings-modal {
-  width: min(480px, calc(100vw - 2rem));
+  width: min(640px, calc(100vw - 2rem));
   max-height: calc(100vh - 2rem);
   overflow-y: auto;
+  overflow-x: hidden;
   border-radius: var(--radius-xl);
   background: var(--nebula);
   border: 1px solid var(--cloud-dark);
@@ -135,6 +136,7 @@
 .settings-help {
   font-size: 0.78rem;
   color: var(--mist);
+  overflow-wrap: anywhere;
 }
 
 .settings-checkbox {

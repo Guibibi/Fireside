@@ -1,11 +1,12 @@
 import type { Transport } from "mediasoup-client/types";
-import { preferredAudioOutputDeviceId } from "../../stores/settings";
+import { preferredAudioOutputDeviceId, voiceAutoLevelEnabled } from "../../stores/settings";
 import { clampUserVolume, getUserVolume } from "../../stores/userVolume";
 import { isSpeakerSelectionSupported } from "./devices";
 import { requestMediaSignal } from "./signaling";
 import {
   consumerGainNodes,
   consumerIdByProducerId,
+  consumerNormalizationNodes,
   consumerSourceNodes,
   consumerUsernameByConsumerId,
   device,
@@ -59,7 +60,7 @@ function getOrCreateRemotePlaybackAudioContext(): AudioContext {
 }
 
 function maybeCloseRemotePlaybackAudioContext() {
-  if (consumerSourceNodes.size > 0 || consumerGainNodes.size > 0) {
+  if (consumerSourceNodes.size > 0 || consumerNormalizationNodes.size > 0 || consumerGainNodes.size > 0) {
     return;
   }
 
@@ -70,6 +71,23 @@ function maybeCloseRemotePlaybackAudioContext() {
 
   void remotePlaybackAudioContext.close().catch(() => undefined);
   setRemotePlaybackAudioContext(null);
+}
+
+function configureNormalizationNode(node: DynamicsCompressorNode, enabled: boolean) {
+  if (enabled) {
+    node.threshold.value = -24;
+    node.knee.value = 20;
+    node.ratio.value = 3;
+    node.attack.value = 0.003;
+    node.release.value = 0.25;
+    return;
+  }
+
+  node.threshold.value = 0;
+  node.knee.value = 0;
+  node.ratio.value = 1;
+  node.attack.value = 0.003;
+  node.release.value = 0.25;
 }
 
 export function disposeRemoteConsumer(consumerId: string) {
@@ -99,6 +117,12 @@ export function disposeRemoteConsumer(consumerId: string) {
   if (gainNode) {
     gainNode.disconnect();
     consumerGainNodes.delete(consumerId);
+  }
+
+  const normalizationNode = consumerNormalizationNodes.get(consumerId);
+  if (normalizationNode) {
+    normalizationNode.disconnect();
+    consumerNormalizationNodes.delete(consumerId);
   }
 
   consumerUsernameByConsumerId.delete(consumerId);
@@ -195,12 +219,17 @@ export async function consumeRemoteProducer(channelId: string, producerId: strin
         const gainNode = audioCtx.createGain();
         consumerGainNodes.set(consumer.id, gainNode);
 
+        const normalizationNode = audioCtx.createDynamicsCompressor();
+        configureNormalizationNode(normalizationNode, voiceAutoLevelEnabled());
+        consumerNormalizationNodes.set(consumer.id, normalizationNode);
+
         const username = producerUsernameById.get(description.producer_id);
         const volume = username ? getUserVolume(username) : 100;
         gainNode.gain.value = volume / 100;
 
         const destination = audioCtx.createMediaStreamDestination();
-        source.connect(gainNode);
+        source.connect(normalizationNode);
+        normalizationNode.connect(gainNode);
         gainNode.connect(destination);
 
         audio.srcObject = destination.stream;
@@ -218,6 +247,12 @@ export function updateUserGainNodes(username: string, volume: number) {
     if (consumerUsernameByConsumerId.get(consumerId) === username) {
       gainNode.gain.value = gain;
     }
+  }
+}
+
+export function updateVoiceNormalizationNodesEnabled(enabled: boolean) {
+  for (const normalizationNode of consumerNormalizationNodes.values()) {
+    configureNormalizationNode(normalizationNode, enabled);
   }
 }
 

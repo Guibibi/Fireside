@@ -11,6 +11,7 @@ const SCREEN_SHARE_CUSTOM_BITRATE_KEY = "yankcord_screen_share_custom_bitrate_kb
 const SCREEN_SHARE_SOURCE_KIND_KEY = "yankcord_screen_share_source_kind";
 const VOICE_JOIN_SOUND_ENABLED_KEY = "yankcord_voice_join_sound_enabled";
 const VOICE_LEAVE_SOUND_ENABLED_KEY = "yankcord_voice_leave_sound_enabled";
+const VOICE_AUTO_LEVEL_ENABLED_KEY = "yankcord_voice_auto_level_enabled";
 
 export type ScreenShareResolution = "720p" | "1080p" | "1440p" | "4k";
 export type ScreenShareFps = 30 | 60;
@@ -120,6 +121,10 @@ const [voiceLeaveSoundEnabled, setVoiceLeaveSoundEnabled] = createSignal<boolean
   readBooleanPreference(VOICE_LEAVE_SOUND_ENABLED_KEY, true),
 );
 
+const [voiceAutoLevelEnabled, setVoiceAutoLevelEnabled] = createSignal<boolean>(
+  readBooleanPreference(VOICE_AUTO_LEVEL_ENABLED_KEY, true),
+);
+
 export {
   preferredAudioInputDeviceId,
   preferredAudioOutputDeviceId,
@@ -132,6 +137,7 @@ export {
   preferredScreenShareSourceKind,
   voiceJoinSoundEnabled,
   voiceLeaveSoundEnabled,
+  voiceAutoLevelEnabled,
 };
 
 export function savePreferredAudioInputDeviceId(deviceId: string | null) {
@@ -208,6 +214,11 @@ export function saveVoiceJoinSoundEnabled(enabled: boolean) {
 export function saveVoiceLeaveSoundEnabled(enabled: boolean) {
   localStorage.setItem(VOICE_LEAVE_SOUND_ENABLED_KEY, String(enabled));
   setVoiceLeaveSoundEnabled(enabled);
+}
+
+export function saveVoiceAutoLevelEnabled(enabled: boolean) {
+  localStorage.setItem(VOICE_AUTO_LEVEL_ENABLED_KEY, String(enabled));
+  setVoiceAutoLevelEnabled(enabled);
 }
 
 export function resetAudioPreferences() {

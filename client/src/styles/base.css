@@ -30,6 +30,30 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* Global scrollbar styling (matches message timeline) */
+* {
+  scrollbar-width: auto;
+  scrollbar-color: var(--haze) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--haze);
+  border-radius: var(--radius-full);
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--haze);
+}
+
 /* Dreamy ambient background */
 body::before {
   content: '';

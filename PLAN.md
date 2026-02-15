@@ -195,10 +195,7 @@ Yankcord is a self-hosted, minimal chat app. One server instance = one community
 - Skip the server address input step for web deployments while preserving it for desktop app users.
   - For tauri user, they should be prompted to select their instance, and then presented with the username and password
 
-### Voice Channel Join/Leave Sounds
 
-- Play a subtle sound notification when a user joins or leaves a voice channel you are currently in.
-- Allow users to toggle or customize these sounds in settings.
 
 ### @ Mentions for Users
 

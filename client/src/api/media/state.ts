@@ -79,6 +79,7 @@ export const pendingRequests = new Map<string, PendingRequest>();
 // Per-user volume: GainNode routing state
 export let remotePlaybackAudioContext: AudioContext | null = null;
 export const consumerSourceNodes = new Map<string, MediaStreamAudioSourceNode>();
+export const consumerNormalizationNodes = new Map<string, DynamicsCompressorNode>();
 export const consumerGainNodes = new Map<string, GainNode>();
 export const consumerUsernameByConsumerId = new Map<string, string>();
 

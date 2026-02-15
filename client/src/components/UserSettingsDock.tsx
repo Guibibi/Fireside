@@ -14,6 +14,7 @@ import {
   type AudioDeviceOption,
   type CameraDeviceOption,
 } from "../api/media";
+import { updateVoiceNormalizationNodesEnabled } from "../api/media/consumers";
 import { connect, disconnect } from "../api/ws";
 import {
   clearAuth,
@@ -36,8 +37,10 @@ import {
   preferredAudioOutputDeviceId,
   preferredCameraDeviceId,
   saveAvatarPlaceholderName,
+  saveVoiceAutoLevelEnabled,
   saveVoiceJoinSoundEnabled,
   saveVoiceLeaveSoundEnabled,
+  voiceAutoLevelEnabled,
   voiceJoinSoundEnabled,
   voiceLeaveSoundEnabled,
 } from "../stores/settings";
@@ -214,6 +217,12 @@ export default function UserSettingsDock() {
     saveVoiceLeaveSoundEnabled((event.currentTarget as HTMLInputElement).checked);
   }
 
+  function handleVoiceAutoLevelToggle(event: Event) {
+    const enabled = (event.currentTarget as HTMLInputElement).checked;
+    saveVoiceAutoLevelEnabled(enabled);
+    updateVoiceNormalizationNodesEnabled(enabled);
+  }
+
   function handleLogout() {
     cleanupMediaTransports();
     disconnect();
@@ -360,6 +369,17 @@ export default function UserSettingsDock() {
                   ))}
                 </select>
               </div>
+
+              <label class="settings-checkbox" for="settings-voice-auto-level-enabled">
+                <input
+                  id="settings-voice-auto-level-enabled"
+                  type="checkbox"
+                  checked={voiceAutoLevelEnabled()}
+                  onInput={handleVoiceAutoLevelToggle}
+                />
+                Auto level incoming voices
+              </label>
+              <p class="settings-help">Smooths sudden loud peaks while keeping per-user volume sliders effective.</p>
 
               <Show when={audioError()}>
                 <p class="error">{audioError()}</p>
