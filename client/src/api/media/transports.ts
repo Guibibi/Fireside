@@ -54,6 +54,7 @@ import {
 } from "./state";
 import { clearRemoteVideoTiles, notifyCameraStateSubscribers, notifyScreenStateSubscribers } from "./subscriptions";
 import { stopMicLevelMonitoring } from "./voiceActivity";
+import { disposeMicrophoneProcessing } from "./microphoneProcessing";
 
 function wireTransportConnect(channelId: string, transport: Transport) {
   transport.on("connect", ({ dtlsParameters }, callback, errback) => {
@@ -116,6 +117,8 @@ export function closeTransports() {
     }
     setMicStream(null);
   }
+
+  disposeMicrophoneProcessing();
 
   cameraProducer?.close();
   setCameraProducer(null);

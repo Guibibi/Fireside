@@ -1,5 +1,9 @@
 import type { Transport } from "mediasoup-client/types";
-import { preferredAudioOutputDeviceId, voiceAutoLevelEnabled } from "../../stores/settings";
+import {
+  preferredAudioOutputDeviceId,
+  voiceAutoLevelEnabled,
+  voiceIncomingVolume,
+} from "../../stores/settings";
 import { clampUserVolume, getUserVolume } from "../../stores/userVolume";
 import { isSpeakerSelectionSupported } from "./devices";
 import { requestMediaSignal } from "./signaling";
@@ -25,6 +29,20 @@ import {
 } from "./state";
 import { notifyVideoTilesSubscribers } from "./subscriptions";
 import type { MediaKind, MediaSource, RoutingMode, SinkableAudioElement } from "./types";
+
+function clampVoiceVolume(volume: number): number {
+  if (!Number.isFinite(volume)) {
+    return 100;
+  }
+
+  return Math.max(0, Math.min(200, Math.round(volume)));
+}
+
+function gainValueForVolume(localUserVolume: number): number {
+  const normalizedIncoming = clampVoiceVolume(voiceIncomingVolume()) / 100;
+  const normalizedLocalUser = clampUserVolume(localUserVolume) / 100;
+  return normalizedIncoming * normalizedLocalUser;
+}
 
 function ensureAudioElement(consumerId: string): HTMLAudioElement {
   const existing = remoteAudioElements.get(consumerId);
@@ -225,7 +243,7 @@ export async function consumeRemoteProducer(channelId: string, producerId: strin
 
         const username = producerUsernameById.get(description.producer_id);
         const volume = username ? getUserVolume(username) : 100;
-        gainNode.gain.value = volume / 100;
+        gainNode.gain.value = gainValueForVolume(volume);
 
         const destination = audioCtx.createMediaStreamDestination();
         source.connect(normalizationNode);
@@ -242,11 +260,20 @@ export async function consumeRemoteProducer(channelId: string, producerId: strin
 }
 
 export function updateUserGainNodes(username: string, volume: number) {
-  const gain = clampUserVolume(volume) / 100;
+  const gain = gainValueForVolume(volume);
   for (const [consumerId, gainNode] of consumerGainNodes) {
     if (consumerUsernameByConsumerId.get(consumerId) === username) {
       gainNode.gain.value = gain;
     }
+  }
+}
+
+export function updateIncomingVoiceGainNodes(volume: number) {
+  const globalIncoming = clampVoiceVolume(volume) / 100;
+  for (const [consumerId, gainNode] of consumerGainNodes) {
+    const username = consumerUsernameByConsumerId.get(consumerId);
+    const userVolume = username ? getUserVolume(username) : 100;
+    gainNode.gain.value = (clampUserVolume(userVolume) / 100) * globalIncoming;
   }
 }
 

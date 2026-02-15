@@ -206,6 +206,18 @@
   gap: var(--space-xs);
 }
 
+.settings-volume-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+}
+
+.settings-volume-value {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
 .voice-share-preview {
   width: 100%;
   min-height: 120px;

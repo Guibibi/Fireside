@@ -5,6 +5,7 @@ import {
   savePreferredAudioInputDeviceId,
   savePreferredAudioOutputDeviceId,
   savePreferredCameraDeviceId,
+  voiceOutgoingVolume,
 } from "../../stores/settings";
 import { audioInputConstraint, cameraInputConstraint } from "./constraints";
 import { isMissingDeviceError } from "./errors";
@@ -36,6 +37,11 @@ import {
 import { notifyCameraStateSubscribers } from "./subscriptions";
 import type { AudioDeviceInventory, CameraDeviceOption, SinkableAudioElement } from "./types";
 import { startMicLevelMonitoring } from "./voiceActivity";
+import {
+  activateMicrophoneProcessing,
+  createProcessedMicrophoneTrack,
+  disposePendingMicrophoneProcessing,
+} from "./microphoneProcessing";
 
 export function isSpeakerSelectionSupported(): boolean {
   const audio = document.createElement("audio") as SinkableAudioElement;
@@ -117,17 +123,18 @@ export async function setPreferredMicrophoneDevice(deviceId: string | null) {
     throw new Error("Microphone track was not available");
   }
 
-  nextTrack.enabled = !microphoneMuted;
-
   const previousStream = micStream;
   const previousTrack = micTrack;
+  let processingSession: ReturnType<typeof createProcessedMicrophoneTrack> | null = null;
 
   try {
+    processingSession = createProcessedMicrophoneTrack(nextStream, voiceOutgoingVolume(), microphoneMuted);
+
     if (micProducer) {
-      await micProducer.replaceTrack({ track: nextTrack });
+      await micProducer.replaceTrack({ track: processingSession.track });
     } else {
       const produced = await sendTransport.produce({
-        track: nextTrack,
+        track: processingSession.track,
         stopTracks: false,
         appData: {
           source: "microphone",
@@ -146,14 +153,18 @@ export async function setPreferredMicrophoneDevice(deviceId: string | null) {
       setMicProducer(produced);
     }
 
+    activateMicrophoneProcessing(processingSession);
+
     setMicStream(nextStream);
-    setMicTrack(nextTrack);
+    setMicTrack(processingSession.track);
     startMicLevelMonitoring(initializedForChannelId, nextStream);
     previousTrack?.stop();
     previousStream?.getTracks().forEach((track) => track.stop());
     savePreferredAudioInputDeviceId(deviceId);
   } catch (error) {
-    nextTrack.stop();
+    if (processingSession) {
+      disposePendingMicrophoneProcessing(processingSession);
+    }
     nextStream.getTracks().forEach((track) => track.stop());
     throw error;
   }

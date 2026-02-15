@@ -233,17 +233,6 @@ Yankcord is a self-hosted, minimal chat app. One server instance = one community
 - Visual indicator (bars/colors) for quick assessment.
 - Tooltip or panel with detailed stats for troubleshooting.
 
-### Audio Normalization
-
-- Normalize incoming voice audio levels so all participants sound equally loud.
-- Apply dynamic range compression per remote audio track.
-- Prevent loud users from overwhelming quiet ones automatically.
-
-### Message Grouping by Day
-
-- Group messages in the timeline with date headers ("Today", "Yesterday", "Monday, Jan 15").
-- Improve scannability in busy channels with long history.
-- Sticky date header while scrolling through messages.
 
 ### Auto-updater
 - Add an auto updater for the tauri build to allow distribution of new version easily.

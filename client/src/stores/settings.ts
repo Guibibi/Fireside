@@ -12,6 +12,8 @@ const SCREEN_SHARE_SOURCE_KIND_KEY = "yankcord_screen_share_source_kind";
 const VOICE_JOIN_SOUND_ENABLED_KEY = "yankcord_voice_join_sound_enabled";
 const VOICE_LEAVE_SOUND_ENABLED_KEY = "yankcord_voice_leave_sound_enabled";
 const VOICE_AUTO_LEVEL_ENABLED_KEY = "yankcord_voice_auto_level_enabled";
+const VOICE_INCOMING_VOLUME_KEY = "yankcord_voice_incoming_volume";
+const VOICE_OUTGOING_VOLUME_KEY = "yankcord_voice_outgoing_volume";
 
 export type ScreenShareResolution = "720p" | "1080p" | "1440p" | "4k";
 export type ScreenShareFps = 30 | 60;
@@ -29,6 +31,28 @@ function readBooleanPreference(key: string, defaultValue: boolean): boolean {
   }
 
   return defaultValue;
+}
+
+function clampVoiceVolume(volume: number): number {
+  if (!Number.isFinite(volume)) {
+    return 100;
+  }
+
+  return Math.max(0, Math.min(200, Math.round(volume)));
+}
+
+function readVoiceVolumePreference(key: string, defaultValue: number): number {
+  const value = localStorage.getItem(key);
+  if (!value) {
+    return defaultValue;
+  }
+
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed)) {
+    return defaultValue;
+  }
+
+  return clampVoiceVolume(parsed);
 }
 
 function readScreenShareResolution(): ScreenShareResolution {
@@ -125,6 +149,14 @@ const [voiceAutoLevelEnabled, setVoiceAutoLevelEnabled] = createSignal<boolean>(
   readBooleanPreference(VOICE_AUTO_LEVEL_ENABLED_KEY, true),
 );
 
+const [voiceIncomingVolume, setVoiceIncomingVolume] = createSignal<number>(
+  readVoiceVolumePreference(VOICE_INCOMING_VOLUME_KEY, 100),
+);
+
+const [voiceOutgoingVolume, setVoiceOutgoingVolume] = createSignal<number>(
+  readVoiceVolumePreference(VOICE_OUTGOING_VOLUME_KEY, 100),
+);
+
 export {
   preferredAudioInputDeviceId,
   preferredAudioOutputDeviceId,
@@ -138,6 +170,8 @@ export {
   voiceJoinSoundEnabled,
   voiceLeaveSoundEnabled,
   voiceAutoLevelEnabled,
+  voiceIncomingVolume,
+  voiceOutgoingVolume,
 };
 
 export function savePreferredAudioInputDeviceId(deviceId: string | null) {
@@ -219,6 +253,18 @@ export function saveVoiceLeaveSoundEnabled(enabled: boolean) {
 export function saveVoiceAutoLevelEnabled(enabled: boolean) {
   localStorage.setItem(VOICE_AUTO_LEVEL_ENABLED_KEY, String(enabled));
   setVoiceAutoLevelEnabled(enabled);
+}
+
+export function saveVoiceIncomingVolume(volume: number) {
+  const normalized = clampVoiceVolume(volume);
+  localStorage.setItem(VOICE_INCOMING_VOLUME_KEY, String(normalized));
+  setVoiceIncomingVolume(normalized);
+}
+
+export function saveVoiceOutgoingVolume(volume: number) {
+  const normalized = clampVoiceVolume(volume);
+  localStorage.setItem(VOICE_OUTGOING_VOLUME_KEY, String(normalized));
+  setVoiceOutgoingVolume(normalized);
 }
 
 export function resetAudioPreferences() {

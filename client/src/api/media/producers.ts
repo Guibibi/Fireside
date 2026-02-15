@@ -21,11 +21,19 @@ import {
   requestMediaSignal,
 } from "./signaling";
 import {
+  activateMicrophoneProcessing,
+  createProcessedMicrophoneTrack,
+  disposePendingMicrophoneProcessing,
+} from "./microphoneProcessing";
+import { voiceOutgoingVolume } from "../../stores/settings";
+import {
   cameraEnabled,
   cameraProducer,
   cameraStream,
   cameraTrack,
   initializedForChannelId,
+  micStream,
+  micTrack,
   micProducer,
   microphoneMuted,
   nativeCaptureAttempted,
@@ -57,7 +65,7 @@ import {
 } from "./state";
 import { notifyCameraStateSubscribers, notifyScreenStateSubscribers } from "./subscriptions";
 import type { CameraActionResult, ScreenShareStartOptions } from "./types";
-import { startMicLevelMonitoring } from "./voiceActivity";
+import { startMicLevelMonitoring, stopMicLevelMonitoring } from "./voiceActivity";
 
 function readStringStatField(stat: RTCStats, field: string): string | null {
   const value = (stat as unknown as Record<string, unknown>)[field];
@@ -141,23 +149,47 @@ export async function startLocalAudioProducer(channelId: string) {
   const [audioTrack] = stream.getAudioTracks();
 
   if (!audioTrack) {
+    stream.getTracks().forEach((track) => track.stop());
     throw new Error("Microphone track was not available");
   }
 
+  let processingSession: ReturnType<typeof createProcessedMicrophoneTrack>;
+  try {
+    processingSession = createProcessedMicrophoneTrack(stream, voiceOutgoingVolume(), microphoneMuted);
+  } catch (error) {
+    stream.getTracks().forEach((track) => track.stop());
+    throw error;
+  }
+
   setMicStream(stream);
-  setMicTrack(audioTrack);
-  audioTrack.enabled = !microphoneMuted;
+  setMicTrack(processingSession.track);
 
   startMicLevelMonitoring(channelId, stream);
 
-  const produced = await sendTransport.produce({
-    track: audioTrack,
-    stopTracks: false,
-    appData: {
-      source: "microphone",
-      routingMode: "sfu",
-    },
-  });
+  let produced: Producer;
+  try {
+    produced = await sendTransport.produce({
+      track: processingSession.track,
+      stopTracks: false,
+      appData: {
+        source: "microphone",
+        routingMode: "sfu",
+      },
+    });
+  } catch (error) {
+    disposePendingMicrophoneProcessing(processingSession);
+    stopMicLevelMonitoring(channelId);
+    stream.getTracks().forEach((track) => track.stop());
+    if (micTrack === processingSession.track) {
+      setMicTrack(null);
+    }
+    if (micStream === stream) {
+      setMicStream(null);
+    }
+    throw error;
+  }
+
+  activateMicrophoneProcessing(processingSession);
 
   produced.on("transportclose", () => {
     setMicProducer(null);
