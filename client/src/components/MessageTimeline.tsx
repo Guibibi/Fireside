@@ -8,6 +8,7 @@ import {
   setContextMenuTarget,
 } from "../stores/contextMenu";
 import AsyncContent from "./AsyncContent";
+import MessageRichContent from "./MessageRichContent";
 import UserAvatar from "./UserAvatar";
 import type { ChannelMessage, MessageDayGroup } from "./messageTypes";
 
@@ -173,7 +174,7 @@ export default function MessageTimeline(props: MessageTimelineProps) {
                           fallback={(
                             <>
                               <Show when={message.content.trim().length > 0}>
-                                <p class="message-content">{message.content}</p>
+                                <MessageRichContent content={message.content} />
                               </Show>
                               <Show when={message.attachments.length > 0}>
                                 <div class="message-attachments">

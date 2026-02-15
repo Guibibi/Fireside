@@ -119,6 +119,7 @@ async fn main() {
             "/api",
             routes::media_routes::router(config.storage.max_upload_bytes),
         )
+        .nest("/api", routes::embed_routes::router())
         .nest("/api", routes::user_routes::router())
         .route("/ws", axum::routing::get(ws::ws_upgrade))
         .layer(cors)

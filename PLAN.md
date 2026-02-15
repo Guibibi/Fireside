@@ -136,6 +136,7 @@ Yankcord is a self-hosted, minimal chat app. One server instance = one community
 
 **Goal**
 - Add per-instance custom emoji management and message usage.
+- User can upload emojis to the server and use them in chat or for reactions
 
 **Implementation details**
 - Upload constraints: `png|webp|gif` (static-first rollout), max `512 KB`, bounded to `128x128`.
@@ -162,17 +163,8 @@ Yankcord is a self-hosted, minimal chat app. One server instance = one community
 - Server: treat GIF embeds as attachment metadata payloads with validation.
 - Client: render GIF embeds consistently with other attachment types.
 
-### 5.9 Voice participant avatars
 
-**Goal**
-- Improve voice UI legibility with participant avatars and speaking emphasis.
-
-**Implementation details**
-- Client: show avatar tiles/rows for active voice participants.
-- Client: preserve speaking-state emphasis and active-media affordances.
-- Server/client: reuse existing presence and voice state streams without protocol breakage.
-
-### 5.10 Streaming watch UX rework
+### 5.9 Streaming watch UX rework
 
 **Goal**
 - Improve stream discoverability and viewing ergonomics in voice channels while keeping watch behavior fully user-initiated.
@@ -216,8 +208,6 @@ Yankcord is a self-hosted, minimal chat app. One server instance = one community
 - Skip the server address input step for web deployments while preserving it for desktop app users.
   - For tauri user, they should be prompted to select their instance, and then presented with the username and password
 
-
-
 ### @ Mentions for Users
 
 - Support `@username` mentions in chat messages with autocomplete.
@@ -242,11 +232,6 @@ Yankcord is a self-hosted, minimal chat app. One server instance = one community
 - Allow users to tune how aggressively their microphone activates on voice.
 - Provide presets (low/medium/high) and fine-grained slider control.
 
-### Noise Suppression / Echo Cancellation
-
-- Toggleable noise suppression to reduce background noise.
-- Echo cancellation to prevent feedback during voice calls.
-- Use WebRTC built-in processing or integrate libraries like RNNoise.
 
 ### Network Quality Indicator
 
@@ -255,9 +240,22 @@ Yankcord is a self-hosted, minimal chat app. One server instance = one community
 - Tooltip or panel with detailed stats for troubleshooting.
 
 
+### Add notification sound for new messages
+- When a new messages comes in, add a notification sound if you arent focused on the app or channel.
+
+
 ### Lazy loading messages
 - When opening a text channel, we should scroll to the bottom to see the most recent messages.
 - We should only fetch the first 20 or so message, and if we scroll up we lazy load them to have the API chill a bit.
+
+
+### Add edit channel options
+- Change name and description
+- Be able to change bitrate for voice channel
+
+
+### Merge message together
+- If a user sends multiple message back to back without someone else sending a message, merge all of them into one message (like discord)
 
 
 ### Auto-updater

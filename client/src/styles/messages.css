@@ -199,6 +199,137 @@
   grid-column: 2;
 }
 
+.message-link {
+  color: var(--lavender);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
+.message-link:hover {
+  color: var(--snow);
+}
+
+.message-embeds {
+  grid-column: 2;
+  display: grid;
+  gap: var(--space-sm);
+  margin-top: var(--space-xs);
+}
+
+.message-embed-card {
+  border: 1px solid var(--cloud-dark);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: rgba(7, 7, 12, 0.45);
+}
+
+.message-embed-card-muted {
+  padding: var(--space-md);
+}
+
+.message-embed-image {
+  display: block;
+  width: 100%;
+  max-height: 200px;
+  object-fit: cover;
+}
+
+.message-embed-video-start {
+  position: relative;
+  border: none;
+  padding: 0;
+  width: 100%;
+  background: transparent;
+  cursor: pointer;
+}
+
+.message-embed-video-play-icon {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 52px;
+  height: 52px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.72);
+  color: #fff;
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.message-embed-video-frame-wrap {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: #000;
+}
+
+.message-embed-video-frame {
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+.message-embed-body {
+  padding: var(--space-md);
+  display: grid;
+  gap: var(--space-xs);
+}
+
+.message-embed-site {
+  color: var(--mist);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.message-embed-title,
+.message-embed-title-text {
+  color: var(--snow);
+  font-size: 0.86rem;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.message-embed-title:hover {
+  color: var(--lavender);
+}
+
+.message-embed-description {
+  color: var(--pearl);
+  font-size: 0.8rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.message-embed-url {
+  color: var(--mist);
+  font-size: 0.74rem;
+  word-break: break-all;
+}
+
+.message-embed-loading-indicator {
+  color: var(--mist);
+  font-size: 0.74rem;
+}
+
+.message-embed-retry {
+  margin-top: var(--space-xs);
+  padding: var(--space-xs) var(--space-sm);
+  border: 1px solid var(--cloud-dark);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--snow);
+  font-size: 0.72rem;
+}
+
+.message-embed-retry:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
 .message-attachments {
   grid-column: 2;
   display: flex;
