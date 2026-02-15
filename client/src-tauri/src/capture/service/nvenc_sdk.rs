@@ -12,15 +12,14 @@ mod imp {
 
     use cudarc::driver::CudaContext;
     use nvidia_video_codec_sdk::sys::nvEncodeAPI::{
-        GUID, NVENCSTATUS, NV_ENC_BUFFER_FORMAT, NV_ENC_CODEC_H264_GUID, NV_ENC_CONFIG,
+        NVENCSTATUS, NV_ENC_BUFFER_FORMAT, NV_ENC_CODEC_H264_GUID, NV_ENC_CONFIG,
         NV_ENC_CREATE_BITSTREAM_BUFFER, NV_ENC_DEVICE_TYPE, NV_ENC_INITIALIZE_PARAMS,
         NV_ENC_INPUT_RESOURCE_TYPE, NV_ENC_LOCK_BITSTREAM, NV_ENC_MAP_INPUT_RESOURCE,
         NV_ENC_OPEN_ENCODE_SESSION_EX_PARAMS, NV_ENC_PIC_PARAMS, NV_ENC_PIC_TYPE,
         NV_ENC_PRESET_CONFIG, NV_ENC_PRESET_P4_GUID, NV_ENC_REGISTER_RESOURCE, NV_ENC_TUNING_INFO,
     };
     use nvidia_video_codec_sdk::{
-        Bitstream, Buffer, EncodeError, EncodePictureParams, Encoder, EncoderInitParams, ErrorKind,
-        ENCODE_API,
+        Bitstream, Buffer, EncodePictureParams, Encoder, EncoderInitParams, ErrorKind, ENCODE_API,
     };
 
     use super::{CodecDescriptor, NativeSenderSharedMetrics, VideoEncoderBackend};
@@ -63,7 +62,7 @@ mod imp {
             width: u32,
             height: u32,
             target_fps: u32,
-            _target_bitrate_kbps: u32,
+            target_bitrate_kbps: u32,
         ) -> Result<Self, String> {
             // TODO: On multi-GPU systems, we should match the CUDA device to the
             // GPU where the D3D11 capture device resides. Currently using device 0
@@ -75,9 +74,32 @@ mod imp {
             let encoder = Encoder::initialize_with_cuda(cuda_ctx)
                 .map_err(|e| format!("NVENC SDK: failed to initialize encoder: {e}"))?;
 
+            // Get preset config so we can customize rate control
+            let preset_config = encoder
+                .get_preset_config(
+                    NV_ENC_CODEC_H264_GUID,
+                    NV_ENC_PRESET_P4_GUID,
+                    NV_ENC_TUNING_INFO::NV_ENC_TUNING_INFO_ULTRA_LOW_LATENCY,
+                )
+                .map_err(|e| format!("NVENC SDK: failed to get preset config: {e}"))?;
+
+            let mut encode_config: NV_ENC_CONFIG = preset_config.presetCfg;
+            encode_config.frameIntervalP = 1; // No B-frames
+            encode_config.gopLength = target_fps; // 1 second GOP
+
+            // Configure CBR rate control at the requested bitrate
+            let bitrate_bps = target_bitrate_kbps * 1_000;
+            encode_config.rcParams.rateControlMode =
+                nvidia_video_codec_sdk::sys::nvEncodeAPI::NV_ENC_PARAMS_RC_MODE::NV_ENC_PARAMS_RC_CBR;
+            encode_config.rcParams.averageBitRate = bitrate_bps;
+            encode_config.rcParams.maxBitRate = bitrate_bps;
+            encode_config.rcParams.vbvBufferSize = bitrate_bps / target_fps;
+
             let mut init_params = EncoderInitParams::new(NV_ENC_CODEC_H264_GUID, width, height);
             init_params
                 .preset_guid(NV_ENC_PRESET_P4_GUID)
+                .tuning_info(NV_ENC_TUNING_INFO::NV_ENC_TUNING_INFO_ULTRA_LOW_LATENCY)
+                .encode_config(&mut encode_config)
                 .enable_picture_type_decision()
                 .framerate(target_fps, 1);
 
@@ -212,6 +234,12 @@ mod imp {
         width: u32,
         height: u32,
         force_idr: bool,
+        /// Cached NVENC resource registration for the current texture.
+        /// Avoids per-frame register/unregister overhead. The texture
+        /// pointer is stable because DxgiCaptureSession reuses its copy
+        /// texture (same COM object across frames).
+        registered_texture_ptr: *mut c_void,
+        registered_resource: *mut c_void,
     }
 
     // SAFETY: Used from a single thread (sender worker). The D3D11 device has
@@ -228,6 +256,7 @@ mod imp {
             width: u32,
             height: u32,
             target_fps: u32,
+            target_bitrate_kbps: u32,
         ) -> Result<Self, String> {
             unsafe {
                 let api = &*ENCODE_API;
@@ -276,6 +305,14 @@ mod imp {
                 encode_config.frameIntervalP = 1;
                 encode_config.gopLength = target_fps;
 
+                // Configure CBR rate control at the requested bitrate
+                let bitrate_bps = target_bitrate_kbps * 1_000;
+                encode_config.rcParams.rateControlMode =
+                    nvidia_video_codec_sdk::sys::nvEncodeAPI::NV_ENC_PARAMS_RC_MODE::NV_ENC_PARAMS_RC_CBR;
+                encode_config.rcParams.averageBitRate = bitrate_bps;
+                encode_config.rcParams.maxBitRate = bitrate_bps;
+                encode_config.rcParams.vbvBufferSize = bitrate_bps / target_fps;
+
                 // Initialize encoder
                 let mut init_params: NV_ENC_INITIALIZE_PARAMS = std::mem::zeroed();
                 init_params.version =
@@ -321,15 +358,27 @@ mod imp {
                     width,
                     height,
                     force_idr: false,
+                    registered_texture_ptr: std::ptr::null_mut(),
+                    registered_resource: std::ptr::null_mut(),
                 })
             }
         }
 
-        fn encode_texture(&mut self, texture_ptr: *mut c_void) -> Result<Vec<u8>, String> {
+        /// Ensure the given texture is registered with NVENC. Reuses the
+        /// cached registration when the texture pointer hasn't changed
+        /// (which is the common case since DxgiCaptureSession reuses its
+        /// copy texture).
+        fn ensure_registered(&mut self, texture_ptr: *mut c_void) -> Result<(), String> {
+            if self.registered_texture_ptr == texture_ptr && !self.registered_resource.is_null() {
+                return Ok(());
+            }
+
+            // Unregister previous resource if any
+            self.unregister_current();
+
             unsafe {
                 let api = &*ENCODE_API;
 
-                // Register the D3D11 texture with NVENC
                 let mut register: NV_ENC_REGISTER_RESOURCE = std::mem::zeroed();
                 register.version =
                     nvidia_video_codec_sdk::sys::nvEncodeAPI::NV_ENC_REGISTER_RESOURCE_VER;
@@ -350,17 +399,40 @@ mod imp {
                         status
                     ));
                 }
-                let registered_resource = register.registeredResource;
+
+                self.registered_texture_ptr = texture_ptr;
+                self.registered_resource = register.registeredResource;
+            }
+            Ok(())
+        }
+
+        fn unregister_current(&mut self) {
+            if !self.registered_resource.is_null() && !self.encoder.is_null() {
+                unsafe {
+                    let api = &*ENCODE_API;
+                    let _ = (api.unregister_resource)(self.encoder, self.registered_resource);
+                }
+                self.registered_resource = std::ptr::null_mut();
+                self.registered_texture_ptr = std::ptr::null_mut();
+            }
+        }
+
+        fn encode_texture(&mut self, texture_ptr: *mut c_void) -> Result<Vec<u8>, String> {
+            self.ensure_registered(texture_ptr)?;
+
+            unsafe {
+                let api = &*ENCODE_API;
 
                 // Map the registered resource for encoding
                 let mut map_input: NV_ENC_MAP_INPUT_RESOURCE = std::mem::zeroed();
                 map_input.version =
                     nvidia_video_codec_sdk::sys::nvEncodeAPI::NV_ENC_MAP_INPUT_RESOURCE_VER;
-                map_input.registeredResource = registered_resource;
+                map_input.registeredResource = self.registered_resource;
 
                 let status = (api.map_input_resource)(self.encoder, &mut map_input);
                 if !nvenc_status_ok(status) {
-                    let _ = (api.unregister_resource)(self.encoder, registered_resource);
+                    // Registration may be stale — clear cache so next call re-registers
+                    self.unregister_current();
                     return Err(format!(
                         "NVENC D3D11: map_input_resource failed: {:?}",
                         status
@@ -394,9 +466,8 @@ mod imp {
                 let encode_ok =
                     nvenc_status_ok(status) || status == NVENCSTATUS::NV_ENC_ERR_NEED_MORE_INPUT;
 
-                // Unmap + unregister regardless of encode result
+                // Unmap regardless of encode result
                 let _ = (api.unmap_input_resource)(self.encoder, mapped_resource);
-                let _ = (api.unregister_resource)(self.encoder, registered_resource);
 
                 if status == NVENCSTATUS::NV_ENC_ERR_NEED_MORE_INPUT {
                     return Ok(Vec::new());
@@ -436,6 +507,7 @@ mod imp {
     impl Drop for NvencD3D11Session {
         fn drop(&mut self) {
             if !self.encoder.is_null() {
+                self.unregister_current();
                 unsafe {
                     let api = &*ENCODE_API;
                     let _ = (api.destroy_bitstream_buffer)(self.encoder, self.output_bitstream);
@@ -531,7 +603,13 @@ mod imp {
             }
 
             if self.session.is_none() {
-                let s = NvencD3D11Session::open(device_ptr, width, height, self.target_fps)?;
+                let s = NvencD3D11Session::open(
+                    device_ptr,
+                    width,
+                    height,
+                    self.target_fps,
+                    self.target_bitrate_kbps,
+                )?;
                 self.session = Some(NvencSessionMode::D3D11(s));
             }
 
@@ -682,49 +760,7 @@ mod imp {
         Ok(Box::new(backend))
     }
 
-    fn split_annex_b_nals(bitstream: &[u8]) -> Vec<Vec<u8>> {
-        let mut start_indices = Vec::new();
-        let mut index = 0usize;
-        while index + 3 <= bitstream.len() {
-            if index + 4 <= bitstream.len()
-                && bitstream[index] == 0
-                && bitstream[index + 1] == 0
-                && bitstream[index + 2] == 0
-                && bitstream[index + 3] == 1
-            {
-                start_indices.push((index, 4usize));
-                index += 4;
-                continue;
-            }
-            if bitstream[index] == 0 && bitstream[index + 1] == 0 && bitstream[index + 2] == 1 {
-                start_indices.push((index, 3usize));
-                index += 3;
-                continue;
-            }
-            index += 1;
-        }
-
-        if start_indices.is_empty() {
-            return Vec::new();
-        }
-
-        let mut nals = Vec::new();
-        for window_index in 0..start_indices.len() {
-            let (start, prefix_len) = start_indices[window_index];
-            let payload_start = start + prefix_len;
-            let payload_end = if window_index + 1 < start_indices.len() {
-                start_indices[window_index + 1].0
-            } else {
-                bitstream.len()
-            };
-
-            if payload_end > payload_start {
-                nals.push(bitstream[payload_start..payload_end].to_vec());
-            }
-        }
-
-        nals
-    }
+    use super::encoder_backend::split_annex_b_nals;
 }
 
 #[cfg(all(target_os = "windows", feature = "native-nvenc"))]

@@ -490,49 +490,7 @@ mod imp {
         })
     }
 
-    fn split_annex_b_nals(bitstream: &[u8]) -> Vec<Vec<u8>> {
-        let mut start_indices = Vec::new();
-        let mut index = 0usize;
-        while index + 3 <= bitstream.len() {
-            if index + 4 <= bitstream.len()
-                && bitstream[index] == 0
-                && bitstream[index + 1] == 0
-                && bitstream[index + 2] == 0
-                && bitstream[index + 3] == 1
-            {
-                start_indices.push((index, 4usize));
-                index += 4;
-                continue;
-            }
-            if bitstream[index] == 0 && bitstream[index + 1] == 0 && bitstream[index + 2] == 1 {
-                start_indices.push((index, 3usize));
-                index += 3;
-                continue;
-            }
-            index += 1;
-        }
-
-        if start_indices.is_empty() {
-            return Vec::new();
-        }
-
-        let mut nals = Vec::new();
-        for window_index in 0..start_indices.len() {
-            let (start, prefix_len) = start_indices[window_index];
-            let payload_start = start + prefix_len;
-            let payload_end = if window_index + 1 < start_indices.len() {
-                start_indices[window_index + 1].0
-            } else {
-                bitstream.len()
-            };
-
-            if payload_end > payload_start {
-                nals.push(bitstream[payload_start..payload_end].to_vec());
-            }
-        }
-
-        nals
-    }
+    use super::encoder_backend::split_annex_b_nals;
 }
 
 #[cfg(all(target_os = "windows", feature = "native-nvenc"))]

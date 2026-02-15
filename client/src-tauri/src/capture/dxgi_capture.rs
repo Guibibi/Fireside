@@ -5,7 +5,7 @@ mod imp {
     use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
     use windows::core::Interface;
-    use windows::Win32::Graphics::Direct3D::D3D_DRIVER_TYPE_HARDWARE;
+    use windows::Win32::Graphics::Direct3D::D3D_DRIVER_TYPE_UNKNOWN;
     use windows::Win32::Graphics::Direct3D11::{
         D3D11CreateDevice, ID3D11Device, ID3D11DeviceContext, ID3D11Multithread, ID3D11Texture2D,
         D3D11_CREATE_DEVICE_BGRA_SUPPORT, D3D11_SDK_VERSION, D3D11_TEXTURE2D_DESC,
@@ -35,6 +35,9 @@ mod imp {
         duplication: IDXGIOutputDuplication,
         width: u32,
         height: u32,
+        /// Reusable copy texture to avoid per-frame GPU heap allocation.
+        /// Recreated only when frame dimensions change.
+        cached_copy_texture: Option<(ID3D11Texture2D, u32, u32)>,
     }
 
     // SAFETY: D3D11 device has multithread protection enabled.
@@ -93,9 +96,12 @@ mod imp {
             let mut device = None;
             let mut context = None;
 
+            // When an explicit adapter is provided, driver type must be
+            // D3D_DRIVER_TYPE_UNKNOWN per MSDN. Using HARDWARE with a
+            // non-null adapter causes the adapter parameter to be ignored.
             D3D11CreateDevice(
                 adapter,
-                D3D_DRIVER_TYPE_HARDWARE,
+                D3D_DRIVER_TYPE_UNKNOWN,
                 None,
                 D3D11_CREATE_DEVICE_BGRA_SUPPORT,
                 None,
@@ -138,6 +144,7 @@ mod imp {
                 duplication,
                 width,
                 height,
+                cached_copy_texture: None,
             })
         }
 
@@ -206,32 +213,43 @@ mod imp {
                     .cast()
                     .map_err(|e| format!("DXGI: failed to cast resource to texture: {e}"))?;
 
-                // Create a copy of the desktop texture because the acquired
-                // resource must be released before the next acquire call.
+                // Copy the desktop texture to a reusable staging texture.
+                // The acquired resource must be released before the next
+                // AcquireNextFrame call, so we keep a persistent copy target.
                 let mut src_desc = D3D11_TEXTURE2D_DESC::default();
                 desktop_texture.GetDesc(&mut src_desc);
 
-                let copy_desc = D3D11_TEXTURE2D_DESC {
-                    Width: src_desc.Width,
-                    Height: src_desc.Height,
-                    MipLevels: 1,
-                    ArraySize: 1,
-                    Format: DXGI_FORMAT_B8G8R8A8_UNORM,
-                    SampleDesc: src_desc.SampleDesc,
-                    Usage: Default::default(), // D3D11_USAGE_DEFAULT
-                    BindFlags: Default::default(),
-                    CPUAccessFlags: Default::default(),
-                    MiscFlags: Default::default(),
-                };
+                let dims_match = self
+                    .cached_copy_texture
+                    .as_ref()
+                    .map(|(_, w, h)| *w == src_desc.Width && *h == src_desc.Height)
+                    .unwrap_or(false);
 
-                let mut copy_texture = None;
-                self.device
-                    .CreateTexture2D(&copy_desc, None, Some(&mut copy_texture))
-                    .map_err(|e| format!("DXGI: failed to create copy texture: {e}"))?;
-                let copy =
-                    copy_texture.ok_or_else(|| "DXGI: copy texture was not created".to_string())?;
+                if !dims_match {
+                    let copy_desc = D3D11_TEXTURE2D_DESC {
+                        Width: src_desc.Width,
+                        Height: src_desc.Height,
+                        MipLevels: 1,
+                        ArraySize: 1,
+                        Format: DXGI_FORMAT_B8G8R8A8_UNORM,
+                        SampleDesc: src_desc.SampleDesc,
+                        Usage: Default::default(), // D3D11_USAGE_DEFAULT
+                        BindFlags: Default::default(),
+                        CPUAccessFlags: Default::default(),
+                        MiscFlags: Default::default(),
+                    };
 
-                self.context.CopyResource(&copy, &desktop_texture);
+                    let mut new_texture = None;
+                    self.device
+                        .CreateTexture2D(&copy_desc, None, Some(&mut new_texture))
+                        .map_err(|e| format!("DXGI: failed to create copy texture: {e}"))?;
+                    let tex = new_texture
+                        .ok_or_else(|| "DXGI: copy texture was not created".to_string())?;
+                    self.cached_copy_texture = Some((tex, src_desc.Width, src_desc.Height));
+                }
+
+                let (copy, _, _) = self.cached_copy_texture.as_ref().unwrap();
+                self.context.CopyResource(copy, &desktop_texture);
 
                 // Explicitly release the frame and mark guard as released
                 self.duplication
@@ -240,7 +258,7 @@ mod imp {
                 guard.released = true;
 
                 Ok(Some(GpuTextureHandle {
-                    texture: copy,
+                    texture: copy.clone(),
                     device: self.device.clone(),
                     width: src_desc.Width,
                     height: src_desc.Height,
