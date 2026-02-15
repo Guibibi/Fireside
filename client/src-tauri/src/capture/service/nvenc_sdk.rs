@@ -281,10 +281,18 @@ mod imp {
                 }
 
                 // Get preset config for H264 baseline
-                let mut preset_config: NV_ENC_PRESET_CONFIG = std::mem::zeroed();
-                preset_config.version =
+                // NV_ENC_PRESET_CONFIG contains NonZero fields so we cannot
+                // use mem::zeroed().  Allocate uninit, write only the version
+                // tags the API requires, then let NVENC fill the rest.
+                let mut preset_config_mu =
+                    std::mem::MaybeUninit::<NV_ENC_PRESET_CONFIG>::uninit();
+                let pc_ptr = preset_config_mu.as_mut_ptr();
+                // Zero the whole allocation so padding / unused fields are
+                // deterministic, then stamp the version fields.
+                std::ptr::write_bytes(pc_ptr, 0u8, 1);
+                (*pc_ptr).version =
                     nvidia_video_codec_sdk::sys::nvEncodeAPI::NV_ENC_PRESET_CONFIG_VER;
-                preset_config.presetCfg.version =
+                (*pc_ptr).presetCfg.version =
                     nvidia_video_codec_sdk::sys::nvEncodeAPI::NV_ENC_CONFIG_VER;
 
                 let status = (api.get_encode_preset_config_ex)(
@@ -292,7 +300,7 @@ mod imp {
                     NV_ENC_CODEC_H264_GUID,
                     NV_ENC_PRESET_P4_GUID,
                     NV_ENC_TUNING_INFO::NV_ENC_TUNING_INFO_ULTRA_LOW_LATENCY,
-                    &mut preset_config,
+                    pc_ptr,
                 );
                 if !nvenc_status_ok(status) {
                     let _ = (api.destroy_encoder)(encoder);
@@ -301,6 +309,7 @@ mod imp {
                         status
                     ));
                 }
+                let preset_config = preset_config_mu.assume_init();
 
                 let mut encode_config = preset_config.presetCfg;
                 // Disable B-frames for low latency
