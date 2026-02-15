@@ -1,4 +1,4 @@
-import { For, Show } from "solid-js";
+import { For, Show, createSignal, onCleanup, onMount } from "solid-js";
 import type { Channel } from "../stores/chat";
 import { username } from "../stores/auth";
 import {
@@ -30,6 +30,59 @@ interface MessageTimelineProps {
   onCancelEdit: () => void;
   onEditDraftInput: (value: string) => void;
   toAbsoluteMediaUrl: (path: string) => string;
+}
+
+interface LazyAttachmentImageProps {
+  src: string;
+  alt: string;
+}
+
+function LazyAttachmentImage(props: LazyAttachmentImageProps) {
+  const [isVisible, setIsVisible] = createSignal(false);
+  let containerRef: HTMLDivElement | undefined;
+  let observer: IntersectionObserver | null = null;
+
+  onMount(() => {
+    if (!containerRef) {
+      return;
+    }
+
+    if (typeof IntersectionObserver === "undefined") {
+      setIsVisible(true);
+      return;
+    }
+
+    observer = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.isIntersecting) {
+          setIsVisible(true);
+          observer?.disconnect();
+          observer = null;
+          break;
+        }
+      }
+    }, {
+      rootMargin: "280px 0px",
+      threshold: 0.01,
+    });
+
+    observer.observe(containerRef);
+  });
+
+  onCleanup(() => {
+    observer?.disconnect();
+    observer = null;
+  });
+
+  return (
+    <div class="message-attachment-image-slot" ref={(element) => {
+      containerRef = element;
+    }}>
+      <Show when={isVisible()} fallback={<div class="message-attachment-image-placeholder" aria-hidden="true" />}>
+        <img src={props.src} alt={props.alt} loading="lazy" decoding="async" />
+      </Show>
+    </div>
+  );
 }
 
 export default function MessageTimeline(props: MessageTimelineProps) {
@@ -131,37 +184,26 @@ export default function MessageTimeline(props: MessageTimelineProps) {
                                           when={attachment.status === "ready" && (attachment.thumbnail_url || attachment.display_url)}
                                           fallback={<div class="message-attachment-placeholder">Image processing...</div>}
                                         >
-                                          <a
-                                            href={props.toAbsoluteMediaUrl(attachment.display_url ?? attachment.original_url)}
-                                            target="_blank"
-                                            rel="noreferrer"
-                                          >
-                                            <img
+                                          <div class="message-attachment-media">
+                                            <LazyAttachmentImage
                                               src={props.toAbsoluteMediaUrl(
                                                 attachment.thumbnail_url ?? attachment.display_url ?? attachment.original_url,
                                               )}
                                               alt="Shared attachment"
-                                              loading="lazy"
                                             />
-                                          </a>
+                                            <a
+                                              class="message-attachment-download-overlay"
+                                              href={props.toAbsoluteMediaUrl(attachment.original_url)}
+                                              download="attachment"
+                                              aria-label="Download attachment"
+                                              title="Download attachment"
+                                            >
+                                              <svg viewBox="0 0 24 24" aria-hidden="true">
+                                                <path d="M12 3a1 1 0 0 1 1 1v8.59l2.3-2.3a1 1 0 1 1 1.4 1.42l-4 4a1 1 0 0 1-1.4 0l-4-4a1 1 0 1 1 1.4-1.42l2.3 2.3V4a1 1 0 0 1 1-1Zm-7 14a1 1 0 0 1 1 1v1h12v-1a1 1 0 1 1 2 0v2a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-2a1 1 0 0 1 1-1Z" />
+                                              </svg>
+                                            </a>
+                                          </div>
                                         </Show>
-                                        <figcaption>
-                                          <a
-                                            href={props.toAbsoluteMediaUrl(attachment.original_url)}
-                                            target="_blank"
-                                            rel="noreferrer"
-                                          >
-                                            Open
-                                          </a>
-                                          <a
-                                            href={props.toAbsoluteMediaUrl(attachment.original_url)}
-                                            target="_blank"
-                                            rel="noreferrer"
-                                            download="attachment"
-                                          >
-                                            Download
-                                          </a>
-                                        </figcaption>
                                       </figure>
                                     )}
                                   </For>

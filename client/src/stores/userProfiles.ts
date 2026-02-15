@@ -34,10 +34,17 @@ export function setUserProfiles(profiles: UserProfile[]) {
 }
 
 export function upsertUserProfile(profile: UserProfile) {
-  setProfilesByUsername((current) => ({
-    ...current,
-    [profile.username]: profile,
-  }));
+  setProfilesByUsername((current) => {
+    const existing = current[profile.username];
+    return {
+      ...current,
+      [profile.username]: {
+        ...existing,
+        ...profile,
+        avatar_url: profile.avatar_url ?? existing?.avatar_url ?? null,
+      },
+    };
+  });
 }
 
 export function setUserAvatar(username: string, avatarUrl: string | null) {

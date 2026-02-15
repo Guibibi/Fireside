@@ -255,6 +255,11 @@ Yankcord is a self-hosted, minimal chat app. One server instance = one community
 - Tooltip or panel with detailed stats for troubleshooting.
 
 
+### Lazy loading messages
+- When opening a text channel, we should scroll to the bottom to see the most recent messages.
+- We should only fetch the first 20 or so message, and if we scroll up we lazy load them to have the API chill a bit.
+
+
 ### Auto-updater
 - Add an auto updater for the tauri build to allow distribution of new version easily.
 - User tauri update plugin https://v2.tauri.app/plugin/updater/

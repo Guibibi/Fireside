@@ -215,11 +215,75 @@
   background: rgba(0, 0, 0, 0.2);
 }
 
+.message-attachment-media {
+  position: relative;
+}
+
 .message-attachment img {
   display: block;
   width: 100%;
   max-height: 220px;
   object-fit: cover;
+}
+
+.message-attachment-image-slot {
+  min-height: 120px;
+}
+
+.message-attachment-image-placeholder {
+  width: 100%;
+  min-height: 120px;
+  max-height: 220px;
+  aspect-ratio: 16 / 10;
+  background:
+    linear-gradient(
+      110deg,
+      rgba(255, 255, 255, 0.06) 10%,
+      rgba(255, 255, 255, 0.14) 22%,
+      rgba(255, 255, 255, 0.06) 34%
+    ),
+    rgba(255, 255, 255, 0.04);
+  background-size: 220% 100%;
+  animation: message-attachment-shimmer 1.6s linear infinite;
+}
+
+.message-attachment-download-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--snow);
+  background: rgba(18, 18, 18, 0.68);
+  opacity: 0;
+  transition: opacity 150ms ease;
+}
+
+.message-attachment-download-overlay svg {
+  width: 28px;
+  height: 28px;
+  fill: currentColor;
+}
+
+.message-attachment:hover .message-attachment-download-overlay,
+.message-attachment:focus-within .message-attachment-download-overlay {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .message-attachment-download-overlay {
+    opacity: 1;
+  }
+}
+
+@keyframes message-attachment-shimmer {
+  from {
+    background-position: 200% 0;
+  }
+
+  to {
+    background-position: -20% 0;
+  }
 }
 
 .message-attachment-placeholder {
@@ -230,19 +294,6 @@
   padding: var(--space-md);
   color: var(--mist);
   font-size: 0.8rem;
-}
-
-.message-attachment figcaption {
-  display: flex;
-  align-items: center;
-  gap: var(--space-md);
-  padding: var(--space-sm) var(--space-md);
-  font-size: 0.75rem;
-  border-top: 1px solid var(--cloud-dark);
-}
-
-.message-attachment figcaption a {
-  color: var(--mist);
 }
 
 .message-edit {

@@ -10,7 +10,22 @@ export function toAbsoluteMediaUrl(apiBaseUrl: string, path: string): string {
     return path;
   }
 
-  return `${apiBaseUrl}${path}`;
+  const normalizedApiBaseUrl = apiBaseUrl.replace(/\/+$/, "");
+  const normalizedServerBaseUrl = normalizedApiBaseUrl.replace(/\/api$/i, "");
+
+  if (/^\/api(\/|$)/i.test(path)) {
+    return `${normalizedServerBaseUrl}${path}`;
+  }
+
+  if (path.startsWith("/")) {
+    return `${normalizedApiBaseUrl}${path}`;
+  }
+
+  if (/^api(\/|$)/i.test(path)) {
+    return `${normalizedServerBaseUrl}/${path}`;
+  }
+
+  return `${normalizedApiBaseUrl}/${path}`;
 }
 
 export async function waitForMediaDerivative(apiBaseUrl: string, mediaId: string): Promise<void> {
