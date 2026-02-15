@@ -9,11 +9,38 @@ const SCREEN_SHARE_FPS_KEY = "yankcord_screen_share_fps";
 const SCREEN_SHARE_BITRATE_MODE_KEY = "yankcord_screen_share_bitrate_mode";
 const SCREEN_SHARE_CUSTOM_BITRATE_KEY = "yankcord_screen_share_custom_bitrate_kbps";
 const SCREEN_SHARE_SOURCE_KIND_KEY = "yankcord_screen_share_source_kind";
+const VOICE_JOIN_SOUND_ENABLED_KEY = "yankcord_voice_join_sound_enabled";
+const VOICE_LEAVE_SOUND_ENABLED_KEY = "yankcord_voice_leave_sound_enabled";
+const VOICE_JOIN_SOUND_URL_KEY = "yankcord_voice_join_sound_url";
+const VOICE_LEAVE_SOUND_URL_KEY = "yankcord_voice_leave_sound_url";
 
 export type ScreenShareResolution = "720p" | "1080p" | "1440p" | "4k";
 export type ScreenShareFps = 30 | 60;
 export type ScreenShareBitrateMode = "auto" | "balanced" | "high" | "ultra" | "custom";
 export type ScreenShareSourceKind = "screen" | "window" | "application";
+
+function readBooleanPreference(key: string, defaultValue: boolean): boolean {
+  const value = localStorage.getItem(key);
+  if (value === "true") {
+    return true;
+  }
+
+  if (value === "false") {
+    return false;
+  }
+
+  return defaultValue;
+}
+
+function readVoiceCueUrlPreference(key: string, fallbackUrl: string): string {
+  const value = localStorage.getItem(key);
+  if (!value) {
+    return fallbackUrl;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : fallbackUrl;
+}
 
 function readScreenShareResolution(): ScreenShareResolution {
   const value = localStorage.getItem(SCREEN_SHARE_RESOLUTION_KEY);
@@ -97,6 +124,22 @@ const [preferredScreenShareSourceKind, setPreferredScreenShareSourceKind] = crea
   readScreenShareSourceKind(),
 );
 
+const [voiceJoinSoundEnabled, setVoiceJoinSoundEnabled] = createSignal<boolean>(
+  readBooleanPreference(VOICE_JOIN_SOUND_ENABLED_KEY, true),
+);
+
+const [voiceLeaveSoundEnabled, setVoiceLeaveSoundEnabled] = createSignal<boolean>(
+  readBooleanPreference(VOICE_LEAVE_SOUND_ENABLED_KEY, true),
+);
+
+const [voiceJoinSoundUrl, setVoiceJoinSoundUrl] = createSignal<string>(
+  readVoiceCueUrlPreference(VOICE_JOIN_SOUND_URL_KEY, "/sounds/voice-join.mp3"),
+);
+
+const [voiceLeaveSoundUrl, setVoiceLeaveSoundUrl] = createSignal<string>(
+  readVoiceCueUrlPreference(VOICE_LEAVE_SOUND_URL_KEY, "/sounds/voice-leave.mp3"),
+);
+
 export {
   preferredAudioInputDeviceId,
   preferredAudioOutputDeviceId,
@@ -107,6 +150,10 @@ export {
   preferredScreenShareBitrateMode,
   preferredScreenShareCustomBitrateKbps,
   preferredScreenShareSourceKind,
+  voiceJoinSoundEnabled,
+  voiceLeaveSoundEnabled,
+  voiceJoinSoundUrl,
+  voiceLeaveSoundUrl,
 };
 
 export function savePreferredAudioInputDeviceId(deviceId: string | null) {
@@ -173,6 +220,28 @@ export function savePreferredScreenShareCustomBitrateKbps(kbps: number) {
 export function savePreferredScreenShareSourceKind(kind: ScreenShareSourceKind) {
   localStorage.setItem(SCREEN_SHARE_SOURCE_KIND_KEY, kind);
   setPreferredScreenShareSourceKind(kind);
+}
+
+export function saveVoiceJoinSoundEnabled(enabled: boolean) {
+  localStorage.setItem(VOICE_JOIN_SOUND_ENABLED_KEY, String(enabled));
+  setVoiceJoinSoundEnabled(enabled);
+}
+
+export function saveVoiceLeaveSoundEnabled(enabled: boolean) {
+  localStorage.setItem(VOICE_LEAVE_SOUND_ENABLED_KEY, String(enabled));
+  setVoiceLeaveSoundEnabled(enabled);
+}
+
+export function saveVoiceJoinSoundUrl(url: string) {
+  const normalized = url.trim() || "/sounds/voice-join.mp3";
+  localStorage.setItem(VOICE_JOIN_SOUND_URL_KEY, normalized);
+  setVoiceJoinSoundUrl(normalized);
+}
+
+export function saveVoiceLeaveSoundUrl(url: string) {
+  const normalized = url.trim() || "/sounds/voice-leave.mp3";
+  localStorage.setItem(VOICE_LEAVE_SOUND_URL_KEY, normalized);
+  setVoiceLeaveSoundUrl(normalized);
 }
 
 export function resetAudioPreferences() {

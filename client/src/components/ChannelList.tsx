@@ -45,6 +45,7 @@ import {
 } from "../stores/settings";
 import { errorMessage } from "../utils/error";
 import { isTauriRuntime } from "../utils/platform";
+import { playVoiceJoinCue, playVoiceLeaveCue } from "../utils/voiceCue";
 import {
     applyVoiceJoined,
     applyVoiceLeft,
@@ -666,11 +667,17 @@ export default function ChannelList() {
             }
 
             if (msg.type === "voice_user_joined") {
+                if (joinedVoiceChannelId() === msg.channel_id) {
+                    playVoiceJoinCue();
+                }
                 applyVoiceJoined(msg.channel_id, msg.username);
                 return;
             }
 
             if (msg.type === "voice_user_left") {
+                if (joinedVoiceChannelId() === msg.channel_id) {
+                    playVoiceLeaveCue();
+                }
                 applyVoiceLeft(msg.channel_id, msg.username);
                 return;
             }

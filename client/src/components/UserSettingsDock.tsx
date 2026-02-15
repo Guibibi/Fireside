@@ -36,6 +36,14 @@ import {
   preferredAudioOutputDeviceId,
   preferredCameraDeviceId,
   saveAvatarPlaceholderName,
+  saveVoiceJoinSoundEnabled,
+  saveVoiceJoinSoundUrl,
+  saveVoiceLeaveSoundEnabled,
+  saveVoiceLeaveSoundUrl,
+  voiceJoinSoundEnabled,
+  voiceJoinSoundUrl,
+  voiceLeaveSoundEnabled,
+  voiceLeaveSoundUrl,
 } from "../stores/settings";
 import Modal from "./Modal";
 
@@ -202,6 +210,22 @@ export default function UserSettingsDock() {
     saveAvatarPlaceholderName(null);
   }
 
+  function handleVoiceJoinSoundToggle(event: Event) {
+    saveVoiceJoinSoundEnabled((event.currentTarget as HTMLInputElement).checked);
+  }
+
+  function handleVoiceLeaveSoundToggle(event: Event) {
+    saveVoiceLeaveSoundEnabled((event.currentTarget as HTMLInputElement).checked);
+  }
+
+  function handleVoiceJoinSoundUrlInput(event: Event) {
+    saveVoiceJoinSoundUrl((event.currentTarget as HTMLInputElement).value);
+  }
+
+  function handleVoiceLeaveSoundUrlInput(event: Event) {
+    saveVoiceLeaveSoundUrl((event.currentTarget as HTMLInputElement).value);
+  }
+
   function handleLogout() {
     cleanupMediaTransports();
     disconnect();
@@ -352,6 +376,48 @@ export default function UserSettingsDock() {
               <Show when={audioError()}>
                 <p class="error">{audioError()}</p>
               </Show>
+            </section>
+
+            <section class="settings-section">
+              <h5>Notifications</h5>
+              <label class="settings-checkbox" for="settings-voice-join-sound-enabled">
+                <input
+                  id="settings-voice-join-sound-enabled"
+                  type="checkbox"
+                  checked={voiceJoinSoundEnabled()}
+                  onInput={handleVoiceJoinSoundToggle}
+                />
+                Play sound when someone joins your current voice channel
+              </label>
+              <label class="settings-label" for="settings-voice-join-sound-url">Join sound URL</label>
+              <input
+                id="settings-voice-join-sound-url"
+                type="text"
+                value={voiceJoinSoundUrl()}
+                onInput={handleVoiceJoinSoundUrlInput}
+                placeholder="/sounds/voice-join.mp3"
+              />
+
+              <label class="settings-checkbox" for="settings-voice-leave-sound-enabled">
+                <input
+                  id="settings-voice-leave-sound-enabled"
+                  type="checkbox"
+                  checked={voiceLeaveSoundEnabled()}
+                  onInput={handleVoiceLeaveSoundToggle}
+                />
+                Play sound when someone leaves your current voice channel
+              </label>
+              <label class="settings-label" for="settings-voice-leave-sound-url">Leave sound URL</label>
+              <input
+                id="settings-voice-leave-sound-url"
+                type="text"
+                value={voiceLeaveSoundUrl()}
+                onInput={handleVoiceLeaveSoundUrlInput}
+                placeholder="/sounds/voice-leave.mp3"
+              />
+              <p class="settings-help">
+                Add your files to <code>client/public/sounds/</code> (for example <code>voice-join.mp3</code> and <code>voice-leave.mp3</code>).
+              </p>
             </section>
 
             <section class="settings-section">

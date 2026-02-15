@@ -189,12 +189,6 @@ Yankcord is a self-hosted, minimal chat app. One server instance = one community
 - Optionally fetch and display rich embeds (title, description, image) similar to Discord.
 - Security: validate and sanitize embed content; respect privacy (no prefetch without user action).
 
-### Per-User Volume Control
-
-- Allow users to adjust the receiving volume of other participants client-side during voice calls.
-- Store volume preferences per user in local storage.
-- Apply gain adjustments to remote audio tracks without affecting other users.
-
 ### Web Instance Auto-Configuration
 
 - When running the web version (non-Tauri), automatically default the instance address to the current website origin.
