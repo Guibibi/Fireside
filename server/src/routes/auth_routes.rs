@@ -36,13 +36,6 @@ async fn connect(
         return Err(AppError::Unauthorized("Invalid server password".into()));
     }
 
-    {
-        let active_usernames = state.active_usernames.read().await;
-        if active_usernames.contains(&body.username) {
-            return Err(AppError::Conflict("Username already connected".into()));
-        }
-    }
-
     sqlx::query(
         "INSERT INTO users (id, username) VALUES ($1, $2) ON CONFLICT (username) DO NOTHING",
     )

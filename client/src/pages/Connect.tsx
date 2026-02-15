@@ -1,4 +1,4 @@
-import { createSignal } from "solid-js";
+import { createSignal, onMount } from "solid-js";
 import { useNavigate } from "@solidjs/router";
 import { normalizeServerUrl, saveAuth, serverUrl } from "../stores/auth";
 import { errorMessage } from "../utils/error";
@@ -8,12 +8,25 @@ interface ConnectResponse {
   username: string;
 }
 
+const AUTH_NOTICE_STORAGE_KEY = "yankcord_auth_notice";
+
 export default function Connect() {
   const navigate = useNavigate();
   const [url, setUrl] = createSignal(serverUrl());
   const [password, setPassword] = createSignal("");
   const [username, setUsername] = createSignal("");
+  const [notice, setNotice] = createSignal("");
   const [error, setError] = createSignal("");
+
+  onMount(() => {
+    const storedNotice = sessionStorage.getItem(AUTH_NOTICE_STORAGE_KEY);
+    if (!storedNotice) {
+      return;
+    }
+
+    setNotice(storedNotice);
+    sessionStorage.removeItem(AUTH_NOTICE_STORAGE_KEY);
+  });
 
   async function handleSubmit(e: Event) {
     e.preventDefault();
@@ -55,6 +68,7 @@ export default function Connect() {
     <div class="auth-page">
       <form class="auth-form" onSubmit={handleSubmit}>
         <h1>Connect</h1>
+        {notice() && <p class="info">{notice()}</p>}
         {error() && <p class="error">{error()}</p>}
         <input
           type="text"

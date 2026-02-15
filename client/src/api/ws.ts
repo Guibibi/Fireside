@@ -1,4 +1,4 @@
-import { getWsUrl, token } from "../stores/auth";
+import { clearAuthSession, getWsUrl, token } from "../stores/auth";
 import type { Channel } from "../stores/chat";
 
 export type ServerMessage =
@@ -70,6 +70,20 @@ let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 let reconnectAttempts = 0;
 let lastConnectUrl: string | null = null;
 let connectionStatus: WsConnectionStatus = "disconnected";
+
+const AUTH_FAILURE_MESSAGES = new Set([
+  "Invalid token",
+  "User not found",
+  "Must authenticate first",
+  "Username already connected",
+  "You were logged out because this account connected from another session",
+]);
+const AUTH_NOTICE_STORAGE_KEY = "yankcord_auth_notice";
+const SESSION_REPLACED_MESSAGE = "You were logged out because this account connected from another session";
+
+function shouldForceLogout(message: string): boolean {
+  return AUTH_FAILURE_MESSAGES.has(message);
+}
 
 function notifyStatus() {
   const snapshot: WsConnectionStatusSnapshot = {
@@ -156,6 +170,19 @@ export function connect(url = getWsUrl(), reconnectAttempt = false) {
   ws.onmessage = (ev) => {
     try {
       const msg: ServerMessage = JSON.parse(ev.data);
+
+      if (msg.type === "error" && shouldForceLogout(msg.message)) {
+        if (msg.message === SESSION_REPLACED_MESSAGE) {
+          sessionStorage.setItem(
+            AUTH_NOTICE_STORAGE_KEY,
+            "You were signed out because this account connected in another window or tab.",
+          );
+        }
+        disconnect();
+        clearAuthSession();
+        window.location.assign("/connect");
+        return;
+      }
 
       if (msg.type === "presence_snapshot") {
         latestPresenceUsernames = [...msg.usernames];

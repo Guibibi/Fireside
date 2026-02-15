@@ -12,6 +12,15 @@
   border-radius: var(--radius-md);
 }
 
+.info {
+  font-size: 0.8rem;
+  color: var(--info);
+  padding: var(--space-md);
+  background: var(--sky-soft);
+  border: 1px solid rgba(167, 197, 235, 0.3);
+  border-radius: var(--radius-md);
+}
+
 .placeholder {
   font-size: 0.85rem;
   color: var(--mist);

@@ -46,12 +46,16 @@ export function updateAuthIdentity(t: string, uname: string) {
   setUsername(uname);
 }
 
-export function clearAuth() {
+export function clearAuthSession() {
   localStorage.removeItem("yankcord_token");
   localStorage.removeItem("yankcord_username");
-  localStorage.removeItem("yankcord_server_url");
   setToken(null);
   setUsername(null);
+}
+
+export function clearAuth() {
+  clearAuthSession();
+  localStorage.removeItem("yankcord_server_url");
   setServerUrl("http://localhost:3000");
 }
 

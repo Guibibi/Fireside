@@ -65,16 +65,10 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                         return;
                     };
 
+                    replace_existing_connection_for_username(&state, &claims.username).await;
+
                     {
                         let mut active_usernames = state.active_usernames.write().await;
-                        if active_usernames.contains(&claims.username) {
-                            if let Ok(json) = serde_json::to_string(&ServerMessage::Error {
-                                message: "Username already connected".into(),
-                            }) {
-                                let _ = sink.send(Message::Text(json.into())).await;
-                            }
-                            return;
-                        }
                         active_usernames.insert(claims.username.clone());
                     }
 
@@ -283,6 +277,76 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
     )
     .await;
     writer.abort();
+}
+
+async fn replace_existing_connection_for_username(state: &AppState, username: &str) {
+    let existing_connection_id = {
+        let connection_usernames = state.connection_usernames.read().await;
+        connection_usernames
+            .iter()
+            .find_map(|(connection_id, connected_username)| {
+                if connected_username == username {
+                    Some(*connection_id)
+                } else {
+                    None
+                }
+            })
+    };
+
+    let Some(existing_connection_id) = existing_connection_id else {
+        return;
+    };
+
+    tracing::info!(
+        username = %username,
+        connection_id = %existing_connection_id,
+        "Replacing existing websocket session for username"
+    );
+
+    let existing_sender = {
+        let connections = state.ws_connections.read().await;
+        connections.get(&existing_connection_id).cloned()
+    };
+
+    if let Some(existing_sender) = existing_sender {
+        send_server_message(
+            &existing_sender,
+            ServerMessage::Error {
+                message: "You were logged out because this account connected from another session"
+                    .into(),
+            },
+        );
+    }
+
+    let removed_voice_channel =
+        cleanup_connection(state, Some(username), Some(existing_connection_id)).await;
+    if let Some(channel_id) = removed_voice_channel {
+        broadcast_voice_activity_to_channel(state, channel_id, username, false, None).await;
+        broadcast_global_message(
+            state,
+            ServerMessage::VoiceUserLeft {
+                channel_id,
+                username: username.to_string(),
+            },
+            None,
+        )
+        .await;
+    }
+
+    let closed_producers = state
+        .media
+        .cleanup_connection_media(existing_connection_id)
+        .await;
+    broadcast_closed_producers(state, &closed_producers, Some(existing_connection_id)).await;
+
+    broadcast_global_message(
+        state,
+        ServerMessage::UserDisconnected {
+            username: username.to_string(),
+        },
+        None,
+    )
+    .await;
 }
 
 async fn handle_client_message(
