@@ -1,19 +1,33 @@
 import {
   preferredAudioInputDeviceId,
   preferredCameraDeviceId,
+  voiceEchoCancellationEnabled,
+  voiceNoiseSuppressionEnabled,
   type ScreenShareResolution,
 } from "../../stores/settings";
 import type { ScreenShareStartOptions } from "./types";
 
 export function audioInputConstraint(deviceId: string | null = preferredAudioInputDeviceId()): MediaTrackConstraints | boolean {
-  const selectedDeviceId = deviceId;
-  if (!selectedDeviceId) {
+  const constraints: MediaTrackConstraints = {};
+  const supportedConstraints = navigator.mediaDevices?.getSupportedConstraints?.();
+
+  if (deviceId) {
+    constraints.deviceId = { exact: deviceId };
+  }
+
+  if (supportedConstraints?.noiseSuppression) {
+    constraints.noiseSuppression = voiceNoiseSuppressionEnabled();
+  }
+
+  if (supportedConstraints?.echoCancellation) {
+    constraints.echoCancellation = voiceEchoCancellationEnabled();
+  }
+
+  if (Object.keys(constraints).length === 0) {
     return true;
   }
 
-  return {
-    deviceId: { exact: selectedDeviceId },
-  };
+  return constraints;
 }
 
 export function cameraInputConstraint(deviceId: string | null = preferredCameraDeviceId()): MediaTrackConstraints | boolean {

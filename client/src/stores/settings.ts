@@ -12,6 +12,8 @@ const SCREEN_SHARE_SOURCE_KIND_KEY = "yankcord_screen_share_source_kind";
 const VOICE_JOIN_SOUND_ENABLED_KEY = "yankcord_voice_join_sound_enabled";
 const VOICE_LEAVE_SOUND_ENABLED_KEY = "yankcord_voice_leave_sound_enabled";
 const VOICE_AUTO_LEVEL_ENABLED_KEY = "yankcord_voice_auto_level_enabled";
+const VOICE_NOISE_SUPPRESSION_ENABLED_KEY = "yankcord_voice_noise_suppression_enabled";
+const VOICE_ECHO_CANCELLATION_ENABLED_KEY = "yankcord_voice_echo_cancellation_enabled";
 const VOICE_INCOMING_VOLUME_KEY = "yankcord_voice_incoming_volume";
 const VOICE_OUTGOING_VOLUME_KEY = "yankcord_voice_outgoing_volume";
 
@@ -149,6 +151,14 @@ const [voiceAutoLevelEnabled, setVoiceAutoLevelEnabled] = createSignal<boolean>(
   readBooleanPreference(VOICE_AUTO_LEVEL_ENABLED_KEY, true),
 );
 
+const [voiceNoiseSuppressionEnabled, setVoiceNoiseSuppressionEnabled] = createSignal<boolean>(
+  readBooleanPreference(VOICE_NOISE_SUPPRESSION_ENABLED_KEY, true),
+);
+
+const [voiceEchoCancellationEnabled, setVoiceEchoCancellationEnabled] = createSignal<boolean>(
+  readBooleanPreference(VOICE_ECHO_CANCELLATION_ENABLED_KEY, true),
+);
+
 const [voiceIncomingVolume, setVoiceIncomingVolume] = createSignal<number>(
   readVoiceVolumePreference(VOICE_INCOMING_VOLUME_KEY, 100),
 );
@@ -170,6 +180,8 @@ export {
   voiceJoinSoundEnabled,
   voiceLeaveSoundEnabled,
   voiceAutoLevelEnabled,
+  voiceNoiseSuppressionEnabled,
+  voiceEchoCancellationEnabled,
   voiceIncomingVolume,
   voiceOutgoingVolume,
 };
@@ -255,6 +267,16 @@ export function saveVoiceAutoLevelEnabled(enabled: boolean) {
   setVoiceAutoLevelEnabled(enabled);
 }
 
+export function saveVoiceNoiseSuppressionEnabled(enabled: boolean) {
+  localStorage.setItem(VOICE_NOISE_SUPPRESSION_ENABLED_KEY, String(enabled));
+  setVoiceNoiseSuppressionEnabled(enabled);
+}
+
+export function saveVoiceEchoCancellationEnabled(enabled: boolean) {
+  localStorage.setItem(VOICE_ECHO_CANCELLATION_ENABLED_KEY, String(enabled));
+  setVoiceEchoCancellationEnabled(enabled);
+}
+
 export function saveVoiceIncomingVolume(volume: number) {
   const normalized = clampVoiceVolume(volume);
   localStorage.setItem(VOICE_INCOMING_VOLUME_KEY, String(normalized));
@@ -271,6 +293,8 @@ export function resetAudioPreferences() {
   savePreferredAudioInputDeviceId(null);
   savePreferredAudioOutputDeviceId(null);
   savePreferredCameraDeviceId(null);
+  saveVoiceNoiseSuppressionEnabled(true);
+  saveVoiceEchoCancellationEnabled(true);
   saveVoiceIncomingVolume(100);
   saveVoiceOutgoingVolume(100);
 }

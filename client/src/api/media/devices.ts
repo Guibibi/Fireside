@@ -3,6 +3,8 @@ import {
   preferredAudioOutputDeviceId,
   preferredCameraDeviceId,
   saveVoiceIncomingVolume,
+  saveVoiceEchoCancellationEnabled,
+  saveVoiceNoiseSuppressionEnabled,
   saveVoiceOutgoingVolume,
   savePreferredAudioInputDeviceId,
   savePreferredAudioOutputDeviceId,
@@ -226,6 +228,8 @@ export async function resetPreferredAudioDevices() {
   savePreferredAudioInputDeviceId(null);
   savePreferredAudioOutputDeviceId(null);
   savePreferredCameraDeviceId(null);
+  saveVoiceNoiseSuppressionEnabled(true);
+  saveVoiceEchoCancellationEnabled(true);
   saveVoiceIncomingVolume(100);
   saveVoiceOutgoingVolume(100);
   updateOutgoingMicrophoneGain(100);

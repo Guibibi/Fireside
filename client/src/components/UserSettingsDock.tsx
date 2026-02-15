@@ -42,19 +42,25 @@ import {
   preferredAudioOutputDeviceId,
   preferredCameraDeviceId,
   saveVoiceAutoLevelEnabled,
+  saveVoiceEchoCancellationEnabled,
   saveVoiceIncomingVolume,
   saveVoiceJoinSoundEnabled,
   saveVoiceLeaveSoundEnabled,
+  saveVoiceNoiseSuppressionEnabled,
   saveVoiceOutgoingVolume,
   voiceAutoLevelEnabled,
+  voiceEchoCancellationEnabled,
   voiceIncomingVolume,
   voiceJoinSoundEnabled,
   voiceLeaveSoundEnabled,
+  voiceNoiseSuppressionEnabled,
   voiceOutgoingVolume,
 } from "../stores/settings";
 import Modal from "./Modal";
 import UserAvatar from "./UserAvatar";
 import { renameUserProfile, setUserAvatar, upsertUserProfile } from "../stores/userProfiles";
+import NotificationSessionSettings from "./settings/NotificationSessionSettings";
+import VoiceAudioPreferences from "./settings/VoiceAudioPreferences";
 
 interface UpdateCurrentUserResponse {
   token: string;
@@ -282,6 +288,27 @@ export default function UserSettingsDock() {
     updateVoiceNormalizationNodesEnabled(enabled);
   }
 
+  async function applyUpdatedMicrophoneConstraints() {
+    setAudioError("");
+    try {
+      await setPreferredMicrophoneDevice(preferredAudioInputDeviceId());
+    } catch (error) {
+      setAudioError(errorMessage(error, "Failed to apply microphone processing settings"));
+    }
+  }
+
+  function handleVoiceNoiseSuppressionToggle(event: Event) {
+    const enabled = (event.currentTarget as HTMLInputElement).checked;
+    saveVoiceNoiseSuppressionEnabled(enabled);
+    void applyUpdatedMicrophoneConstraints();
+  }
+
+  function handleVoiceEchoCancellationToggle(event: Event) {
+    const enabled = (event.currentTarget as HTMLInputElement).checked;
+    saveVoiceEchoCancellationEnabled(enabled);
+    void applyUpdatedMicrophoneConstraints();
+  }
+
   function handleVoiceIncomingVolumeInput(event: InputEvent) {
     const value = Number.parseInt((event.currentTarget as HTMLInputElement).value, 10);
     saveVoiceIncomingVolume(value);
@@ -430,86 +457,31 @@ export default function UserSettingsDock() {
                 </select>
               </div>
 
-              <label class="settings-checkbox" for="settings-voice-auto-level-enabled">
-                <input
-                  id="settings-voice-auto-level-enabled"
-                  type="checkbox"
-                  checked={voiceAutoLevelEnabled()}
-                  onInput={handleVoiceAutoLevelToggle}
-                />
-                Auto level incoming voices
-              </label>
-              <p class="settings-help">Smooths sudden loud peaks while keeping per-user volume sliders effective.</p>
-
-              <div class="settings-audio-row">
-                <div class="settings-volume-header">
-                  <label class="settings-label" for="settings-voice-incoming-volume">Incoming voice volume</label>
-                  <span class="settings-volume-value">{voiceIncomingVolume()}%</span>
-                </div>
-                <input
-                  id="settings-voice-incoming-volume"
-                  type="range"
-                  min="0"
-                  max="200"
-                  step="1"
-                  value={voiceIncomingVolume()}
-                  onInput={handleVoiceIncomingVolumeInput}
-                />
-                <p class="settings-help">Adjusts all incoming voice audio before per-user volume sliders.</p>
-              </div>
-
-              <div class="settings-audio-row">
-                <div class="settings-volume-header">
-                  <label class="settings-label" for="settings-voice-outgoing-volume">Outgoing microphone volume</label>
-                  <span class="settings-volume-value">{voiceOutgoingVolume()}%</span>
-                </div>
-                <input
-                  id="settings-voice-outgoing-volume"
-                  type="range"
-                  min="0"
-                  max="200"
-                  step="1"
-                  value={voiceOutgoingVolume()}
-                  onInput={handleVoiceOutgoingVolumeInput}
-                />
-                <p class="settings-help">Adjusts your microphone level sent to other participants.</p>
-              </div>
+              <VoiceAudioPreferences
+                voiceAutoLevelEnabled={voiceAutoLevelEnabled()}
+                voiceNoiseSuppressionEnabled={voiceNoiseSuppressionEnabled()}
+                voiceEchoCancellationEnabled={voiceEchoCancellationEnabled()}
+                voiceIncomingVolume={voiceIncomingVolume()}
+                voiceOutgoingVolume={voiceOutgoingVolume()}
+                onVoiceAutoLevelToggle={handleVoiceAutoLevelToggle}
+                onVoiceNoiseSuppressionToggle={handleVoiceNoiseSuppressionToggle}
+                onVoiceEchoCancellationToggle={handleVoiceEchoCancellationToggle}
+                onVoiceIncomingVolumeInput={handleVoiceIncomingVolumeInput}
+                onVoiceOutgoingVolumeInput={handleVoiceOutgoingVolumeInput}
+              />
 
               <Show when={audioError()}>
                 <p class="error">{audioError()}</p>
               </Show>
             </section>
 
-            <section class="settings-section">
-              <h5>Notifications</h5>
-              <label class="settings-checkbox" for="settings-voice-join-sound-enabled">
-                <input
-                  id="settings-voice-join-sound-enabled"
-                  type="checkbox"
-                  checked={voiceJoinSoundEnabled()}
-                  onInput={handleVoiceJoinSoundToggle}
-                />
-                Play sound when someone joins your current voice channel
-              </label>
-
-              <label class="settings-checkbox" for="settings-voice-leave-sound-enabled">
-                <input
-                  id="settings-voice-leave-sound-enabled"
-                  type="checkbox"
-                  checked={voiceLeaveSoundEnabled()}
-                  onInput={handleVoiceLeaveSoundToggle}
-                />
-                Play sound when someone leaves your current voice channel
-              </label>
-            </section>
-
-            <section class="settings-section">
-              <h5>Session</h5>
-              <p class="settings-help">Sign out from this server and return to connect screen.</p>
-              <div class="settings-actions">
-                <button type="button" class="settings-danger" onClick={handleLogout}>Log out</button>
-              </div>
-            </section>
+            <NotificationSessionSettings
+              voiceJoinSoundEnabled={voiceJoinSoundEnabled()}
+              voiceLeaveSoundEnabled={voiceLeaveSoundEnabled()}
+              onVoiceJoinSoundToggle={handleVoiceJoinSoundToggle}
+              onVoiceLeaveSoundToggle={handleVoiceLeaveSoundToggle}
+              onLogout={handleLogout}
+            />
         </>
       </Modal>
     </>
