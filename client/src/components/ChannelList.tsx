@@ -7,6 +7,7 @@ import {
     onMount,
     untrack,
 } from "solid-js";
+import { username as currentUsername } from "../stores/auth";
 import { del, get, post } from "../api/http";
 import {
     cleanupMediaTransports,
@@ -45,7 +46,11 @@ import {
 } from "../stores/settings";
 import { errorMessage } from "../utils/error";
 import { isTauriRuntime } from "../utils/platform";
-import { playVoiceJoinCue, playVoiceLeaveCue } from "../utils/voiceCue";
+import {
+    playVoiceJoinCue,
+    playVoiceLeaveCue,
+    preloadVoiceCues,
+} from "../utils/voiceCue";
 import {
     applyVoiceJoined,
     applyVoiceLeft,
@@ -591,6 +596,7 @@ export default function ChannelList() {
     }
 
     onMount(() => {
+        preloadVoiceCues();
         connect();
         startConnectionStatusSubscription();
         void loadInitialChannels();
@@ -667,7 +673,10 @@ export default function ChannelList() {
             }
 
             if (msg.type === "voice_user_joined") {
-                if (joinedVoiceChannelId() === msg.channel_id) {
+                if (
+                    joinedVoiceChannelId() === msg.channel_id &&
+                    msg.username !== currentUsername()
+                ) {
                     playVoiceJoinCue();
                 }
                 applyVoiceJoined(msg.channel_id, msg.username);
@@ -675,7 +684,10 @@ export default function ChannelList() {
             }
 
             if (msg.type === "voice_user_left") {
-                if (joinedVoiceChannelId() === msg.channel_id) {
+                if (
+                    joinedVoiceChannelId() === msg.channel_id &&
+                    msg.username !== currentUsername()
+                ) {
                     playVoiceLeaveCue();
                 }
                 applyVoiceLeft(msg.channel_id, msg.username);
@@ -688,6 +700,7 @@ export default function ChannelList() {
             }
 
             if (msg.type === "voice_joined") {
+                playVoiceJoinCue();
                 setJoinedVoiceChannel(msg.channel_id);
                 startCameraStateSubscription();
                 startScreenStateSubscription();
@@ -711,6 +724,7 @@ export default function ChannelList() {
 
             if (msg.type === "voice_left") {
                 if (joinedVoiceChannelId() === msg.channel_id) {
+                    playVoiceLeaveCue();
                     setJoinedVoiceChannel(null);
                     cleanupMediaTransports();
                     resetVoiceMediaState();
