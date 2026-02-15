@@ -9,10 +9,21 @@ const [username, setUsername] = createSignal<string | null>(
 );
 
 const [serverUrl, setServerUrl] = createSignal<string>(
-  normalizeServerUrl(
-    localStorage.getItem("yankcord_server_url") || "http://localhost:3000",
-  ),
+  normalizeServerUrl(localStorage.getItem("yankcord_server_url") || defaultServerUrl()),
 );
+
+function defaultServerUrl(): string {
+  if (typeof window === "undefined") {
+    return "http://localhost:3000";
+  }
+
+  const { protocol, hostname } = window.location;
+  if (protocol === "http:" || protocol === "https:") {
+    return `${protocol}//${hostname}`;
+  }
+
+  return "http://localhost:3000";
+}
 
 export function normalizeServerUrl(url: string): string {
   const trimmed = url.trim();
@@ -56,7 +67,7 @@ export function clearAuthSession() {
 export function clearAuth() {
   clearAuthSession();
   localStorage.removeItem("yankcord_server_url");
-  setServerUrl("http://localhost:3000");
+  setServerUrl(defaultServerUrl());
 }
 
 export function isAuthenticated(): boolean {
