@@ -181,6 +181,80 @@ Yankcord is a self-hosted, minimal chat app. One server instance = one community
 
 ---
 
+## Nice to Have (Future Considerations)
+
+### Link Support with Embeds
+
+- Detect URLs in message text and render them as clickable links.
+- Optionally fetch and display rich embeds (title, description, image) similar to Discord.
+- Security: validate and sanitize embed content; respect privacy (no prefetch without user action).
+
+### Per-User Volume Control
+
+- Allow users to adjust the receiving volume of other participants client-side during voice calls.
+- Store volume preferences per user in local storage.
+- Apply gain adjustments to remote audio tracks without affecting other users.
+
+### Web Instance Auto-Configuration
+
+- When running the web version (non-Tauri), automatically default the instance address to the current website origin.
+- Skip the server address input step for web deployments while preserving it for desktop app users.
+
+### Voice Channel Join/Leave Sounds
+
+- Play a subtle sound notification when a user joins or leaves a voice channel you are currently in.
+- Allow users to toggle or customize these sounds in settings.
+
+### @ Mentions for Users
+
+- Support `@username` mentions in chat messages with autocomplete.
+- Highlight mentioned messages for the target user.
+- Send notification to mentioned users (in-app and optional push).
+
+### Private Messages (Direct Messages)
+
+- Enable one-to-one private messaging between users outside of channels.
+- Add a DM list to the sidebar for easy access to conversations.
+- Support initiating DMs from user profiles or member lists.
+
+### Native Desktop Notifications
+
+- Integrate with the OS notification system for message alerts, mentions, and calls.
+- Include notification preferences (sounds, badges, quiet hours).
+- Deep link notifications to the relevant channel or conversation.
+
+### Voice Activity Detection (VAD) Sensitivity
+
+- Expose VAD sensitivity controls in audio settings.
+- Allow users to tune how aggressively their microphone activates on voice.
+- Provide presets (low/medium/high) and fine-grained slider control.
+
+### Noise Suppression / Echo Cancellation
+
+- Toggleable noise suppression to reduce background noise.
+- Echo cancellation to prevent feedback during voice calls.
+- Use WebRTC built-in processing or integrate libraries like RNNoise.
+
+### Network Quality Indicator
+
+- Display real-time connection quality metrics in voice UI (packet loss, jitter, latency).
+- Visual indicator (bars/colors) for quick assessment.
+- Tooltip or panel with detailed stats for troubleshooting.
+
+### Audio Normalization
+
+- Normalize incoming voice audio levels so all participants sound equally loud.
+- Apply dynamic range compression per remote audio track.
+- Prevent loud users from overwhelming quiet ones automatically.
+
+### Message Grouping by Day
+
+- Group messages in the timeline with date headers ("Today", "Yesterday", "Monday, Jan 15").
+- Improve scannability in busy channels with long history.
+- Sticky date header while scrolling through messages.
+
+---
+
 ## Validation Baseline
 
 Run these for relevant milestones:
