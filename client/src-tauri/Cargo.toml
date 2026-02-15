@@ -19,6 +19,11 @@ default = []
 native-nvenc = ["dep:nvidia-video-codec-sdk", "dep:cudarc"]
 native-diagnostic-udp-mirror = []
 
+# Force nvidia-video-codec-sdk to use cudarc 0.19 (supports CUDA 13.1)
+# instead of its default 0.16 dependency
+[patch.crates-io]
+cudarc = { git = "https://github.com/coreylowman/cudarc.git", tag = "v0.19.2" }
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
