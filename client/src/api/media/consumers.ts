@@ -108,6 +108,21 @@ function configureNormalizationNode(node: DynamicsCompressorNode, enabled: boole
   node.release.value = 0.25;
 }
 
+function logAudioPlaybackFailure(
+  consumerId: string,
+  producerId: string,
+  stage: "initial" | "processed",
+  error: unknown,
+) {
+  console.debug("[media] Remote audio playback start failed", {
+    consumerId,
+    producerId,
+    stage,
+    preferredOutputDeviceId: preferredAudioOutputDeviceId(),
+    error,
+  });
+}
+
 export function disposeRemoteConsumer(consumerId: string) {
   const consumer = remoteConsumers.get(consumerId);
   if (consumer) {
@@ -206,7 +221,9 @@ export async function consumeRemoteProducer(channelId: string, producerId: strin
     }
 
     audio.srcObject = new MediaStream([consumer.track]);
-    void audio.play().catch(() => undefined);
+    void audio.play().catch((error) => {
+      logAudioPlaybackFailure(consumer.id, description.producer_id, "initial", error);
+    });
   } else {
     const username = producerUsernameById.get(description.producer_id) ?? "Unknown";
     const source = producerSourceById.get(description.producer_id) === "screen" ? "screen" : "camera";
@@ -251,6 +268,9 @@ export async function consumeRemoteProducer(channelId: string, producerId: strin
         gainNode.connect(destination);
 
         audio.srcObject = destination.stream;
+        void audio.play().catch((error) => {
+          logAudioPlaybackFailure(consumer.id, description.producer_id, "processed", error);
+        });
       }
     }
   } catch (error) {
