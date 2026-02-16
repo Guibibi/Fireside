@@ -428,23 +428,35 @@ export default function SettingsPage() {
         <div class="settings-content-body">
           <Show when={activeSettingsSection() === "profile"}>
             <form class="settings-section" onSubmit={(event) => void handleSaveProfile(event)}>
-              <h5>Profile</h5>
-              <label class="settings-label" for="settings-username">Username</label>
-              <input
-                id="settings-username"
-                type="text"
-                value={draftUsername()}
-                maxlength={32}
-                onInput={(event) => setDraftUsername(event.currentTarget.value)}
-                disabled={isSavingProfile()}
-              />
-              <p class="settings-help">Server URL: {serverUrl()}</p>
+              <div class="settings-section-head">
+                <h5>Profile</h5>
+                <p class="settings-help">Manage your display identity for this server.</p>
+              </div>
 
-              <label class="settings-label" for="settings-avatar">Avatar</label>
-              <input id="settings-avatar" type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => void handleAvatarInput(event)} disabled={isUploadingAvatar()} />
-              <p class="settings-help">JPEG, PNG, or WebP. Max size 2 MB.</p>
-              <div class="settings-avatar-preview">
-                <UserAvatar username={currentUsername() ?? avatarFallbackLabel()} size={72} />
+              <div class="settings-profile-grid">
+                <section class="settings-profile-card">
+                  <h6>Identity</h6>
+                  <label class="settings-label" for="settings-username">Username</label>
+                  <input
+                    id="settings-username"
+                    type="text"
+                    value={draftUsername()}
+                    maxlength={32}
+                    onInput={(event) => setDraftUsername(event.currentTarget.value)}
+                    disabled={isSavingProfile()}
+                  />
+                  <p class="settings-help">Server URL: {serverUrl()}</p>
+                </section>
+
+                <section class="settings-profile-card">
+                  <h6>Avatar</h6>
+                  <div class="settings-avatar-preview">
+                    <UserAvatar username={currentUsername() ?? avatarFallbackLabel()} size={72} />
+                  </div>
+                  <label class="settings-label" for="settings-avatar">Upload new image</label>
+                  <input id="settings-avatar" type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => void handleAvatarInput(event)} disabled={isUploadingAvatar()} />
+                  <p class="settings-help">JPEG, PNG, or WebP. Max size 2 MB.</p>
+                </section>
               </div>
 
               <Show when={profileError()}>
@@ -463,63 +475,72 @@ export default function SettingsPage() {
           </Show>
 
           <Show when={activeSettingsSection() === "audio"}>
-            <section class="settings-section">
-              <h5>Audio</h5>
-              <div class="settings-audio-row">
-                <label class="settings-label" for="settings-microphone">Microphone</label>
-                <select
-                  id="settings-microphone"
-                  value={preferredAudioInputDeviceId() ?? ""}
-                  onInput={(event) => void handleAudioInputChange(event)}
-                  disabled={isRefreshingDevices()}
-                >
-                  <option value="">System default microphone</option>
-                  {audioInputs().map((device) => (
-                    <option value={device.deviceId}>{device.label}</option>
-                  ))}
-                </select>
+            <section class="settings-section settings-audio-panel">
+              <div class="settings-section-head">
+                <h5>Audio</h5>
+                <p class="settings-help">Choose devices and tune processing so voice chats stay clear and balanced.</p>
               </div>
 
-              <div class="settings-audio-row">
-                <label class="settings-label" for="settings-speaker">Speakers</label>
-                <select
-                  id="settings-speaker"
-                  value={preferredAudioOutputDeviceId() ?? ""}
-                  onInput={(event) => void handleAudioOutputChange(event)}
-                  disabled={!supportsSpeakerSelection || isRefreshingDevices()}
-                >
-                  <option value="">System default output</option>
-                  {audioOutputs().map((device) => (
-                    <option value={device.deviceId}>{device.label}</option>
-                  ))}
-                </select>
-                <Show when={!supportsSpeakerSelection}>
-                  <p class="settings-help">Speaker selection is not supported in this runtime.</p>
-                </Show>
+              <div class="settings-audio-device-grid">
+                <div class="settings-audio-card">
+                  <label class="settings-label" for="settings-microphone">Microphone</label>
+                  <p class="settings-help">Input source for your outgoing voice.</p>
+                  <select
+                    id="settings-microphone"
+                    value={preferredAudioInputDeviceId() ?? ""}
+                    onInput={(event) => void handleAudioInputChange(event)}
+                    disabled={isRefreshingDevices()}
+                  >
+                    <option value="">System default microphone</option>
+                    {audioInputs().map((device) => (
+                      <option value={device.deviceId}>{device.label}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div class="settings-audio-card">
+                  <label class="settings-label" for="settings-speaker">Speakers</label>
+                  <p class="settings-help">Output target for incoming voice audio.</p>
+                  <select
+                    id="settings-speaker"
+                    value={preferredAudioOutputDeviceId() ?? ""}
+                    onInput={(event) => void handleAudioOutputChange(event)}
+                    disabled={!supportsSpeakerSelection || isRefreshingDevices()}
+                  >
+                    <option value="">System default output</option>
+                    {audioOutputs().map((device) => (
+                      <option value={device.deviceId}>{device.label}</option>
+                    ))}
+                  </select>
+                  <Show when={!supportsSpeakerSelection}>
+                    <p class="settings-help">Speaker selection is not supported in this runtime.</p>
+                  </Show>
+                </div>
+
+                <div class="settings-audio-card settings-audio-card-wide">
+                  <label class="settings-label" for="settings-camera">Camera</label>
+                  <p class="settings-help">Camera used when enabling video.</p>
+                  <select
+                    id="settings-camera"
+                    value={preferredCameraDeviceId() ?? ""}
+                    onInput={(event) => void handleCameraInputChange(event)}
+                    disabled={isRefreshingDevices()}
+                  >
+                    <option value="">System default camera</option>
+                    {cameraInputs().map((device) => (
+                      <option value={device.deviceId}>{device.label}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
-              <div class="settings-actions">
+              <div class="settings-actions settings-audio-actions">
                 <button type="button" class="settings-secondary" onClick={() => void refreshMediaDevices()}>
                   Refresh devices
                 </button>
                 <button type="button" class="settings-secondary" onClick={() => void handleResetAudioPreferences()}>
                   Reset audio
                 </button>
-              </div>
-
-              <div class="settings-audio-row">
-                <label class="settings-label" for="settings-camera">Camera</label>
-                <select
-                  id="settings-camera"
-                  value={preferredCameraDeviceId() ?? ""}
-                  onInput={(event) => void handleCameraInputChange(event)}
-                  disabled={isRefreshingDevices()}
-                >
-                  <option value="">System default camera</option>
-                  {cameraInputs().map((device) => (
-                    <option value={device.deviceId}>{device.label}</option>
-                  ))}
-                </select>
               </div>
 
               <VoiceAudioPreferences
@@ -551,46 +572,64 @@ export default function SettingsPage() {
 
           <Show when={activeSettingsSection() === "notifications"}>
             <section class="settings-section">
-              <h5>Notifications</h5>
-              <label class="settings-checkbox" for="settings-voice-join-sound-enabled">
-                <input
-                  id="settings-voice-join-sound-enabled"
-                  type="checkbox"
-                  checked={voiceJoinSoundEnabled()}
-                  onInput={handleVoiceJoinSoundToggle}
-                />
-                Play sound when someone joins your current voice channel
-              </label>
+              <div class="settings-section-head">
+                <h5>Notifications</h5>
+                <p class="settings-help">Choose which cues and alerts you want while chatting.</p>
+              </div>
 
-              <label class="settings-checkbox" for="settings-voice-leave-sound-enabled">
-                <input
-                  id="settings-voice-leave-sound-enabled"
-                  type="checkbox"
-                  checked={voiceLeaveSoundEnabled()}
-                  onInput={handleVoiceLeaveSoundToggle}
-                />
-                Play sound when someone leaves your current voice channel
-              </label>
+              <div class="settings-notification-stack">
+                <label class="settings-toggle-card" for="settings-voice-join-sound-enabled">
+                  <span class="settings-toggle-copy">
+                    <span class="settings-toggle-title">Join voice cue</span>
+                    <span class="settings-help">Play a sound when someone joins your current voice channel.</span>
+                  </span>
+                  <input
+                    id="settings-voice-join-sound-enabled"
+                    type="checkbox"
+                    checked={voiceJoinSoundEnabled()}
+                    onInput={handleVoiceJoinSoundToggle}
+                  />
+                </label>
 
-              <label class="settings-checkbox" for="settings-message-notification-sound-enabled">
-                <input
-                  id="settings-message-notification-sound-enabled"
-                  type="checkbox"
-                  checked={messageNotificationSoundEnabled()}
-                  onInput={handleMessageNotificationSoundToggle}
-                />
-                Play sound for new messages when app or channel is not focused
-              </label>
+                <label class="settings-toggle-card" for="settings-voice-leave-sound-enabled">
+                  <span class="settings-toggle-copy">
+                    <span class="settings-toggle-title">Leave voice cue</span>
+                    <span class="settings-help">Play a sound when someone leaves your current voice channel.</span>
+                  </span>
+                  <input
+                    id="settings-voice-leave-sound-enabled"
+                    type="checkbox"
+                    checked={voiceLeaveSoundEnabled()}
+                    onInput={handleVoiceLeaveSoundToggle}
+                  />
+                </label>
 
-              <label class="settings-checkbox" for="settings-mention-desktop-notifications-enabled">
-                <input
-                  id="settings-mention-desktop-notifications-enabled"
-                  type="checkbox"
-                  checked={mentionDesktopNotificationsEnabled()}
-                  onInput={(event) => void handleMentionDesktopNotificationsToggle(event)}
-                />
-                Show desktop notifications when someone mentions you
-              </label>
+                <label class="settings-toggle-card" for="settings-message-notification-sound-enabled">
+                  <span class="settings-toggle-copy">
+                    <span class="settings-toggle-title">Message cue</span>
+                    <span class="settings-help">Play a sound for new messages when the app or channel is not focused.</span>
+                  </span>
+                  <input
+                    id="settings-message-notification-sound-enabled"
+                    type="checkbox"
+                    checked={messageNotificationSoundEnabled()}
+                    onInput={handleMessageNotificationSoundToggle}
+                  />
+                </label>
+
+                <label class="settings-toggle-card" for="settings-mention-desktop-notifications-enabled">
+                  <span class="settings-toggle-copy">
+                    <span class="settings-toggle-title">Mention desktop alerts</span>
+                    <span class="settings-help">Show desktop notifications when someone mentions you.</span>
+                  </span>
+                  <input
+                    id="settings-mention-desktop-notifications-enabled"
+                    type="checkbox"
+                    checked={mentionDesktopNotificationsEnabled()}
+                    onInput={(event) => void handleMentionDesktopNotificationsToggle(event)}
+                  />
+                </label>
+              </div>
 
               <Show when={notificationError()}>
                 <p class="error">{notificationError()}</p>
