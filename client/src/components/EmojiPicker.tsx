@@ -19,6 +19,28 @@ export default function EmojiPicker(props: EmojiPickerProps) {
   const emojiStore = useEmojiStore();
   const [activeTab, setActiveTab] = createSignal<"unicode" | "custom">("unicode");
   const [search, setSearch] = createSignal("");
+  const [position, setPosition] = createSignal({ top: 0, left: 0 });
+
+  let pickerRef: HTMLDivElement | undefined;
+
+  const updatePosition = () => {
+    if (!props.anchorRef || !pickerRef) {
+      return;
+    }
+
+    const anchorRect = props.anchorRef.getBoundingClientRect();
+    const pickerRect = pickerRef.getBoundingClientRect();
+    const spacing = 8;
+    let left = anchorRect.left + (anchorRect.width - pickerRect.width) / 2;
+    left = Math.max(spacing, Math.min(left, window.innerWidth - pickerRect.width - spacing));
+
+    let top = anchorRect.top - pickerRect.height - spacing;
+    if (top < spacing) {
+      top = anchorRect.bottom + spacing;
+    }
+
+    setPosition({ top, left });
+  };
 
   createEffect(() => {
     if (emojiStore.emojis.length === 0 && !emojiStore.loading) {
@@ -33,9 +55,38 @@ export default function EmojiPicker(props: EmojiPickerProps) {
       }
     };
 
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) {
+        return;
+      }
+
+      if (pickerRef?.contains(target)) {
+        return;
+      }
+
+      if (props.anchorRef?.contains(target)) {
+        return;
+      }
+
+      props.onClose();
+    };
+
+    const onReposition = () => {
+      updatePosition();
+    };
+
     window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("pointerdown", onPointerDown);
+    window.addEventListener("resize", onReposition);
+    window.addEventListener("scroll", onReposition, true);
+    queueMicrotask(updatePosition);
+
     onCleanup(() => {
       window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("resize", onReposition);
+      window.removeEventListener("scroll", onReposition, true);
     });
   });
 
@@ -57,15 +108,12 @@ export default function EmojiPicker(props: EmojiPickerProps) {
 
   return (
     <div
+      ref={pickerRef}
       class="emoji-picker"
       style={{
-        position: "absolute",
-        ...(props.anchorRef
-          ? {
-              bottom: `${props.anchorRef.offsetHeight + 8}px`,
-              left: "0",
-            }
-          : {}),
+        position: "fixed",
+        top: `${position().top}px`,
+        left: `${position().left}px`,
       }}
     >
       <div class="emoji-picker-header">

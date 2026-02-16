@@ -400,6 +400,20 @@
   box-shadow: none;
 }
 
+.message-reaction-add {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s var(--ease-soft);
+}
+
+.message-item:hover .message-reaction-add,
+.message-item:focus-within .message-reaction-add,
+.message-reaction-add:focus-visible,
+.message-reaction-add.is-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
 .message-reaction-chip.is-active {
   border-color: var(--accent-border);
   background: var(--accent-dim);
@@ -681,6 +695,11 @@
   font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.5px;
+}
+
+.message-emoji-icon {
+  font-size: 16px;
+  line-height: 1;
 }
 
 .message-attach-input {

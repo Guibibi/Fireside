@@ -304,7 +304,7 @@ export default function MessageTimeline(props: MessageTimelineProps) {
                                 </For>
                                 <button
                                   type="button"
-                                  class="message-reaction-add"
+                                  class={`message-reaction-add${reactionPickerMessageId() === message.id ? " is-visible" : ""}`}
                                   onClick={(event) => {
                                     const opening = reactionPickerMessageId() !== message.id;
                                     setReactionPickerMessageId((current) => current === message.id ? null : message.id);

@@ -61,18 +61,21 @@
 
 .emoji-picker-content {
   flex: 1;
+  min-height: 240px;
   overflow-y: auto;
   padding: 12px;
 }
 
 .emoji-grid {
   display: grid;
-  grid-template-columns: repeat(8, 1fr);
-  gap: 4px;
+  grid-template-columns: repeat(auto-fill, minmax(40px, 1fr));
+  gap: 6px;
+  align-content: start;
 }
 
 .emoji-item {
   aspect-ratio: 1;
+  width: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -80,7 +83,7 @@
   border: none;
   border-radius: var(--radius-sm);
   cursor: pointer;
-  font-size: 24px;
+  font-size: 22px;
   padding: 4px;
   transition: background 0.15s ease;
 }
@@ -101,6 +104,9 @@
 
 .emoji-picker-loading,
 .emoji-picker-empty {
+  min-height: 216px;
+  display: grid;
+  place-items: center;
   text-align: center;
   padding: 24px;
   color: var(--text-secondary);

@@ -274,12 +274,7 @@ export default function MessageComposer(props: MessageComposerProps) {
           aria-label="Add emoji"
           title="Add emoji"
         >
-          <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true">
-            <circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" stroke-width="1.6" />
-            <circle cx="7" cy="8" r="1" fill="currentColor" />
-            <circle cx="13" cy="8" r="1" fill="currentColor" />
-            <path d="M7 12c1 1.5 2.5 2 3 2s2-.5 3-2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
-          </svg>
+          <span class="message-emoji-icon" aria-hidden="true">😊</span>
         </button>
         <Show when={showEmojiPicker()}>
           <Suspense fallback={<div>Loading...</div>}>

@@ -14,8 +14,29 @@ export default function GifPicker(props: GifPickerProps) {
   const [loading, setLoading] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
   const [nextCursor, setNextCursor] = createSignal<string | null>(null);
+  const [position, setPosition] = createSignal({ top: 0, left: 0 });
 
   let searchTimeout: number | null = null;
+  let pickerRef: HTMLDivElement | undefined;
+
+  const updatePosition = () => {
+    if (!props.anchorRef || !pickerRef) {
+      return;
+    }
+
+    const anchorRect = props.anchorRef.getBoundingClientRect();
+    const pickerRect = pickerRef.getBoundingClientRect();
+    const spacing = 8;
+    let left = anchorRect.left + (anchorRect.width - pickerRect.width) / 2;
+    left = Math.max(spacing, Math.min(left, window.innerWidth - pickerRect.width - spacing));
+
+    let top = anchorRect.top - pickerRect.height - spacing;
+    if (top < spacing) {
+      top = anchorRect.bottom + spacing;
+    }
+
+    setPosition({ top, left });
+  };
 
   createEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -24,9 +45,42 @@ export default function GifPicker(props: GifPickerProps) {
       }
     };
 
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) {
+        return;
+      }
+
+      if (pickerRef?.contains(target)) {
+        return;
+      }
+
+      if (props.anchorRef?.contains(target)) {
+        return;
+      }
+
+      props.onClose();
+    };
+
+    const onReposition = () => {
+      updatePosition();
+    };
+
     window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("pointerdown", onPointerDown);
+    window.addEventListener("resize", onReposition);
+    window.addEventListener("scroll", onReposition, true);
+    queueMicrotask(updatePosition);
+
     onCleanup(() => {
       window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("resize", onReposition);
+      window.removeEventListener("scroll", onReposition, true);
+
+      if (searchTimeout) {
+        clearTimeout(searchTimeout);
+      }
     });
   });
 
@@ -77,15 +131,12 @@ export default function GifPicker(props: GifPickerProps) {
 
   return (
     <div
+      ref={pickerRef}
       class="gif-picker"
       style={{
-        position: "absolute",
-        ...(props.anchorRef
-          ? {
-              bottom: `${props.anchorRef.offsetHeight + 8}px`,
-              left: "0",
-            }
-          : {}),
+        position: "fixed",
+        top: `${position().top}px`,
+        left: `${position().left}px`,
       }}
     >
       <div class="gif-picker-header">
