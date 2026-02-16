@@ -103,6 +103,12 @@ Single-test quick reference:
 - Keep changes small and composable; avoid opportunistic rewrites.
 - Prefer extracting cohesive modules over growing already-large files.
 
+## Code Rules (Important)
+- Keep the codebase in good shape by refactoring huge files into smaller modules
+- Try to keep files size under 500 lines
+
+
+
 ## Rust Style (`server/` and `client/src-tauri/`)
 
 - Formatting: `rustfmt` defaults, 4-space indentation, trailing commas in multiline blocks.
