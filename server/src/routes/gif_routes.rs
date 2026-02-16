@@ -100,10 +100,10 @@ async fn search_gifs(
         request = request.query(&[("pos", cursor.as_str())]);
     }
 
-    let response = request
-        .send()
-        .await
-        .map_err(|error| AppError::Internal(format!("Failed to fetch from Tenor: {error}")))?;
+    let response = request.send().await.map_err(|error| {
+        tracing::error!(error = %error, "Tenor API request failed");
+        AppError::Internal("Tenor API request failed".into())
+    })?;
 
     if !response.status().is_success() {
         let status = response.status();
@@ -137,13 +137,17 @@ async fn search_gifs(
 }
 
 async fn read_cached_search(cache_key: &str) -> Option<GifSearchResponse> {
-    let cache = GIF_SEARCH_CACHE.read().await;
-    let cached = cache.get(cache_key)?;
-    if cached.inserted_at.elapsed() > GIF_SEARCH_CACHE_TTL {
-        return None;
+    {
+        let cache = GIF_SEARCH_CACHE.read().await;
+        let cached = cache.get(cache_key)?;
+        if cached.inserted_at.elapsed() <= GIF_SEARCH_CACHE_TTL {
+            return Some(cached.response.clone());
+        }
     }
 
-    Some(cached.response.clone())
+    let mut cache = GIF_SEARCH_CACHE.write().await;
+    cache.remove(cache_key);
+    None
 }
 
 async fn cache_search_result(cache_key: String, response: GifSearchResponse) {

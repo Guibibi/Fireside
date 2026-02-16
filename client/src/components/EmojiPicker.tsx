@@ -21,7 +21,9 @@ export default function EmojiPicker(props: EmojiPickerProps) {
   const [search, setSearch] = createSignal("");
 
   createEffect(() => {
-    loadEmojis();
+    if (emojiStore.emojis.length === 0 && !emojiStore.loading) {
+      loadEmojis();
+    }
   });
 
   createEffect(() => {

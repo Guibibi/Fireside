@@ -43,6 +43,7 @@ Edit `server/.env.docker` and set at minimum:
 - `WEBRTC_ANNOUNCED_IP` only when browser clients connect over the public internet and need voice/media
 - `NATIVE_RTP_ANNOUNCED_IP` when Tauri desktop clients on other hosts use native screen share
 - `STORAGE_BACKEND` and `STORAGE_LOCAL_ROOT` for media upload storage
+- `TENOR_API_KEY` (optional) for GIF search via the Tenor API
 
 Notes:
 

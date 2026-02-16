@@ -103,7 +103,7 @@ function LazyAttachmentImage(props: LazyAttachmentImageProps) {
 export default function MessageTimeline(props: MessageTimelineProps) {
   const [attachmentPreview, setAttachmentPreview] = createSignal<AttachmentPreview | null>(null);
   const [reactionPickerMessageId, setReactionPickerMessageId] = createSignal<string | null>(null);
-  let reactionPickerAnchorRef: HTMLButtonElement | undefined;
+  const [reactionPickerAnchor, setReactionPickerAnchor] = createSignal<HTMLElement | null>(null);
 
   function messageClassName(content: string): string {
     const currentUsername = username();
@@ -303,15 +303,16 @@ export default function MessageTimeline(props: MessageTimelineProps) {
                                   )}
                                 </For>
                                 <button
-                                  ref={(element) => {
-                                    if (reactionPickerMessageId() === message.id) {
-                                      reactionPickerAnchorRef = element;
-                                    }
-                                  }}
                                   type="button"
                                   class="message-reaction-add"
-                                  onClick={() => {
+                                  onClick={(event) => {
+                                    const opening = reactionPickerMessageId() !== message.id;
                                     setReactionPickerMessageId((current) => current === message.id ? null : message.id);
+                                    if (opening) {
+                                      setReactionPickerAnchor(event.currentTarget);
+                                    } else {
+                                      setReactionPickerAnchor(null);
+                                    }
                                   }}
                                   aria-label="Add reaction"
                                   title="Add reaction"
@@ -357,7 +358,7 @@ export default function MessageTimeline(props: MessageTimelineProps) {
           </ul>
           <Show when={reactionPickerMessageId() !== null}>
             <ReactionPicker
-              anchorRef={reactionPickerAnchorRef}
+              anchorRef={reactionPickerAnchor() ?? undefined}
               onSelect={(selection) => {
                 const messageId = reactionPickerMessageId();
                 if (!messageId) {
@@ -370,8 +371,12 @@ export default function MessageTimeline(props: MessageTimelineProps) {
                   props.onAddReaction(messageId, { unicode_emoji: selection.emoji });
                 }
                 setReactionPickerMessageId(null);
+                setReactionPickerAnchor(null);
               }}
-              onClose={() => setReactionPickerMessageId(null)}
+              onClose={() => {
+                setReactionPickerMessageId(null);
+                setReactionPickerAnchor(null);
+              }}
             />
           </Show>
         </AsyncContent>

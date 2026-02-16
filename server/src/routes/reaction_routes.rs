@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use axum::{
     extract::Path,
     extract::State,
@@ -10,10 +12,9 @@ use uuid::Uuid;
 use crate::auth::extract_claims;
 use crate::errors::AppError;
 use crate::models::Reaction;
+use crate::ws::broadcast::broadcast_channel_message;
 use crate::ws::messages::ServerMessage;
 use crate::AppState;
-
-type ReactionSummaryRow = (Option<Uuid>, Option<String>, Option<String>, i64);
 
 #[derive(Deserialize)]
 pub struct AddReactionRequest {
@@ -98,47 +99,20 @@ async fn add_reaction(
         if !emoji_exists {
             return Err(AppError::NotFound("Emoji not found".into()));
         }
-
-        let existing: Option<(Uuid,)> = sqlx::query_as(
-            "SELECT id FROM reactions 
-             WHERE message_id = $1 AND user_id = $2 AND emoji_id = $3",
-        )
-        .bind(message_id)
-        .bind(user_id)
-        .bind(emoji_id)
-        .fetch_optional(&state.db)
-        .await?;
-
-        if existing.is_some() {
-            return Err(AppError::Conflict("Reaction already exists".into()));
-        }
     } else if let Some(ref unicode_emoji) = body.unicode_emoji {
         if unicode_emoji.is_empty() || unicode_emoji.len() > 16 {
             return Err(AppError::BadRequest(
                 "Unicode emoji must be between 1 and 16 characters".into(),
             ));
         }
-
-        let existing: Option<(Uuid,)> = sqlx::query_as(
-            "SELECT id FROM reactions 
-             WHERE message_id = $1 AND user_id = $2 AND unicode_emoji = $3",
-        )
-        .bind(message_id)
-        .bind(user_id)
-        .bind(unicode_emoji)
-        .fetch_optional(&state.db)
-        .await?;
-
-        if existing.is_some() {
-            return Err(AppError::Conflict("Reaction already exists".into()));
-        }
     }
 
     let reaction_id = Uuid::new_v4();
 
-    let inserted_reaction: Reaction = sqlx::query_as(
+    let inserted_reaction: Option<Reaction> = sqlx::query_as(
         "INSERT INTO reactions (id, message_id, user_id, emoji_id, unicode_emoji, created_at)
          VALUES ($1, $2, $3, $4, $5, now())
+         ON CONFLICT DO NOTHING
          RETURNING id, message_id, user_id, emoji_id, unicode_emoji, created_at",
     )
     .bind(reaction_id)
@@ -146,8 +120,11 @@ async fn add_reaction(
     .bind(user_id)
     .bind(body.emoji_id)
     .bind(body.unicode_emoji.as_ref())
-    .fetch_one(&state.db)
+    .fetch_optional(&state.db)
     .await?;
+
+    let inserted_reaction =
+        inserted_reaction.ok_or_else(|| AppError::Conflict("Reaction already exists".into()))?;
 
     let channel_id: Uuid = sqlx::query_scalar("SELECT channel_id FROM messages WHERE id = $1")
         .bind(message_id)
@@ -177,7 +154,7 @@ async fn add_reaction(
     .await
     .unwrap_or(1);
 
-    broadcast_server_message(
+    broadcast_channel_message(
         &state,
         channel_id,
         ServerMessage::ReactionAdded {
@@ -189,6 +166,7 @@ async fn add_reaction(
             user_id,
             count,
         },
+        None,
     )
     .await;
 
@@ -244,7 +222,7 @@ async fn remove_custom_reaction(
     .await
     .unwrap_or(0);
 
-    broadcast_server_message(
+    broadcast_channel_message(
         &state,
         channel_id,
         ServerMessage::ReactionRemoved {
@@ -255,6 +233,7 @@ async fn remove_custom_reaction(
             user_id,
             count: remaining,
         },
+        None,
     )
     .await;
 
@@ -266,6 +245,12 @@ async fn remove_unicode_reaction(
     headers: axum::http::HeaderMap,
     Path((message_id, unicode_emoji)): Path<(Uuid, String)>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    if unicode_emoji.is_empty() || unicode_emoji.len() > 16 {
+        return Err(AppError::BadRequest(
+            "Unicode emoji must be between 1 and 16 characters".into(),
+        ));
+    }
+
     let claims = extract_claims(&headers, &state.config.jwt.secret)?;
 
     let user_id: Uuid = sqlx::query_scalar("SELECT id FROM users WHERE username = $1")
@@ -304,7 +289,7 @@ async fn remove_unicode_reaction(
     .await
     .unwrap_or(0);
 
-    broadcast_server_message(
+    broadcast_channel_message(
         &state,
         channel_id,
         ServerMessage::ReactionRemoved {
@@ -315,84 +300,62 @@ async fn remove_unicode_reaction(
             user_id,
             count: remaining,
         },
+        None,
     )
     .await;
 
     Ok(Json(serde_json::json!({"deleted": true})))
 }
 
-async fn broadcast_server_message(state: &AppState, channel_id: Uuid, message: ServerMessage) {
-    if let Ok(json) = serde_json::to_string(&message) {
-        broadcast_to_channel_subscribers(state, channel_id, json).await;
-    }
-}
+type BatchedReactionRow = (
+    Uuid,
+    Option<Uuid>,
+    Option<String>,
+    Option<String>,
+    i64,
+    bool,
+);
 
-async fn broadcast_to_channel_subscribers(state: &AppState, channel_id: Uuid, message: String) {
-    let subs = state.channel_subscriptions.read().await;
-
-    for (conn_id, sub_channel_id) in subs.iter() {
-        if *sub_channel_id == channel_id {
-            if let Some(tx) = state.ws_connections.read().await.get(conn_id) {
-                let _ = tx.send(message.clone());
-            }
-        }
-    }
-
-    drop(subs);
-}
-
-pub async fn get_message_reactions(
+pub async fn get_reactions_for_messages(
     state: &AppState,
-    message_id: Uuid,
+    message_ids: &[Uuid],
     current_user_id: Option<Uuid>,
-) -> Result<Vec<ReactionSummaryResponse>, AppError> {
-    let rows: Vec<ReactionSummaryRow> = sqlx::query_as(
-        "SELECT 
+) -> Result<HashMap<Uuid, Vec<ReactionSummaryResponse>>, AppError> {
+    if message_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let rows: Vec<BatchedReactionRow> = sqlx::query_as(
+        "SELECT
+            r.message_id,
             r.emoji_id,
             r.unicode_emoji,
             e.shortcode,
-            COUNT(*) as count
+            COUNT(*) AS count,
+            BOOL_OR(r.user_id = $2) AS user_reacted
          FROM reactions r
          LEFT JOIN emojis e ON r.emoji_id = e.id
-         WHERE r.message_id = $1
-         GROUP BY r.emoji_id, r.unicode_emoji, e.shortcode
+         WHERE r.message_id = ANY($1)
+         GROUP BY r.message_id, r.emoji_id, r.unicode_emoji, e.shortcode
          ORDER BY count DESC, MIN(r.created_at) ASC",
     )
-    .bind(message_id)
+    .bind(message_ids)
+    .bind(current_user_id)
     .fetch_all(&state.db)
     .await?;
 
-    let mut responses = Vec::new();
-    for (emoji_id, unicode_emoji, shortcode, count) in rows {
-        let user_reacted = if let Some(user_id) = current_user_id {
-            let reacted: bool = sqlx::query_scalar(
-                "SELECT EXISTS(
-                    SELECT 1 FROM reactions 
-                    WHERE message_id = $1 
-                    AND user_id = $2
-                    AND (emoji_id = $3 OR ($3 IS NULL AND emoji_id IS NULL))
-                    AND (unicode_emoji = $4 OR ($4 IS NULL AND unicode_emoji IS NULL))
-                )",
-            )
-            .bind(message_id)
-            .bind(user_id)
-            .bind(emoji_id)
-            .bind(&unicode_emoji)
-            .fetch_one(&state.db)
-            .await?;
-            reacted
-        } else {
-            false
-        };
-
-        responses.push(ReactionSummaryResponse {
-            emoji_id,
-            unicode_emoji,
-            shortcode,
-            count,
-            user_reacted,
-        });
+    let mut map: HashMap<Uuid, Vec<ReactionSummaryResponse>> = HashMap::new();
+    for (message_id, emoji_id, unicode_emoji, shortcode, count, user_reacted) in rows {
+        map.entry(message_id)
+            .or_default()
+            .push(ReactionSummaryResponse {
+                emoji_id,
+                unicode_emoji,
+                shortcode,
+                count,
+                user_reacted,
+            });
     }
 
-    Ok(responses)
+    Ok(map)
 }

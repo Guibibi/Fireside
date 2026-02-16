@@ -13,7 +13,7 @@ use crate::message_attachments::{
     resolve_uploads_for_message, MessageAttachmentPayload,
 };
 use crate::models::{Channel, ChannelKind, Message};
-use crate::routes::reaction_routes::{get_message_reactions, ReactionSummaryResponse};
+use crate::routes::reaction_routes::{get_reactions_for_messages, ReactionSummaryResponse};
 use crate::ws::broadcast::{
     broadcast_channel_message, broadcast_global_message, remove_channel_subscribers,
 };
@@ -350,11 +350,11 @@ async fn get_messages(
     let message_ids: Vec<Uuid> = messages.iter().map(|message| message.id).collect();
     let attachments_by_message =
         load_message_attachments_by_message(&state.db, &message_ids).await?;
+    let mut reactions_by_message =
+        get_reactions_for_messages(&state, &message_ids, Some(current_user_id)).await?;
 
     let mut with_attachments = Vec::with_capacity(messages.len());
     for message in messages {
-        let reactions = get_message_reactions(&state, message.id, Some(current_user_id)).await?;
-
         with_attachments.push(MessageWithAuthor {
             id: message.id,
             channel_id: message.channel_id,
@@ -367,7 +367,7 @@ async fn get_messages(
                 .get(&message.id)
                 .cloned()
                 .unwrap_or_default(),
-            reactions,
+            reactions: reactions_by_message.remove(&message.id).unwrap_or_default(),
         });
     }
 

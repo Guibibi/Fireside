@@ -99,7 +99,7 @@ impl UploadService {
     pub async fn upload_emoji(
         &self,
         owner_id: Uuid,
-        _declared_mime_type: &str,
+        declared_mime_type: &str,
         bytes: Vec<u8>,
     ) -> Result<UploadResult, AppError> {
         let media_id = Uuid::new_v4();
@@ -112,7 +112,7 @@ impl UploadService {
         )
         .bind(media_id)
         .bind(owner_id)
-        .bind(_declared_mime_type)
+        .bind(declared_mime_type)
         .bind(bytes.len() as i64)
         .bind(&checksum)
         .bind(&storage_key)
@@ -121,7 +121,7 @@ impl UploadService {
 
         if let Err(error) = self
             .storage
-            .put(&storage_key, bytes, _declared_mime_type)
+            .put(&storage_key, bytes, declared_mime_type)
             .await
         {
             self.mark_failed(

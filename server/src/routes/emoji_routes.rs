@@ -138,18 +138,6 @@ async fn create_emoji(
         ));
     }
 
-    let existing: Option<(Uuid,)> = sqlx::query_as("SELECT id FROM emojis WHERE shortcode = $1")
-        .bind(&shortcode)
-        .fetch_optional(&state.db)
-        .await?;
-
-    if existing.is_some() {
-        return Err(AppError::Conflict(format!(
-            "Emoji with shortcode '{}' already exists",
-            shortcode
-        )));
-    }
-
     let mime_type = sniff_mime_type(&image_bytes)?;
     validate_emoji_mime_type(mime_type)?;
 
@@ -178,9 +166,10 @@ async fn create_emoji(
 
     let emoji_id = Uuid::new_v4();
 
-    sqlx::query(
+    let result = sqlx::query(
         "INSERT INTO emojis (id, shortcode, name, media_id, created_by, created_at)
-         VALUES ($1, $2, $3, $4, $5, now())",
+         VALUES ($1, $2, $3, $4, $5, now())
+         ON CONFLICT (shortcode) DO NOTHING",
     )
     .bind(emoji_id)
     .bind(&shortcode)
@@ -189,6 +178,13 @@ async fn create_emoji(
     .bind(user_id)
     .execute(&state.db)
     .await?;
+
+    if result.rows_affected() == 0 {
+        return Err(AppError::Conflict(format!(
+            "Emoji with shortcode '{}' already exists",
+            shortcode
+        )));
+    }
 
     Ok(Json(CreateEmojiResponse {
         id: emoji_id,
