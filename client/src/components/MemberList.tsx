@@ -15,10 +15,13 @@ interface UsersResponse {
 export default function MemberList() {
   const [allMembers, setAllMembers] = createSignal<string[]>([]);
   const [onlineMembers, setOnlineMembers] = createSignal<string[]>([]);
+  const [idleMembers, setIdleMembers] = createSignal<string[]>([]);
+  const connectedMembers = createMemo(() => [...new Set([...onlineMembers(), ...idleMembers()])].sort((a, b) => a.localeCompare(b)));
+  const idleSet = createMemo(() => new Set(idleMembers()));
   const activeVoiceParticipants = createMemo(() => new Set(participantsInChannel(activeChannelId())));
   const offlineMembers = createMemo(() => {
-    const online = new Set(onlineMembers());
-    return allMembers().filter((member) => !online.has(member));
+    const connected = new Set(connectedMembers());
+    return allMembers().filter((member) => !connected.has(member));
   });
 
   onMount(() => {
@@ -49,20 +52,30 @@ export default function MemberList() {
 
     const unsubscribe = onMessage((msg) => {
       if (msg.type === "presence_snapshot") {
-        setOnlineMembers([...msg.usernames].sort((a, b) => a.localeCompare(b)));
-        setAllMembers((current) => [...new Set([...current, ...msg.usernames])].sort((a, b) => a.localeCompare(b)));
+        const users = "users" in msg
+          ? msg.users
+          : msg.usernames.map((username) => ({ username, status: "online" as const }));
+
+        const online = users
+          .filter((user) => user.status === "online")
+          .map((user) => user.username)
+          .sort((a, b) => a.localeCompare(b));
+        const idle = users
+          .filter((user) => user.status === "idle")
+          .map((user) => user.username)
+          .sort((a, b) => a.localeCompare(b));
+        const usernames = users.map((user) => user.username);
+
+        setOnlineMembers(online);
+        setIdleMembers(idle);
+        setAllMembers((current) => [...new Set([...current, ...usernames])].sort((a, b) => a.localeCompare(b)));
         return;
       }
 
       if (msg.type === "user_connected") {
         upsertUserProfile({ username: msg.username, avatar_url: null });
-        setOnlineMembers((current) => {
-          if (current.includes(msg.username)) {
-            return current;
-          }
-
-          return [...current, msg.username].sort((a, b) => a.localeCompare(b));
-        });
+        setOnlineMembers((current) => [...new Set([...current, msg.username])].sort((a, b) => a.localeCompare(b)));
+        setIdleMembers((current) => current.filter((member) => member !== msg.username));
         setAllMembers((current) => {
           if (current.includes(msg.username)) {
             return current;
@@ -73,8 +86,20 @@ export default function MemberList() {
         return;
       }
 
+      if (msg.type === "user_status_changed") {
+        if (msg.status === "idle") {
+          setOnlineMembers((current) => current.filter((member) => member !== msg.username));
+          setIdleMembers((current) => [...new Set([...current, msg.username])].sort((a, b) => a.localeCompare(b)));
+        } else {
+          setIdleMembers((current) => current.filter((member) => member !== msg.username));
+          setOnlineMembers((current) => [...new Set([...current, msg.username])].sort((a, b) => a.localeCompare(b)));
+        }
+        return;
+      }
+
       if (msg.type === "user_disconnected") {
         setOnlineMembers((current) => current.filter((member) => member !== msg.username));
+        setIdleMembers((current) => current.filter((member) => member !== msg.username));
       }
     });
 
@@ -85,13 +110,13 @@ export default function MemberList() {
     <aside class="member-list">
       <h3>Members</h3>
       <Show when={allMembers().length > 0} fallback={<p class="placeholder">No members found</p>}>
-        <h4 class="member-section-title">Online ({onlineMembers().length})</h4>
-        <Show when={onlineMembers().length > 0} fallback={<p class="placeholder">Nobody online</p>}>
+        <h4 class="member-section-title">Online ({connectedMembers().length})</h4>
+        <Show when={connectedMembers().length > 0} fallback={<p class="placeholder">Nobody online</p>}>
           <ul class="member-items">
-            <For each={onlineMembers()}>
+            <For each={connectedMembers()}>
               {(member) => (
                 <li
-                  class="member-item"
+                  class={`member-item${idleSet().has(member) ? " member-item-idle" : ""}`}
                   onContextMenu={(e) => {
                     e.preventDefault();
                     openContextMenu(e.clientX, e.clientY, "member", member, { username: member });
@@ -105,7 +130,10 @@ export default function MemberList() {
                 >
                   <UserAvatar username={member} class="member-avatar" size={28} />
                   <span class="member-name">
-                    <span class="member-status-dot member-status-dot-online" aria-hidden="true" />
+                    <span
+                      class={`member-status-dot ${idleSet().has(member) ? "member-status-dot-idle" : "member-status-dot-online"}`}
+                      aria-hidden="true"
+                    />
                     <span>{member}</span>
                   </span>
                   <Show when={activeVoiceParticipants().has(member)}>

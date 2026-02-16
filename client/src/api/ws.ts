@@ -13,11 +13,20 @@ export interface MessageAttachment {
   original_url: string;
 }
 
+export type PresenceStatus = "online" | "idle";
+
+export interface PresenceUser {
+  username: string;
+  status: PresenceStatus;
+}
+
 export type ServerMessage =
   | { type: "authenticated"; user_id: string; username: string }
   | { type: "error"; message: string }
+  | { type: "presence_snapshot"; users: PresenceUser[] }
   | { type: "presence_snapshot"; usernames: string[] }
-  | { type: "user_connected"; username: string }
+  | { type: "user_connected"; username: string; status?: PresenceStatus }
+  | { type: "user_status_changed"; username: string; status: PresenceStatus }
   | { type: "user_disconnected"; username: string }
   | {
     type: "new_message";
@@ -69,13 +78,14 @@ type StatusHandler = (snapshot: WsConnectionStatusSnapshot) => void;
 const WS_HEARTBEAT_INTERVAL_MS = 15000;
 const WS_RECONNECT_DELAY_MS = 1000;
 const WS_MAX_RECONNECT_ATTEMPTS = 10;
+const PRESENCE_ACTIVITY_THROTTLE_MS = 5000;
 
 let socket: WebSocket | null = null;
 let handlers: MessageHandler[] = [];
 let closeHandlers: CloseHandler[] = [];
 let statusHandlers: StatusHandler[] = [];
 let pendingSends: string[] = [];
-let latestPresenceUsernames: string[] | null = null;
+let latestPresenceUsers: PresenceUser[] | null = null;
 let latestVoicePresenceChannels: { channel_id: string; usernames: string[] }[] | null = null;
 let manualDisconnect = false;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -83,6 +93,8 @@ let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 let reconnectAttempts = 0;
 let lastConnectUrl: string | null = null;
 let connectionStatus: WsConnectionStatus = "disconnected";
+let lastPresenceActivitySentAt = 0;
+let presenceActivityListenersAttached = false;
 
 const AUTH_FAILURE_MESSAGES = new Set([
   "Invalid token",
@@ -136,7 +148,48 @@ function startHeartbeat(ws: WebSocket) {
   }, WS_HEARTBEAT_INTERVAL_MS);
 }
 
+function sendPresenceActivitySignal() {
+  if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+    return;
+  }
+
+  const now = Date.now();
+  if (now - lastPresenceActivitySentAt < PRESENCE_ACTIVITY_THROTTLE_MS) {
+    return;
+  }
+
+  lastPresenceActivitySentAt = now;
+  send({ type: "presence_activity" });
+}
+
+function attachPresenceActivityListeners() {
+  if (presenceActivityListenersAttached || typeof window === "undefined") {
+    return;
+  }
+
+  presenceActivityListenersAttached = true;
+
+  window.addEventListener("focus", () => {
+    sendPresenceActivitySignal();
+  });
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") {
+      sendPresenceActivitySignal();
+    }
+  });
+
+  const interactionEvents: Array<keyof WindowEventMap> = ["pointerdown", "keydown", "mousedown", "touchstart"];
+  interactionEvents.forEach((eventName) => {
+    window.addEventListener(eventName, () => {
+      sendPresenceActivitySignal();
+    }, { passive: true });
+  });
+}
+
 export function connect(url = getWsUrl(), reconnectAttempt = false) {
+  attachPresenceActivityListeners();
+
   if (socket?.readyState === WebSocket.OPEN || socket?.readyState === WebSocket.CONNECTING) {
     return;
   }
@@ -198,19 +251,38 @@ export function connect(url = getWsUrl(), reconnectAttempt = false) {
       }
 
       if (msg.type === "presence_snapshot") {
-        latestPresenceUsernames = [...msg.usernames];
+        if ("users" in msg && Array.isArray(msg.users)) {
+          latestPresenceUsers = msg.users.map((user) => ({
+            username: user.username,
+            status: user.status,
+          }));
+        } else if ("usernames" in msg && Array.isArray(msg.usernames)) {
+          latestPresenceUsers = msg.usernames.map((username) => ({
+            username,
+            status: "online",
+          }));
+        }
       } else if (msg.type === "voice_presence_snapshot") {
         latestVoicePresenceChannels = msg.channels.map((channel) => ({
           channel_id: channel.channel_id,
           usernames: [...new Set(channel.usernames)].sort((a, b) => a.localeCompare(b)),
         }));
       } else if (msg.type === "user_connected") {
-        latestPresenceUsernames = latestPresenceUsernames
-          ? [...new Set([...latestPresenceUsernames, msg.username])]
-          : [msg.username];
+        const current = latestPresenceUsers ?? [];
+        const usersByUsername = new Map(current.map((user) => [user.username, user]));
+        usersByUsername.set(msg.username, {
+          username: msg.username,
+          status: msg.status ?? "online",
+        });
+        latestPresenceUsers = Array.from(usersByUsername.values());
+      } else if (msg.type === "user_status_changed") {
+        const current = latestPresenceUsers ?? [];
+        const usersByUsername = new Map(current.map((user) => [user.username, user]));
+        usersByUsername.set(msg.username, { username: msg.username, status: msg.status });
+        latestPresenceUsers = Array.from(usersByUsername.values());
       } else if (msg.type === "user_disconnected") {
-        latestPresenceUsernames = latestPresenceUsernames
-          ? latestPresenceUsernames.filter((username) => username !== msg.username)
+        latestPresenceUsers = latestPresenceUsers
+          ? latestPresenceUsers.filter((user) => user.username !== msg.username)
           : [];
       } else if (msg.type === "voice_user_joined") {
         const current = latestVoicePresenceChannels ?? [];
@@ -278,7 +350,7 @@ export function disconnect() {
   reconnectAttempts = 0;
   setConnectionStatus("disconnected");
   pendingSends = [];
-  latestPresenceUsernames = null;
+  latestPresenceUsers = null;
   latestVoicePresenceChannels = null;
 }
 
@@ -303,10 +375,13 @@ export function send(data: unknown) {
 export function onMessage(handler: MessageHandler) {
   handlers.push(handler);
 
-  if (latestPresenceUsernames) {
+  if (latestPresenceUsers) {
     handler({
       type: "presence_snapshot",
-      usernames: [...latestPresenceUsernames],
+      users: latestPresenceUsers.map((user) => ({
+        username: user.username,
+        status: user.status,
+      })),
     });
   }
 

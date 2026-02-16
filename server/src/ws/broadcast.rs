@@ -157,6 +157,8 @@ pub async fn cleanup_connection(
     connection_id: Option<Uuid>,
 ) -> Option<Uuid> {
     let mut effective_username = username.map(ToOwned::to_owned);
+    let mut removed_username_from_connection = None;
+    let mut has_remaining_connection_for_removed_username = false;
 
     let mut removed_voice_channel = None;
 
@@ -169,10 +171,16 @@ pub async fn cleanup_connection(
         media_signal_rate_by_connection.remove(&connection_id);
 
         let mut connection_usernames = state.connection_usernames.write().await;
-        let removed_username = connection_usernames.remove(&connection_id);
+        removed_username_from_connection = connection_usernames.remove(&connection_id);
+
+        if let Some(removed_username) = removed_username_from_connection.as_deref() {
+            has_remaining_connection_for_removed_username = connection_usernames
+                .values()
+                .any(|connected_username| connected_username == removed_username);
+        }
 
         if effective_username.is_none() {
-            effective_username = removed_username;
+            effective_username = removed_username_from_connection.clone();
         }
 
         let mut subscriptions = state.channel_subscriptions.write().await;
@@ -182,9 +190,22 @@ pub async fn cleanup_connection(
         removed_voice_channel = voice_members_by_connection.remove(&connection_id);
     }
 
-    if let Some(username) = effective_username.as_deref() {
+    let username_for_presence_cleanup = if connection_id.is_some() {
+        if has_remaining_connection_for_removed_username {
+            None
+        } else {
+            removed_username_from_connection.as_deref()
+        }
+    } else {
+        effective_username.as_deref()
+    };
+
+    if let Some(username) = username_for_presence_cleanup {
         let mut active_usernames = state.active_usernames.write().await;
         active_usernames.remove(username);
+
+        let mut user_presence_by_username = state.user_presence_by_username.write().await;
+        user_presence_by_username.remove(username);
     }
 
     if let (Some(voice_channel_id), Some(username)) =

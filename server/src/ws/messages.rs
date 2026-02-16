@@ -10,6 +10,12 @@ pub struct VoicePresenceChannel {
     pub usernames: Vec<String>,
 }
 
+#[derive(Debug, Serialize)]
+pub struct PresenceUser {
+    pub username: String,
+    pub status: String,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type")]
 pub enum ClientMessage {
@@ -45,6 +51,9 @@ pub enum ClientMessage {
     #[serde(rename = "heartbeat")]
     Heartbeat,
 
+    #[serde(rename = "presence_activity")]
+    PresenceActivity,
+
     #[serde(rename = "media_signal")]
     MediaSignal {
         channel_id: Uuid,
@@ -62,13 +71,16 @@ pub enum ServerMessage {
     Error { message: String },
 
     #[serde(rename = "presence_snapshot")]
-    PresenceSnapshot { usernames: Vec<String> },
+    PresenceSnapshot { users: Vec<PresenceUser> },
 
     #[serde(rename = "voice_presence_snapshot")]
     VoicePresenceSnapshot { channels: Vec<VoicePresenceChannel> },
 
     #[serde(rename = "user_connected")]
-    UserConnected { username: String },
+    UserConnected { username: String, status: String },
+
+    #[serde(rename = "user_status_changed")]
+    UserStatusChanged { username: String, status: String },
 
     #[serde(rename = "user_disconnected")]
     UserDisconnected { username: String },

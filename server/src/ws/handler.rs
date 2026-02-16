@@ -18,7 +18,7 @@ use super::media_signal::{
     allow_media_signal_event, handle_media_signal_message, media_signal_payload_size_bytes,
     request_id_from_payload, send_media_signal_error, MAX_MEDIA_SIGNAL_PAYLOAD_BYTES,
 };
-use super::messages::{ClientMessage, ServerMessage, VoicePresenceChannel};
+use super::messages::{ClientMessage, PresenceUser, ServerMessage, VoicePresenceChannel};
 use super::voice::{broadcast_closed_producers, broadcast_voice_activity_to_channel};
 use crate::auth::validate_token;
 use crate::message_attachments::{
@@ -28,6 +28,7 @@ use crate::message_attachments::{
 use crate::AppState;
 
 const WS_IDLE_TIMEOUT: Duration = Duration::from_secs(45);
+const PRESENCE_IDLE_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 
 pub async fn ws_upgrade(ws: WebSocketUpgrade, State(state): State<AppState>) -> impl IntoResponse {
     ws.on_upgrade(move |socket| handle_socket(socket, state))
@@ -76,6 +77,13 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                         active_usernames.insert(claims.username.clone());
                     }
 
+                    {
+                        let mut user_presence_by_username =
+                            state.user_presence_by_username.write().await;
+                        user_presence_by_username
+                            .insert(claims.username.clone(), "online".to_string());
+                    }
+
                     break (claims, user_id);
                 }
                 _ => {
@@ -121,17 +129,23 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
         },
     );
 
-    let connected_usernames: Vec<String> = {
-        let active_usernames = state.active_usernames.read().await;
-        let mut usernames: Vec<String> = active_usernames.iter().cloned().collect();
-        usernames.sort_unstable();
-        usernames
+    let connected_users: Vec<PresenceUser> = {
+        let user_presence_by_username = state.user_presence_by_username.read().await;
+        let mut users: Vec<PresenceUser> = user_presence_by_username
+            .iter()
+            .map(|(username, status)| PresenceUser {
+                username: username.clone(),
+                status: status.clone(),
+            })
+            .collect();
+        users.sort_unstable_by(|left, right| left.username.cmp(&right.username));
+        users
     };
 
     send_server_message(
         &out_tx,
         ServerMessage::PresenceSnapshot {
-            usernames: connected_usernames,
+            users: connected_users,
         },
     );
 
@@ -163,12 +177,15 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
         &state,
         ServerMessage::UserConnected {
             username: claims.username.clone(),
+            status: "online".to_string(),
         },
         Some(connection_id),
     )
     .await;
 
     let mut last_client_activity_at = Instant::now();
+    let mut last_presence_activity_at = Instant::now();
+    let mut current_presence_status = "online".to_string();
 
     loop {
         let next_message = timeout(WS_IDLE_TIMEOUT, stream.next()).await;
@@ -205,6 +222,14 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                 last_client_activity_at = Instant::now();
                 match serde_json::from_str::<ClientMessage>(&text) {
                     Ok(client_msg) => {
+                        if !matches!(client_msg, ClientMessage::Heartbeat) {
+                            last_presence_activity_at = Instant::now();
+                            if current_presence_status != "online" {
+                                update_presence_status(&state, &claims.username, "online").await;
+                                current_presence_status = "online".to_string();
+                            }
+                        }
+
                         handle_client_message(&state, &claims, connection_id, client_msg, &out_tx)
                             .await;
                     }
@@ -240,6 +265,13 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                 "Closing websocket connection due to inactivity"
             );
             break;
+        }
+
+        if current_presence_status == "online"
+            && last_presence_activity_at.elapsed() > PRESENCE_IDLE_TIMEOUT
+        {
+            update_presence_status(&state, &claims.username, "idle").await;
+            current_presence_status = "idle".to_string();
         }
     }
 
@@ -281,6 +313,33 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
     )
     .await;
     writer.abort();
+}
+
+async fn update_presence_status(state: &AppState, username: &str, status: &str) {
+    let did_change = {
+        let mut user_presence_by_username = state.user_presence_by_username.write().await;
+        if user_presence_by_username
+            .get(username)
+            .is_some_and(|current| current == status)
+        {
+            false
+        } else {
+            user_presence_by_username.insert(username.to_string(), status.to_string());
+            true
+        }
+    };
+
+    if did_change {
+        broadcast_global_message(
+            state,
+            ServerMessage::UserStatusChanged {
+                username: username.to_string(),
+                status: status.to_string(),
+            },
+            None,
+        )
+        .await;
+    }
 }
 
 async fn replace_existing_connection_for_username(state: &AppState, username: &str) {
@@ -475,6 +534,7 @@ async fn handle_client_message(
             .await;
         }
         ClientMessage::Heartbeat => {}
+        ClientMessage::PresenceActivity => {}
         ClientMessage::Authenticate { .. } => {
             send_server_message(
                 out_tx,

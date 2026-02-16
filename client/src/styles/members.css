@@ -77,6 +77,11 @@
   box-shadow: 0 0 6px var(--mint-glow);
 }
 
+.member-status-dot-idle {
+  background: var(--peach);
+  box-shadow: 0 0 6px var(--peach-glow);
+}
+
 .member-status-dot-offline {
   background: var(--cloud);
 }
@@ -95,4 +100,8 @@
 .member-item-offline {
   color: var(--mist);
   opacity: 0.7;
+}
+
+.member-item-idle {
+  color: var(--snow);
 }

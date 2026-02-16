@@ -55,12 +55,6 @@ Yankcord is a self-hosted, minimal chat app. One server instance = one community
 - Enforce kick/ban checks on REST and WS auth/session paths.
 - Add client UX for moderation feedback and forced-session cleanup handling.
 
-### 4.5 Bot detection and scraper blocking
-
-- Add automated detection for AI bots, crawlers, and scrapers at the request/WS handshake layer.
-- Implement transparent challenge mechanisms (e.g., CAPTCHA, proof-of-work) for suspicious traffic patterns.
-- Add operator-configurable allowlist/blocklist for known user-agents or IP ranges.
-- Block or rate-limit detected bots with clear server responses; preserve legitimate client access.
 
 ---
 
