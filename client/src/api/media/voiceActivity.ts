@@ -57,6 +57,7 @@ export function startMicLevelMonitoring(channelId: string, stream: MediaStream) 
   stopMicLevelMonitoring(initializedForChannelId ?? channelId);
 
   const audioContext = new AudioContext();
+  void audioContext.resume().catch(() => undefined);
   const sourceNode = audioContext.createMediaStreamSource(stream);
   const analyserNode = audioContext.createAnalyser();
 
