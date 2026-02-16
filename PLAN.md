@@ -263,6 +263,9 @@ Yankcord is a self-hosted, minimal chat app. One server instance = one community
 ### Auto-updater
 - Add an auto updater for the tauri build to allow distribution of new version easily.
 - User tauri update plugin https://v2.tauri.app/plugin/updater/
+
+### Add audio to streaming
+-- Capture and send the audio when streaming a window
 ---
 
 ## Validation Baseline

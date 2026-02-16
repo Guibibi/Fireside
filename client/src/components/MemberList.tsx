@@ -128,11 +128,11 @@ export default function MemberList() {
                 >
                   <UserAvatar username={member} class="member-avatar" size={28} />
                   <span class="member-name">
+                    <span>{member}</span>
                     <span
                       class={`member-status-dot ${idleSet().has(member) ? "member-status-dot-idle" : "member-status-dot-online"}`}
                       aria-hidden="true"
                     />
-                    <span>{member}</span>
                   </span>
                   <Show when={activeVoiceParticipants().has(member)}>
                     <span class="member-voice-indicator">in voice</span>
@@ -163,8 +163,8 @@ export default function MemberList() {
                 >
                   <UserAvatar username={member} class="member-avatar" size={28} />
                   <span class="member-name">
-                    <span class="member-status-dot member-status-dot-offline" aria-hidden="true" />
                     <span>{member}</span>
+                    <span class="member-status-dot member-status-dot-offline" aria-hidden="true" />
                   </span>
                 </li>
               )}
