@@ -34,8 +34,6 @@ async fn get_media_asset(
     headers: axum::http::HeaderMap,
     axum::extract::Path((media_id, variant)): axum::extract::Path<(Uuid, String)>,
 ) -> Result<Response, AppError> {
-    let claims = extract_claims(&headers, &state.config.jwt.secret)?;
-
     let record: Option<MediaFetchRow> = if variant == "original" {
         sqlx::query_as(
             "SELECT id, parent_id, owner_id, derivative_kind, storage_key, mime_type
@@ -66,23 +64,23 @@ async fn get_media_asset(
         Some("avatar_64") | Some("avatar_256")
     );
 
-    let requester_can_access = if claims.user_id == owner_id || allow_public_derivative {
+    let linked_to_message: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM message_attachments WHERE media_id = $1)")
+            .bind(root_media_id)
+            .fetch_one(&state.db)
+            .await?;
+
+    let linked_to_emoji: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM emojis WHERE media_id = $1)")
+            .bind(root_media_id)
+            .fetch_one(&state.db)
+            .await?;
+
+    let requester_can_access = if allow_public_derivative || linked_to_message || linked_to_emoji {
         true
     } else {
-        let linked_to_message: bool = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM message_attachments WHERE media_id = $1)",
-        )
-        .bind(root_media_id)
-        .fetch_one(&state.db)
-        .await?;
-
-        let linked_to_emoji: bool =
-            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM emojis WHERE media_id = $1)")
-                .bind(root_media_id)
-                .fetch_one(&state.db)
-                .await?;
-
-        linked_to_message || linked_to_emoji
+        let claims = extract_claims(&headers, &state.config.jwt.secret)?;
+        claims.user_id == owner_id
     };
 
     if !requester_can_access {
@@ -91,6 +89,14 @@ async fn get_media_asset(
         ));
     }
 
+    serve_media_asset(state, storage_key, mime_type).await
+}
+
+async fn serve_media_asset(
+    state: AppState,
+    storage_key: String,
+    mime_type: String,
+) -> Result<Response, AppError> {
     let bytes = state.storage.read(&storage_key).await?;
 
     let mut response = Response::new(Body::from(bytes));

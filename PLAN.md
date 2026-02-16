@@ -78,6 +78,7 @@ Yankcord is a self-hosted, minimal chat app. One server instance = one community
 
 - **Web instance auto-configuration**: When running the web version (non-Tauri), default the instance address to the current website origin and skip the server address input. Tauri users should still be prompted to select their instance.
 - **Auto-updater**: Add auto-updater for the Tauri build using the Tauri updater plugin.
+- Changelog: Add an changelog module for the auto-updater to display what's new.
 - **Allow JPG for avatar upload**: Support JPG in addition to existing image formats for avatar uploads.
 
 

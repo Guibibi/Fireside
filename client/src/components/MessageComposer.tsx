@@ -277,7 +277,7 @@ export default function MessageComposer(props: MessageComposerProps) {
           <span class="message-emoji-icon" aria-hidden="true">😊</span>
         </button>
         <Show when={showEmojiPicker()}>
-          <Suspense fallback={<div>Loading...</div>}>
+          <Suspense fallback={null}>
             <EmojiPicker
               anchorRef={emojiButtonRef}
               onSelect={(selection) => {
@@ -305,7 +305,7 @@ export default function MessageComposer(props: MessageComposerProps) {
           <span class="gif-button-text">GIF</span>
         </button>
         <Show when={showGifPicker()}>
-          <Suspense fallback={<div>Loading...</div>}>
+          <Suspense fallback={null}>
             <GifPicker
               anchorRef={gifButtonRef}
               onSelect={(gif) => {

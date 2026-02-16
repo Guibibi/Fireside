@@ -248,8 +248,8 @@ export default function SettingsPage() {
     }
   }
 
-  async function handleAvatarInput(event: Event) {
-    const file = (event.currentTarget as HTMLInputElement).files?.[0];
+  async function handleAvatarInput(input: HTMLInputElement) {
+    const file = input.files?.[0];
     if (!file) {
       return;
     }
@@ -294,7 +294,7 @@ export default function SettingsPage() {
       setProfileError(errorMessage(error, "Failed to upload avatar"));
     } finally {
       setIsUploadingAvatar(false);
-      (event.currentTarget as HTMLInputElement).value = "";
+      input.value = "";
     }
   }
 
@@ -454,7 +454,7 @@ export default function SettingsPage() {
                     <UserAvatar username={currentUsername() ?? avatarFallbackLabel()} size={72} />
                   </div>
                   <label class="settings-label" for="settings-avatar">Upload new image</label>
-                  <input id="settings-avatar" type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => void handleAvatarInput(event)} disabled={isUploadingAvatar()} />
+                  <input id="settings-avatar" type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => void handleAvatarInput(event.currentTarget)} disabled={isUploadingAvatar()} />
                   <p class="settings-help">JPEG, PNG, or WebP. Max size 2 MB.</p>
                 </section>
               </div>

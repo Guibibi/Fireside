@@ -32,5 +32,4 @@
   border-radius: var(--radius-xl);
   overflow: hidden;
   position: relative;
-  z-index: 1;
 }
