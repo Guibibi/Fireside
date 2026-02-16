@@ -60,7 +60,26 @@ export type ServerMessage =
   | { type: "voice_user_joined"; channel_id: string; username: string }
   | { type: "voice_user_left"; channel_id: string; username: string }
   | { type: "voice_user_speaking"; channel_id: string; username: string; speaking: boolean }
-  | { type: "media_signal"; channel_id: string; payload: unknown };
+  | { type: "media_signal"; channel_id: string; payload: unknown }
+  | {
+    type: "reaction_added";
+    channel_id: string;
+    message_id: string;
+    emoji_id: string | null;
+    unicode_emoji: string | null;
+    shortcode: string | null;
+    user_id: string;
+    count: number;
+  }
+  | {
+    type: "reaction_removed";
+    channel_id: string;
+    message_id: string;
+    emoji_id: string | null;
+    unicode_emoji: string | null;
+    user_id: string;
+    count: number;
+  };
 
 export type WsConnectionStatus = "disconnected" | "connecting" | "connected" | "reconnecting" | "failed";
 

@@ -1,5 +1,13 @@
 import type { MessageAttachment } from "../api/ws";
 
+export interface MessageReaction {
+  emoji_id: string | null;
+  unicode_emoji: string | null;
+  shortcode: string | null;
+  count: number;
+  user_reacted: boolean;
+}
+
 export interface ChannelMessage {
   id: string;
   channel_id: string;
@@ -9,6 +17,7 @@ export interface ChannelMessage {
   created_at: string;
   edited_at?: string | null;
   attachments: MessageAttachment[];
+  reactions: MessageReaction[];
 }
 
 export interface MessageDayGroup {

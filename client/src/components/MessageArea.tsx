@@ -1,7 +1,8 @@
 import { Show, createEffect, createMemo, createResource, createSignal, onCleanup, onMount } from "solid-js";
 import { del, get, patch } from "../api/http";
 import { connect, onMessage, send } from "../api/ws";
-import { getApiBaseUrl, token, username } from "../stores/auth";
+import { addReaction, removeCustomReaction, removeUnicodeReaction } from "../api/reactions";
+import { getApiBaseUrl, token, userId, username } from "../stores/auth";
 import { activeChannelId, type Channel } from "../stores/chat";
 import { registerContextMenuHandlers } from "../stores/contextMenu";
 import { knownUsernames, setUserProfiles, upsertUserProfile } from "../stores/userProfiles";
@@ -24,6 +25,7 @@ import {
 import {
   type ChannelMessage,
   type MessageDayGroup,
+  type MessageReaction,
   type PendingAttachment,
   type UsersResponse,
   formatMessageDayLabel,
@@ -229,6 +231,59 @@ export default function MessageArea() {
     }
     return groups;
   });
+
+  function normalizeMessage(message: ChannelMessage): ChannelMessage {
+    return {
+      ...message,
+      attachments: message.attachments ?? [],
+      reactions: message.reactions ?? [],
+    };
+  }
+
+  function reactionMatches(
+    reaction: MessageReaction,
+    emojiId: string | null | undefined,
+    unicodeEmoji: string | null | undefined,
+  ): boolean {
+    return reaction.emoji_id === (emojiId ?? null)
+      && reaction.unicode_emoji === (unicodeEmoji ?? null);
+  }
+
+  function updateMessageReactionState(
+    messageId: string,
+    updater: (reactions: MessageReaction[]) => MessageReaction[],
+  ) {
+    setMessages((current) => current.map((message) => {
+      if (message.id !== messageId) {
+        return message;
+      }
+
+      return {
+        ...message,
+        reactions: updater(message.reactions ?? []),
+      };
+    }));
+  }
+
+  async function handleAddReaction(messageId: string, reaction: { emoji_id?: string; unicode_emoji?: string }) {
+    try {
+      await addReaction(messageId, reaction);
+    } catch (error) {
+      setWsError(errorMessage(error, "Failed to add reaction"));
+    }
+  }
+
+  async function handleRemoveReaction(messageId: string, reaction: MessageReaction) {
+    try {
+      if (reaction.emoji_id) {
+        await removeCustomReaction(messageId, reaction.emoji_id);
+      } else if (reaction.unicode_emoji) {
+        await removeUnicodeReaction(messageId, reaction.unicode_emoji);
+      }
+    } catch (error) {
+      setWsError(errorMessage(error, "Failed to remove reaction"));
+    }
+  }
 
   function beginEdit(message: ChannelMessage) {
     setEditingMessageId(message.id);
@@ -513,11 +568,11 @@ export default function MessageArea() {
   function mergeMessagesById(historyChunk: ChannelMessage[], currentMessages: ChannelMessage[]) {
     const mergedById = new Map<string, ChannelMessage>();
     for (const message of historyChunk) {
-      mergedById.set(message.id, { ...message, attachments: message.attachments ?? [] });
+      mergedById.set(message.id, normalizeMessage(message));
     }
 
     for (const message of currentMessages) {
-      mergedById.set(message.id, { ...message, attachments: message.attachments ?? [] });
+      mergedById.set(message.id, normalizeMessage(message));
     }
 
     return Array.from(mergedById.values()).sort((a, b) => (
@@ -761,6 +816,7 @@ export default function MessageArea() {
               created_at: msg.created_at,
               edited_at: msg.edited_at ?? null,
               attachments: msg.attachments ?? [],
+              reactions: [],
             },
           ];
         });
@@ -785,6 +841,69 @@ export default function MessageArea() {
         if (editingMessageId() === msg.id) {
           cancelEdit();
         }
+        return;
+      }
+
+      if (msg.type === "reaction_added") {
+        if (msg.channel_id !== activeChannelId()) {
+          return;
+        }
+
+        const currentUserId = userId();
+        updateMessageReactionState(msg.message_id, (reactions) => {
+          const matchIndex = reactions.findIndex((reaction) => reactionMatches(reaction, msg.emoji_id, msg.unicode_emoji));
+          if (matchIndex === -1) {
+            return [
+              ...reactions,
+              {
+                emoji_id: msg.emoji_id,
+                unicode_emoji: msg.unicode_emoji,
+                shortcode: msg.shortcode,
+                count: msg.count,
+                user_reacted: currentUserId ? msg.user_id === currentUserId : false,
+              },
+            ];
+          }
+
+          const next = [...reactions];
+          const current = next[matchIndex];
+          next[matchIndex] = {
+            ...current,
+            shortcode: current.shortcode ?? msg.shortcode,
+            count: msg.count,
+            user_reacted: current.user_reacted || (currentUserId ? msg.user_id === currentUserId : false),
+          };
+          return next;
+        });
+        return;
+      }
+
+      if (msg.type === "reaction_removed") {
+        if (msg.channel_id !== activeChannelId()) {
+          return;
+        }
+
+        const currentUserId = userId();
+        updateMessageReactionState(msg.message_id, (reactions) => {
+          const matchIndex = reactions.findIndex((reaction) => reactionMatches(reaction, msg.emoji_id, msg.unicode_emoji));
+          if (matchIndex === -1) {
+            return reactions;
+          }
+
+          if (msg.count <= 0) {
+            return reactions.filter((_, index) => index !== matchIndex);
+          }
+
+          const next = [...reactions];
+          const current = next[matchIndex];
+          const removedByCurrentUser = !!currentUserId && msg.user_id === currentUserId;
+          next[matchIndex] = {
+            ...current,
+            count: msg.count,
+            user_reacted: removedByCurrentUser ? false : current.user_reacted,
+          };
+          return next;
+        });
         return;
       }
 
@@ -893,6 +1012,12 @@ export default function MessageArea() {
         }}
         onCancelEdit={cancelEdit}
         onEditDraftInput={setEditDraft}
+        onAddReaction={(messageId, reaction) => {
+          void handleAddReaction(messageId, reaction);
+        }}
+        onRemoveReaction={(messageId, reaction) => {
+          void handleRemoveReaction(messageId, reaction);
+        }}
         toAbsoluteMediaUrl={(path) => toAbsoluteMediaUrl(getApiBaseUrl(), path)}
       />
       <VideoStage />

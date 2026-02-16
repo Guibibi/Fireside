@@ -123,7 +123,6 @@ async fn main() {
         )
         .nest("/api", routes::embed_routes::router())
         .nest("/api", routes::emoji_routes::router())
-        .nest("/api", routes::gif_routes::router())
         .nest("/api", routes::invite_routes::router())
         .nest("/api", routes::reaction_routes::router())
         .nest("/api", routes::user_routes::router())

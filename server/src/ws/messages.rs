@@ -111,6 +111,27 @@ pub enum ServerMessage {
     #[serde(rename = "message_deleted")]
     MessageDeleted { id: Uuid, channel_id: Uuid },
 
+    #[serde(rename = "reaction_added")]
+    ReactionAdded {
+        channel_id: Uuid,
+        message_id: Uuid,
+        emoji_id: Option<Uuid>,
+        unicode_emoji: Option<String>,
+        shortcode: Option<String>,
+        user_id: Uuid,
+        count: i64,
+    },
+
+    #[serde(rename = "reaction_removed")]
+    ReactionRemoved {
+        channel_id: Uuid,
+        message_id: Uuid,
+        emoji_id: Option<Uuid>,
+        unicode_emoji: Option<String>,
+        user_id: Uuid,
+        count: i64,
+    },
+
     #[serde(rename = "channel_created")]
     ChannelCreated { channel: Channel },
 

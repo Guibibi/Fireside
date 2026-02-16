@@ -10,8 +10,9 @@ import {
 } from "../stores/contextMenu";
 import AsyncContent from "./AsyncContent";
 import MessageRichContent from "./MessageRichContent";
+import ReactionPicker from "./ReactionPicker";
 import UserAvatar from "./UserAvatar";
-import type { ChannelMessage, MessageDayGroup } from "./messageTypes";
+import type { ChannelMessage, MessageDayGroup, MessageReaction } from "./messageTypes";
 import { isMentioningUsername } from "../utils/mentions";
 import { ZoomIcon, CloseIcon, DownloadIcon, ExternalLinkIcon } from "./icons";
 
@@ -36,6 +37,8 @@ interface MessageTimelineProps {
   onSaveEdit: (messageId: string) => void;
   onCancelEdit: () => void;
   onEditDraftInput: (value: string) => void;
+  onAddReaction: (messageId: string, reaction: { emoji_id?: string; unicode_emoji?: string }) => void;
+  onRemoveReaction: (messageId: string, reaction: MessageReaction) => void;
   toAbsoluteMediaUrl: (path: string) => string;
 }
 
@@ -99,6 +102,8 @@ function LazyAttachmentImage(props: LazyAttachmentImageProps) {
 
 export default function MessageTimeline(props: MessageTimelineProps) {
   const [attachmentPreview, setAttachmentPreview] = createSignal<AttachmentPreview | null>(null);
+  const [reactionPickerMessageId, setReactionPickerMessageId] = createSignal<string | null>(null);
+  let reactionPickerAnchorRef: HTMLButtonElement | undefined;
 
   function messageClassName(content: string): string {
     const currentUsername = username();
@@ -274,6 +279,46 @@ export default function MessageTimeline(props: MessageTimelineProps) {
                                   </For>
                                 </div>
                               </Show>
+                              <div class="message-reactions">
+                                <For each={message.reactions}>
+                                  {(reaction) => (
+                                    <button
+                                      type="button"
+                                      class={`message-reaction-chip${reaction.user_reacted ? " is-active" : ""}`}
+                                      onClick={() => {
+                                        if (reaction.user_reacted) {
+                                          props.onRemoveReaction(message.id, reaction);
+                                        } else {
+                                          props.onAddReaction(message.id, {
+                                            ...(reaction.emoji_id ? { emoji_id: reaction.emoji_id } : {}),
+                                            ...(reaction.unicode_emoji ? { unicode_emoji: reaction.unicode_emoji } : {}),
+                                          });
+                                        }
+                                      }}
+                                      title={reaction.shortcode ? `:${reaction.shortcode}:` : (reaction.unicode_emoji ?? "Reaction")}
+                                    >
+                                      <span class="message-reaction-emoji">{reaction.unicode_emoji ?? `:${reaction.shortcode ?? "emoji"}:`}</span>
+                                      <span class="message-reaction-count">{reaction.count}</span>
+                                    </button>
+                                  )}
+                                </For>
+                                <button
+                                  ref={(element) => {
+                                    if (reactionPickerMessageId() === message.id) {
+                                      reactionPickerAnchorRef = element;
+                                    }
+                                  }}
+                                  type="button"
+                                  class="message-reaction-add"
+                                  onClick={() => {
+                                    setReactionPickerMessageId((current) => current === message.id ? null : message.id);
+                                  }}
+                                  aria-label="Add reaction"
+                                  title="Add reaction"
+                                >
+                                  +
+                                </button>
+                              </div>
                             </>
                           )}
                         >
@@ -310,6 +355,25 @@ export default function MessageTimeline(props: MessageTimelineProps) {
               )}
             </For>
           </ul>
+          <Show when={reactionPickerMessageId() !== null}>
+            <ReactionPicker
+              anchorRef={reactionPickerAnchorRef}
+              onSelect={(selection) => {
+                const messageId = reactionPickerMessageId();
+                if (!messageId) {
+                  return;
+                }
+
+                if (selection.type === "custom") {
+                  props.onAddReaction(messageId, { emoji_id: selection.emoji.id });
+                } else {
+                  props.onAddReaction(messageId, { unicode_emoji: selection.emoji });
+                }
+                setReactionPickerMessageId(null);
+              }}
+              onClose={() => setReactionPickerMessageId(null)}
+            />
+          </Show>
         </AsyncContent>
       </div>
       <Show when={attachmentPreview()}>

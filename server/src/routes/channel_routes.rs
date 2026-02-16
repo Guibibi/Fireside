@@ -13,6 +13,7 @@ use crate::message_attachments::{
     resolve_uploads_for_message, MessageAttachmentPayload,
 };
 use crate::models::{Channel, ChannelKind, Message};
+use crate::routes::reaction_routes::{get_message_reactions, ReactionSummaryResponse};
 use crate::ws::broadcast::{
     broadcast_channel_message, broadcast_global_message, remove_channel_subscribers,
 };
@@ -68,6 +69,7 @@ pub struct MessageWithAuthor {
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub edited_at: Option<chrono::DateTime<chrono::Utc>>,
     pub attachments: Vec<MessageAttachmentPayload>,
+    pub reactions: Vec<ReactionSummaryResponse>,
 }
 
 pub fn router() -> Router<AppState> {
@@ -314,7 +316,8 @@ async fn get_messages(
     Path(channel_id): Path<Uuid>,
     Query(query): Query<MessageQuery>,
 ) -> Result<Json<Vec<MessageWithAuthor>>, AppError> {
-    let _claims = extract_claims(&headers, &state.config.jwt.secret)?;
+    let claims = extract_claims(&headers, &state.config.jwt.secret)?;
+    let current_user_id = lookup_user_id(&state, &claims.username).await?;
     let limit = query.limit.unwrap_or(50).min(100);
 
     let messages: Vec<MessageWithAuthorRow> = if let Some(before) = query.before {
@@ -348,9 +351,11 @@ async fn get_messages(
     let attachments_by_message =
         load_message_attachments_by_message(&state.db, &message_ids).await?;
 
-    let with_attachments = messages
-        .into_iter()
-        .map(|message| MessageWithAuthor {
+    let mut with_attachments = Vec::with_capacity(messages.len());
+    for message in messages {
+        let reactions = get_message_reactions(&state, message.id, Some(current_user_id)).await?;
+
+        with_attachments.push(MessageWithAuthor {
             id: message.id,
             channel_id: message.channel_id,
             author_id: message.author_id,
@@ -362,8 +367,9 @@ async fn get_messages(
                 .get(&message.id)
                 .cloned()
                 .unwrap_or_default(),
-        })
-        .collect();
+            reactions,
+        });
+    }
 
     Ok(Json(with_attachments))
 }
