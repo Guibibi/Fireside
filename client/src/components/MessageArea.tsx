@@ -9,6 +9,8 @@ import { errorMessage } from "../utils/error";
 import MessageComposer from "./MessageComposer";
 import MessageTimeline from "./MessageTimeline";
 import VideoStage from "./VideoStage";
+import StreamWatchOverlay from "./StreamWatchOverlay";
+import { isStreamWatchFocused } from "../stores/voice";
 import { useTypingPresence } from "./useTypingPresence";
 import {
   toAbsoluteMediaUrl,
@@ -668,7 +670,7 @@ export default function MessageArea() {
   });
 
   return (
-    <div class="message-area">
+    <div class={`message-area${isStreamWatchFocused() ? " is-stream-focused" : ""}`}>
       <MessageTimeline
         activeChannel={activeChannel()}
         loading={historyLoading()}
@@ -726,6 +728,7 @@ export default function MessageArea() {
       <Show when={wsError()}>
         <p class="error message-error">{wsError()}</p>
       </Show>
+      <StreamWatchOverlay />
     </div>
   );
 }

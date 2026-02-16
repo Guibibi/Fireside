@@ -1,4 +1,5 @@
 import {
+    createMemo,
     For,
     Show,
     createEffect,
@@ -80,6 +81,9 @@ import {
     toggleSpeakerMuted,
     voiceRejoinNotice,
     voiceActionState,
+    videoTiles,
+    watchedStreamProducerId,
+    startWatchingStream,
 } from "../stores/voice";
 import AsyncContent from "./AsyncContent";
 import UserSettingsDock from "./UserSettingsDock";
@@ -143,6 +147,9 @@ export default function ChannelList() {
     const [pulsingByChannel, setPulsingByChannel] = createSignal<
         Record<string, boolean>
     >({});
+    const [memberHoverPopoverKey, setMemberHoverPopoverKey] = createSignal<
+        string | null
+    >(null);
     const pulseTimers = new Map<string, ReturnType<typeof setTimeout>>();
     const tauriRuntime = isTauriRuntime();
     const nativeDebugEnabled =
@@ -487,6 +494,31 @@ export default function ChannelList() {
 
     function voiceMembers(channelId: string) {
         return participantsByChannel()[channelId] ?? [];
+    }
+
+    const liveScreenTilesByUsername = createMemo(() => {
+        const next = new Map<string, { producerId: string }>();
+        for (const tile of videoTiles()) {
+            if (tile.source !== "screen") {
+                continue;
+            }
+
+            next.set(tile.username, { producerId: tile.producerId });
+        }
+
+        return next;
+    });
+
+    function streamTileForVoiceMember(channelId: string, memberUsername: string) {
+        if (channelId !== joinedVoiceChannelId()) {
+            return null;
+        }
+
+        return liveScreenTilesByUsername().get(memberUsername) ?? null;
+    }
+
+    function voiceMemberPopoverKey(channelId: string, memberUsername: string) {
+        return `${channelId}:${memberUsername}`;
     }
 
     function pulseBadge(channelId: string) {
@@ -1051,12 +1083,65 @@ export default function ChannelList() {
                                                         {(memberUsername) => (
                                                             <li
                                                                 class={`channel-voice-member${joinedVoiceChannelId() === channel.id ? " channel-voice-member-connected" : ""}`}
+                                                                tabIndex={0}
                                                                 onContextMenu={(event) => {
                                                                     event.preventDefault();
                                                                     event.stopPropagation();
                                                                     openContextMenu(event.clientX, event.clientY, "member", memberUsername, { username: memberUsername });
                                                                 }}
-                                                                onFocus={() => setContextMenuTarget("member", memberUsername, { username: memberUsername })}
+                                                                onFocus={() => {
+                                                                    setContextMenuTarget("member", memberUsername, { username: memberUsername });
+                                                                    if (streamTileForVoiceMember(channel.id, memberUsername)) {
+                                                                        setMemberHoverPopoverKey(
+                                                                            voiceMemberPopoverKey(channel.id, memberUsername),
+                                                                        );
+                                                                    }
+                                                                }}
+                                                                onBlur={(event) => {
+                                                                    const nextTarget = event.relatedTarget;
+                                                                    if (
+                                                                        nextTarget instanceof Node &&
+                                                                        event.currentTarget.contains(nextTarget)
+                                                                    ) {
+                                                                        return;
+                                                                    }
+
+                                                                    if (
+                                                                        memberHoverPopoverKey() ===
+                                                                        voiceMemberPopoverKey(channel.id, memberUsername)
+                                                                    ) {
+                                                                        setMemberHoverPopoverKey(null);
+                                                                    }
+                                                                }}
+                                                                onMouseEnter={() => {
+                                                                    if (streamTileForVoiceMember(channel.id, memberUsername)) {
+                                                                        setMemberHoverPopoverKey(
+                                                                            voiceMemberPopoverKey(channel.id, memberUsername),
+                                                                        );
+                                                                    }
+                                                                }}
+                                                                onMouseLeave={() => {
+                                                                    if (
+                                                                        memberHoverPopoverKey() ===
+                                                                        voiceMemberPopoverKey(channel.id, memberUsername)
+                                                                    ) {
+                                                                        setMemberHoverPopoverKey(null);
+                                                                    }
+                                                                }}
+                                                                onKeyDown={(event) => {
+                                                                    if (event.key !== "Enter" && event.key !== " ") {
+                                                                        return;
+                                                                    }
+
+                                                                    const liveTile = streamTileForVoiceMember(channel.id, memberUsername);
+                                                                    if (!liveTile) {
+                                                                        return;
+                                                                    }
+
+                                                                    event.preventDefault();
+                                                                    startWatchingStream(liveTile.producerId);
+                                                                    setMemberHoverPopoverKey(null);
+                                                                }}
                                                                 onTouchStart={(event) => {
                                                                     const touch = event.touches[0];
                                                                     handleLongPressStart(touch.clientX, touch.clientY, "member", memberUsername, { username: memberUsername });
@@ -1077,9 +1162,61 @@ export default function ChannelList() {
                                                                             : 18
                                                                     }
                                                                 />
-                                                                <span>
+                                                                <span class="channel-voice-member-name">
                                                                     {memberUsername}
                                                                 </span>
+                                                                <Show
+                                                                    when={streamTileForVoiceMember(channel.id, memberUsername)}
+                                                                >
+                                                                    {(liveTile) => (
+                                                                        <>
+                                                                            <span
+                                                                                class="channel-voice-live-badge"
+                                                                                aria-label={`${memberUsername} is streaming live`}
+                                                                            >
+                                                                                LIVE
+                                                                            </span>
+                                                                            <Show
+                                                                                when={
+                                                                                    memberHoverPopoverKey() ===
+                                                                                    voiceMemberPopoverKey(channel.id, memberUsername)
+                                                                                }
+                                                                            >
+                                                                                <div
+                                                                                    class="channel-stream-hover-popover"
+                                                                                    role="dialog"
+                                                                                    aria-label={`Watch ${memberUsername} stream`}
+                                                                                >
+                                                                                    <p class="channel-stream-hover-title">
+                                                                                        {memberUsername}
+                                                                                    </p>
+                                                                                    <p class="channel-stream-hover-text">
+                                                                                        Live screen share
+                                                                                    </p>
+                                                                                    <button
+                                                                                        type="button"
+                                                                                        class="channel-stream-watch-button"
+                                                                                        onClick={(event) => {
+                                                                                            event.preventDefault();
+                                                                                            event.stopPropagation();
+                                                                                            startWatchingStream(liveTile().producerId);
+                                                                                            setMemberHoverPopoverKey(null);
+                                                                                        }}
+                                                                                        disabled={
+                                                                                            watchedStreamProducerId() ===
+                                                                                            liveTile().producerId
+                                                                                        }
+                                                                                    >
+                                                                                        {watchedStreamProducerId() ===
+                                                                                        liveTile().producerId
+                                                                                            ? "Watching"
+                                                                                            : "Watch Stream"}
+                                                                                    </button>
+                                                                                </div>
+                                                                            </Show>
+                                                                        </>
+                                                                    )}
+                                                                </Show>
                                                             </li>
                                                         )}
                                                     </For>

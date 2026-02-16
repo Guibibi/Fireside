@@ -5,64 +5,65 @@ Long-term roadmap and completed milestone tracking live in `PLAN.md`.
 
 ## Active Phase
 
-- Phase 5.6: Custom emojis/icons
+- Phase 5.9: Streaming watch UX rework
 
 ## Phase Goal
 
-- Add custom emoji management and `:shortcode:` usage in messages without breaking existing message transport behavior.
+- Improve stream discoverability and viewing ergonomics in voice channels while keeping watch behavior explicit and fully user-initiated.
 
 ## Scope
 
-- Backend
-  - Add emoji asset CRUD endpoints with shortcode uniqueness checks.
-  - Enforce emoji upload constraints (`png|webp|gif`, max `512 KB`, bounded dimensions).
-  - Persist emoji metadata and ownership for instance-scoped emoji sets.
 - Client
-  - Add emoji picker UI and insert selected shortcode into composer.
-  - Parse/render `:shortcode:` tokens in message timeline with fallback to plain text for unknown codes.
-  - Keep edit/delete/realtime behavior compatible with emoji-rich messages.
+  - Show `LIVE` affordances for active screen streamers in the voice participant list.
+  - Add hover/focus discovery popover with streamer context and a primary `Watch Stream` action.
+  - Add viewer state model: `Not watching`, `Watching (focused)`, `Watching (mini-player)`.
+  - Add focused watch mode with `Fullscreen` and `X` controls.
+  - Add mini-player mode with `Stop Watching Stream` and stream-ended cleanup feedback.
+  - Preserve watch state behavior across text channel switches and panel visibility changes.
+- Protocol/Server
+  - Keep existing media signaling and WS transport contracts unchanged for this phase.
 
 ## Ordered Checklist
 
-- [ ] Add emoji schema + migration for shortcode and media linkage.
-- [ ] Implement emoji CRUD API + server-side validation.
-- [ ] Build emoji picker + shortcode insertion in composer.
-- [ ] Render shortcode tokens as emoji assets in message timeline.
-- [ ] Validate upload limits and duplicate shortcode behavior.
-- [ ] Run backend + frontend validation commands and capture blockers.
+- [x] Add voice participant `LIVE` badge for active screen streamers.
+- [x] Add hover/focus streamer popover with `Watch Stream` CTA.
+- [x] Add focused watch surface that replaces chat content while active.
+- [x] Add focused controls: `Fullscreen` and close (`X`) with keyboard reachability.
+- [x] Add mini-player dock with `Stop Watching Stream` control.
+- [x] Auto-exit watch modes on stream end/disconnect and show `Stream ended` feedback.
+- [x] Run frontend validation commands and capture blockers.
 
 ## Touch Points
 
-- `server/src/routes/emoji_routes.rs`
-- `server/src/routes/mod.rs`
-- `server/src/uploads/mod.rs`
-- `server/src/ws/messages.rs`
+- `client/src/components/ChannelList.tsx`
 - `client/src/components/MessageArea.tsx`
-- `client/src/components/EmojiPicker.tsx`
-- `client/src/api/http.ts`
+- `client/src/components/StreamWatchOverlay.tsx`
+- `client/src/components/VideoStage.tsx`
+- `client/src/pages/Chat.tsx`
+- `client/src/stores/voice.ts`
+- `client/src/styles/channel-list.css`
+- `client/src/styles/messages.css`
+- `client/src/styles/stream-watch.css`
+- `client/src/styles/global.css`
 
 ## Validation Commands
 
-- Backend
-  - `cargo fmt --all --manifest-path server/Cargo.toml -- --check`
-  - `cargo clippy --manifest-path server/Cargo.toml --all-targets -- -D warnings`
-  - `cargo test --manifest-path server/Cargo.toml`
 - Frontend
   - `npm --prefix client run typecheck`
   - `npm --prefix client run build`
 
 ## Last Completed Phase
 
-- Phase 5.5: Image support in chat
+- Phase 5.8: GIF search support
 
-## Completion Snapshot (Phase 5.5)
+## Completion Snapshot (In Progress)
 
-- Added message attachment persistence via `message_attachments` and additive WS/history payload fields.
-- Added MIME sniffing for uploads to enforce content-based image type validation.
-- Added composer image upload queue with upload/processing/failure states.
-- Added chat timeline image attachment rendering with open/download actions.
-- Kept existing text messaging/edit/delete flows compatible with attachment messages.
+- Introduced explicit stream watch state machine in client voice store (`none`/`focused`/`mini`).
+- Added voice-member `LIVE` detection and watch-entry affordances in channel participant UI.
+- Added focused stream player with keyboard reachable `Fullscreen` and close controls.
+- Added docked mini-player with explicit `Stop Watching Stream` behavior.
+- Added automatic watcher teardown when stream producer ends, with `Stream ended` status feedback.
 
-## Next Step After Phase 5.6
+## Next Step After Phase 5.9
 
-- Phase 5.7: Per-voice-channel codec configuration
+- Phase 4.1: Operator/admin role boundaries
