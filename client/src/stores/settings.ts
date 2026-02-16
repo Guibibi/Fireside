@@ -289,6 +289,25 @@ export function saveVoiceOutgoingVolume(volume: number) {
   setVoiceOutgoingVolume(normalized);
 }
 
+export type SettingsSection = "profile" | "audio" | "invites" | "notifications" | "session";
+
+const [settingsOpen, setSettingsOpen] = createSignal(false);
+const [activeSettingsSection, setActiveSettingsSection] = createSignal<SettingsSection>("profile");
+
+export { settingsOpen, activeSettingsSection };
+
+export function openSettings(section?: SettingsSection) {
+  if (section) {
+    setActiveSettingsSection(section);
+  }
+  setSettingsOpen(true);
+}
+
+export function closeSettings() {
+  setSettingsOpen(false);
+  setActiveSettingsSection("profile");
+}
+
 export function resetAudioPreferences() {
   savePreferredAudioInputDeviceId(null);
   savePreferredAudioOutputDeviceId(null);

@@ -266,6 +266,12 @@ Yankcord is a self-hosted, minimal chat app. One server instance = one community
 
 ### Add audio to streaming
 -- Capture and send the audio when streaming a window
+
+### Invitation better implementation
+-- The UI for the invitation should be reworked to be able to customize invitation options.
+-- Add option to either have a single use or multiple uses and max uses
+-- Custom expiration date
+-- Look at the database model for invitation for implementation
 ---
 
 ## Validation Baseline

@@ -27,6 +27,7 @@
 @import "./auth.css";
 @import "./context-menu.css";
 @import "./avatars.css";
+@import "./settings-page.css";
 
 /* Utilities & Responsive */
 @import "./utilities.css";

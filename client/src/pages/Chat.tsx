@@ -2,9 +2,11 @@ import { Show, onMount, onCleanup } from "solid-js";
 import ChannelList from "../components/ChannelList";
 import MessageArea from "../components/MessageArea";
 import MemberList from "../components/MemberList";
+import SettingsPage from "../components/SettingsPage";
 import ContextMenuContainer from "../components/ContextMenuContainer";
 import { handleContextMenuKeyDown } from "../stores/contextMenu";
 import { isStreamWatchFocused } from "../stores/voice";
+import { settingsOpen } from "../stores/settings";
 
 export default function Chat() {
   onMount(() => {
@@ -18,11 +20,17 @@ export default function Chat() {
   return (
     <div class="chat-view">
       <ChannelList />
-      <div class="main-content">
-        <MessageArea />
-      </div>
-      <Show when={!isStreamWatchFocused()}>
-        <MemberList />
+      <Show when={settingsOpen()} fallback={
+        <>
+          <div class="main-content">
+            <MessageArea />
+          </div>
+          <Show when={!isStreamWatchFocused()}>
+            <MemberList />
+          </Show>
+        </>
+      }>
+        <SettingsPage />
       </Show>
       <ContextMenuContainer />
     </div>
