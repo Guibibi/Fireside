@@ -5,6 +5,8 @@ interface UseTypingPresenceOptions {
   setDraft: (value: string) => void;
   activeChannelId: Accessor<string | null>;
   sendMessage: (payload: unknown) => void;
+  typingStartPayload?: (contextId: string) => unknown;
+  typingStopPayload?: (contextId: string) => unknown;
 }
 
 export function useTypingPresence(options: UseTypingPresenceOptions) {
@@ -50,7 +52,11 @@ export function useTypingPresence(options: UseTypingPresenceOptions) {
     }
 
     if (activeTypingChannelId) {
-      options.sendMessage({ type: "typing_stop", channel_id: activeTypingChannelId });
+      options.sendMessage(
+        options.typingStopPayload
+          ? options.typingStopPayload(activeTypingChannelId)
+          : { type: "typing_stop", channel_id: activeTypingChannelId },
+      );
       activeTypingChannelId = null;
     }
   }
@@ -66,7 +72,11 @@ export function useTypingPresence(options: UseTypingPresenceOptions) {
       if (!channelId || !hasDraft || activeTypingChannelId !== channelId) {
         return;
       }
-      options.sendMessage({ type: "typing_start", channel_id: channelId });
+      options.sendMessage(
+        options.typingStartPayload
+          ? options.typingStartPayload(channelId)
+          : { type: "typing_start", channel_id: channelId },
+      );
     }, 2000);
   }
 
@@ -81,7 +91,11 @@ export function useTypingPresence(options: UseTypingPresenceOptions) {
 
     if (activeTypingChannelId !== channelId) {
       stopTypingBroadcast();
-      options.sendMessage({ type: "typing_start", channel_id: channelId });
+      options.sendMessage(
+        options.typingStartPayload
+          ? options.typingStartPayload(channelId)
+          : { type: "typing_start", channel_id: channelId },
+      );
       activeTypingChannelId = channelId;
     }
 

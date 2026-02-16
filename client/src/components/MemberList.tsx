@@ -1,15 +1,25 @@
 import { For, Show, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import { get } from "../api/http";
+import { openDmWithUser } from "../api/dms";
 import { connect, onMessage, type PresenceUser } from "../api/ws";
-import { activeChannelId } from "../stores/chat";
+import { activeChannelId, setActiveDmThread } from "../stores/chat";
 import { participantsInChannel } from "../stores/voice";
 import { openContextMenu, registerContextMenuHandlers, handleLongPressStart, handleLongPressEnd, setContextMenuTarget } from "../stores/contextMenu";
 import UserAvatar from "./UserAvatar";
-import { setUserProfiles, upsertUserProfile } from "../stores/userProfiles";
+import { displayNameFor, setUserProfiles, upsertUserProfile } from "../stores/userProfiles";
+import { openProfileModal } from "../stores/profileModal";
+import { upsertDmThread } from "../stores/dms";
+import { errorMessage } from "../utils/error";
 
 interface UsersResponse {
   usernames: string[];
-  users?: { username: string; avatar_url: string | null }[];
+  users?: {
+    username: string;
+    display_name: string;
+    avatar_url: string | null;
+    profile_description?: string | null;
+    profile_status?: string | null;
+  }[];
 }
 
 export default function MemberList() {
@@ -23,18 +33,29 @@ export default function MemberList() {
     const connected = new Set(connectedMembers());
     return allMembers().filter((member) => !connected.has(member));
   });
+  const [actionError, setActionError] = createSignal("");
+
+  async function startDmWithMember(memberUsername: string) {
+    try {
+      const response = await openDmWithUser(memberUsername);
+      upsertDmThread(response.thread);
+      setActiveDmThread(response.thread.thread_id);
+      setActionError("");
+    } catch (error) {
+      setActionError(errorMessage(error, "Failed to open DM"));
+    }
+  }
 
   onMount(() => {
     connect();
 
-    // TODO: Implement profile viewing and DM features
     registerContextMenuHandlers({
       member: {
-        onViewProfile: (_member) => {
-          // TODO: Open profile modal/panel
+        onViewProfile: (member) => {
+          openProfileModal(member.username);
         },
-        onSendMessage: (_member) => {
-          // TODO: Open DM channel or create one
+        onSendMessage: (member) => {
+          void startDmWithMember(member.username);
         },
       },
     });
@@ -71,7 +92,11 @@ export default function MemberList() {
       }
 
       if (msg.type === "user_connected") {
-        upsertUserProfile({ username: msg.username, avatar_url: null });
+        upsertUserProfile({
+          username: msg.username,
+          display_name: displayNameFor(msg.username),
+          avatar_url: null,
+        });
         setOnlineMembers((current) => [...new Set([...current, msg.username])].sort((a, b) => a.localeCompare(b)));
         setIdleMembers((current) => current.filter((member) => member !== msg.username));
         setAllMembers((current) => {
@@ -98,6 +123,17 @@ export default function MemberList() {
       if (msg.type === "user_disconnected") {
         setOnlineMembers((current) => current.filter((member) => member !== msg.username));
         setIdleMembers((current) => current.filter((member) => member !== msg.username));
+        return;
+      }
+
+      if (msg.type === "user_profile_updated") {
+        upsertUserProfile({
+          username: msg.username,
+          display_name: msg.display_name,
+          avatar_url: msg.avatar_url,
+          profile_description: msg.profile_description,
+          profile_status: msg.profile_status,
+        });
       }
     });
 
@@ -108,6 +144,9 @@ export default function MemberList() {
     <aside class="member-list">
       <h3>Members</h3>
       <Show when={allMembers().length > 0} fallback={<p class="placeholder">No members found</p>}>
+        <Show when={actionError()}>
+          <p class="error">{actionError()}</p>
+        </Show>
         <h4 class="member-section-title">Online ({connectedMembers().length})</h4>
         <Show when={connectedMembers().length > 0} fallback={<p class="placeholder">Nobody online</p>}>
           <ul class="member-items">
@@ -128,7 +167,7 @@ export default function MemberList() {
                 >
                   <UserAvatar username={member} class="member-avatar" size={28} />
                   <span class="member-name">
-                    <span>{member}</span>
+                    <span>{displayNameFor(member)}</span>
                     <span
                       class={`member-status-dot ${idleSet().has(member) ? "member-status-dot-idle" : "member-status-dot-online"}`}
                       aria-hidden="true"
@@ -163,7 +202,7 @@ export default function MemberList() {
                 >
                   <UserAvatar username={member} class="member-avatar" size={28} />
                   <span class="member-name">
-                    <span>{member}</span>
+                    <span>{displayNameFor(member)}</span>
                     <span class="member-status-dot member-status-dot-offline" aria-hidden="true" />
                   </span>
                 </li>

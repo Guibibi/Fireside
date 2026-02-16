@@ -112,11 +112,12 @@ async fn setup(
 
     // Atomic check-and-insert: only succeeds if no users exist yet
     let result = sqlx::query(
-        "INSERT INTO users (id, username, password_hash, role)
-         SELECT $1, $2, $3, $4::user_role
+        "INSERT INTO users (id, username, display_name, password_hash, role)
+         SELECT $1, $2, $3, $4, $5::user_role
          WHERE NOT EXISTS (SELECT 1 FROM users)",
     )
     .bind(user_id)
+    .bind(&body.username)
     .bind(&body.username)
     .bind(&password_hash)
     .bind(role.as_str())
@@ -215,9 +216,10 @@ async fn register(
     }
 
     sqlx::query(
-        "INSERT INTO users (id, username, password_hash, role) VALUES ($1, $2, $3, $4::user_role)",
+        "INSERT INTO users (id, username, display_name, password_hash, role) VALUES ($1, $2, $3, $4, $5::user_role)",
     )
     .bind(user_id)
+    .bind(&body.username)
     .bind(&body.username)
     .bind(&password_hash)
     .bind(role.as_str())

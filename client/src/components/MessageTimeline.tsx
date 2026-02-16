@@ -15,6 +15,7 @@ import UserAvatar from "./UserAvatar";
 import type { ChannelMessage, MessageDayGroup, MessageReaction } from "./messageTypes";
 import { isMentioningUsername } from "../utils/mentions";
 import { ZoomIcon, CloseIcon, DownloadIcon, ExternalLinkIcon } from "./icons";
+import { displayNameFor } from "../stores/userProfiles";
 
 interface MessageTimelineProps {
   activeChannel: Channel | null | undefined;
@@ -191,7 +192,7 @@ export default function MessageTimeline(props: MessageTimelineProps) {
                       >
                         <UserAvatar username={message.author_username} class="message-avatar" size={36} />
                         <div class="message-meta">
-                          <span class="message-author">{message.author_username}</span>
+                          <span class="message-author">{message.author_display_name || displayNameFor(message.author_username)}</span>
                           <time class="message-time">
                             {new Date(message.created_at).toLocaleTimeString([], {
                               hour: "2-digit",

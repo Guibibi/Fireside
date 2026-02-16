@@ -55,6 +55,7 @@ pub struct MessageWithAuthorRow {
     pub channel_id: Uuid,
     pub author_id: Uuid,
     pub author_username: String,
+    pub author_display_name: String,
     pub content: String,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub edited_at: Option<chrono::DateTime<chrono::Utc>>,
@@ -66,6 +67,7 @@ pub struct MessageWithAuthor {
     pub channel_id: Uuid,
     pub author_id: Uuid,
     pub author_username: String,
+    pub author_display_name: String,
     pub content: String,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub edited_at: Option<chrono::DateTime<chrono::Utc>>,
@@ -337,7 +339,7 @@ async fn get_messages(
     let messages_query_started = Instant::now();
     let messages: Vec<MessageWithAuthorRow> = if let Some(before) = query.before {
         sqlx::query_as(
-            "SELECT m.id, m.channel_id, m.author_id, u.username AS author_username, m.content, m.created_at, m.edited_at
+            "SELECT m.id, m.channel_id, m.author_id, u.username AS author_username, COALESCE(u.display_name, u.username) AS author_display_name, m.content, m.created_at, m.edited_at
              FROM messages m
              JOIN users u ON u.id = m.author_id
              WHERE m.channel_id = $1
@@ -351,7 +353,7 @@ async fn get_messages(
         .await?
     } else {
         sqlx::query_as(
-            "SELECT m.id, m.channel_id, m.author_id, u.username AS author_username, m.content, m.created_at, m.edited_at
+            "SELECT m.id, m.channel_id, m.author_id, u.username AS author_username, COALESCE(u.display_name, u.username) AS author_display_name, m.content, m.created_at, m.edited_at
              FROM messages m
              JOIN users u ON u.id = m.author_id
              WHERE m.channel_id = $1 ORDER BY m.created_at DESC, m.id DESC LIMIT $2",
@@ -390,6 +392,7 @@ async fn get_messages(
             channel_id: message.channel_id,
             author_id: message.author_id,
             author_username: message.author_username,
+            author_display_name: message.author_display_name,
             content: message.content,
             created_at: message.created_at,
             edited_at: message.edited_at,

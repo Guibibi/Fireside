@@ -1,12 +1,18 @@
 import { Show, createEffect, createMemo, createResource, createSignal, onCleanup, onMount } from "solid-js";
 import { del, get, patch } from "../api/http";
+import { deleteDmMessage, editDmMessage, fetchDmMessages, markDmRead } from "../api/dms";
 import { connect, onMessage, send } from "../api/ws";
 import { addReaction, removeCustomReaction, removeUnicodeReaction } from "../api/reactions";
 import type { GifResult } from "../api/gifs";
 import { getApiBaseUrl, token, userId, username } from "../stores/auth";
-import { activeChannelId, type Channel } from "../stores/chat";
+import { activeChannelId, activeDmThreadId, type Channel } from "../stores/chat";
 import { registerContextMenuHandlers } from "../stores/contextMenu";
-import { knownUsernames, setUserProfiles, upsertUserProfile } from "../stores/userProfiles";
+import {
+  displayNameFor,
+  knownUsernames,
+  setUserProfiles,
+  upsertUserProfile,
+} from "../stores/userProfiles";
 import { errorMessage } from "../utils/error";
 import { isMentioningUsername } from "../utils/mentions";
 import { mentionDesktopNotificationsEnabled } from "../stores/settings";
@@ -16,6 +22,7 @@ import VideoStage from "./VideoStage";
 import StreamWatchOverlay from "./StreamWatchOverlay";
 import { isStreamWatchFocused } from "../stores/voice";
 import { useTypingPresence } from "./useTypingPresence";
+import { clearDmTypingUsers, dmThreadById, dmTypingUsernames, removeDmTypingUser, setDmUnreadCount, touchDmTypingUser } from "../stores/dms";
 import {
   toAbsoluteMediaUrl,
   uploadError,
@@ -156,25 +163,53 @@ async function extractPastedImageFiles(event: ClipboardEvent): Promise<File[]> {
   return imageFiles;
 }
 
-async function fetchMessagesPage(channelId: string, before?: string) {
-  const params = new URLSearchParams({ limit: String(MESSAGE_PAGE_SIZE) });
-  if (before) {
-    params.set("before", before);
+async function fetchMessagesPage(
+  target: { kind: "channel"; id: string } | { kind: "dm"; id: string },
+  before?: string,
+) {
+  if (target.kind === "channel") {
+    const params = new URLSearchParams({ limit: String(MESSAGE_PAGE_SIZE) });
+    if (before) {
+      params.set("before", before);
+    }
+
+    return get<ChannelMessage[]>(`/channels/${target.id}/messages?${params.toString()}`);
   }
 
-  return get<ChannelMessage[]>(`/channels/${channelId}/messages?${params.toString()}`);
+  const messages = await fetchDmMessages(target.id, before, MESSAGE_PAGE_SIZE);
+  return messages.map((message) => ({
+    ...message,
+    channel_id: message.thread_id,
+    attachments: [],
+    reactions: [],
+  }));
 }
 
 function setListScrollTopInstant(list: HTMLDivElement, top: number) {
   list.scrollTo({ top, behavior: "auto" });
 }
 
-async function fetchActiveChannel(channelId: string | null) {
-  if (!channelId) {
+async function fetchActiveChannel(target: { kind: "channel"; id: string } | { kind: "dm"; id: string } | null) {
+  if (!target) {
     return null;
   }
 
-  return get<Channel>(`/channels/${channelId}`);
+  if (target.kind === "dm") {
+    const thread = dmThreadById(target.id);
+    if (!thread) {
+      return null;
+    }
+    return {
+      id: thread.thread_id,
+      name: thread.other_display_name,
+      description: thread.last_message_preview,
+      kind: "text" as const,
+      position: 0,
+      created_at: thread.last_message_at ?? new Date().toISOString(),
+    };
+  }
+
+  return get<Channel>(`/channels/${target.id}`);
 }
 
 export default function MessageArea() {
@@ -205,11 +240,37 @@ export default function MessageArea() {
   let bottomResizeObserver: ResizeObserver | null = null;
   const daySeparatorRefs = new Map<string, HTMLLIElement>();
 
+  const activeTarget = createMemo<
+    { kind: "channel"; id: string } | { kind: "dm"; id: string } | null
+  >(() => {
+    const dmThreadId = activeDmThreadId();
+    if (dmThreadId) {
+      return { kind: "dm", id: dmThreadId };
+    }
+
+    const channelId = activeChannelId();
+    if (channelId) {
+      return { kind: "channel", id: channelId };
+    }
+
+    return null;
+  });
+
   const typing = useTypingPresence({
     draft,
     setDraft,
-    activeChannelId,
+    activeChannelId: () => activeTarget()?.id ?? null,
     sendMessage: send,
+    typingStartPayload: (contextId) => (
+      activeTarget()?.kind === "dm"
+        ? { type: "typing_start_dm", thread_id: contextId }
+        : { type: "typing_start", channel_id: contextId }
+    ),
+    typingStopPayload: (contextId) => (
+      activeTarget()?.kind === "dm"
+        ? { type: "typing_stop_dm", thread_id: contextId }
+        : { type: "typing_stop", channel_id: contextId }
+    ),
   });
 
   const hasBlockingAttachment = createMemo(() => pendingAttachments().some((attachment) => (
@@ -217,7 +278,7 @@ export default function MessageArea() {
   )));
   const hasFailedAttachment = createMemo(() => pendingAttachments().some((attachment) => attachment.status === "failed"));
 
-  const [activeChannel] = createResource(activeChannelId, fetchActiveChannel);
+  const [activeChannel] = createResource(activeTarget, fetchActiveChannel);
 
   const groupedMessages = createMemo<MessageDayGroup[]>(() => {
     const groups: MessageDayGroup[] = [];
@@ -301,6 +362,7 @@ export default function MessageArea() {
   function maybeShowMentionDesktopNotification(message: {
     id: string;
     author_username: string;
+    author_display_name: string;
     content: string;
     channel_id: string;
   }) {
@@ -330,7 +392,7 @@ export default function MessageArea() {
     const body = message.content.trim().length > 0
       ? message.content.trim()
       : "You were mentioned in a new message.";
-    const notification = new Notification(`@${currentUsername} mention from ${message.author_username}`, {
+    const notification = new Notification(`@${currentUsername} mention from ${message.author_display_name}`, {
       body,
       tag: `mention-${message.id}`,
     });
@@ -355,7 +417,10 @@ export default function MessageArea() {
     setWsError("");
     setSavingMessageId(messageId);
     try {
-      const updated = await patch<EditedMessageResponse>(`/messages/${messageId}`, { content });
+      const target = activeTarget();
+      const updated = target?.kind === "dm"
+        ? await editDmMessage(messageId, content)
+        : await patch<EditedMessageResponse>(`/messages/${messageId}`, { content });
       setMessages((current) => current.map((message) => (
         message.id === updated.id ? { ...message, content: updated.content, edited_at: updated.edited_at } : message
       )));
@@ -379,7 +444,11 @@ export default function MessageArea() {
     setWsError("");
     setDeletingMessageId(message.id);
     try {
-      await del<{ deleted: true }>(`/messages/${message.id}`);
+      if (activeTarget()?.kind === "dm") {
+        await deleteDmMessage(message.id);
+      } else {
+        await del<{ deleted: true }>(`/messages/${message.id}`);
+      }
       setMessages((current) => current.filter((entry) => entry.id !== message.id));
       if (editingMessageId() === message.id) {
         cancelEdit();
@@ -449,6 +518,13 @@ export default function MessageArea() {
   }
 
   function handleAttachmentInput(event: Event) {
+    if (activeTarget()?.kind === "dm") {
+      setWsError("Attachments are not available in DMs yet.");
+      const input = event.currentTarget as HTMLInputElement;
+      input.value = "";
+      return;
+    }
+
     const input = event.currentTarget as HTMLInputElement;
     const files = input.files;
     if (!files || files.length === 0) {
@@ -463,7 +539,11 @@ export default function MessageArea() {
   }
 
   async function handleDraftPaste(event: ClipboardEvent) {
-    if (!activeChannelId() || isSending() || savingMessageId() || deletingMessageId()) {
+    if (!activeTarget() || isSending() || savingMessageId() || deletingMessageId()) {
+      return;
+    }
+
+    if (activeTarget()?.kind === "dm") {
       return;
     }
 
@@ -549,14 +629,14 @@ export default function MessageArea() {
     }
   }
 
-  function startBottomAnchorPulse(channelId: string, requestId: number) {
+  function startBottomAnchorPulse(expectedTargetKey: string, requestId: number) {
     clearBottomAnchorTimer();
     let attempts = 0;
 
     bottomAnchorTimer = setInterval(() => {
       attempts += 1;
 
-      if (!listRef || channelId !== activeChannelId() || requestId !== latestHistoryRequest || !shouldStickToBottom) {
+      if (!listRef || expectedTargetKey !== targetKey(activeTarget()) || requestId !== latestHistoryRequest || !shouldStickToBottom) {
         if (attempts >= 12 || !shouldStickToBottom) {
           clearBottomAnchorTimer();
         }
@@ -587,15 +667,23 @@ export default function MessageArea() {
     ));
   }
 
-  async function loadInitialMessages(channelId: string) {
+  function targetKey(target: { kind: "channel"; id: string } | { kind: "dm"; id: string } | null): string | null {
+    if (!target) {
+      return null;
+    }
+    return `${target.kind}:${target.id}`;
+  }
+
+  async function loadInitialMessages(target: { kind: "channel"; id: string } | { kind: "dm"; id: string }) {
     const requestId = ++latestHistoryRequest;
+    const requestedTargetKey = `${target.kind}:${target.id}`;
     setHistoryLoading(true);
     setHistoryError(null);
     setHasOlderMessages(true);
 
     try {
-      const loadedHistory = await fetchMessagesPage(channelId);
-      if (requestId !== latestHistoryRequest || channelId !== activeChannelId()) {
+      const loadedHistory = await fetchMessagesPage(target);
+      if (requestId !== latestHistoryRequest || requestedTargetKey !== targetKey(activeTarget())) {
         return;
       }
 
@@ -604,7 +692,7 @@ export default function MessageArea() {
       shouldStickToBottom = true;
 
       queueMicrotask(() => {
-        if (requestId !== latestHistoryRequest || channelId !== activeChannelId() || !listRef) {
+        if (requestId !== latestHistoryRequest || requestedTargetKey !== targetKey(activeTarget()) || !listRef) {
           return;
         }
 
@@ -612,7 +700,7 @@ export default function MessageArea() {
         lastKnownScrollTop = listRef.scrollTop;
         hasAnchoredInitialBottom = true;
         requestAnimationFrame(() => {
-          if (requestId !== latestHistoryRequest || channelId !== activeChannelId() || !listRef) {
+          if (requestId !== latestHistoryRequest || requestedTargetKey !== targetKey(activeTarget()) || !listRef) {
             return;
           }
 
@@ -620,23 +708,24 @@ export default function MessageArea() {
           lastKnownScrollTop = listRef.scrollTop;
         });
 
-        startBottomAnchorPulse(channelId, requestId);
-        void fillViewportWithHistory(channelId, requestId);
+        startBottomAnchorPulse(requestedTargetKey, requestId);
+        void fillViewportWithHistory(requestedTargetKey, requestId);
       });
     } catch (error) {
-      if (requestId === latestHistoryRequest && channelId === activeChannelId()) {
+      if (requestId === latestHistoryRequest && requestedTargetKey === targetKey(activeTarget())) {
         setHistoryError(error);
       }
     } finally {
-      if (requestId === latestHistoryRequest && channelId === activeChannelId()) {
+      if (requestId === latestHistoryRequest && requestedTargetKey === targetKey(activeTarget())) {
         setHistoryLoading(false);
       }
     }
   }
 
   async function loadOlderMessages() {
-    const channelId = activeChannelId();
-    if (!channelId || loadingOlderMessages() || historyLoading() || !hasOlderMessages()) {
+    const target = activeTarget();
+    const currentTargetKey = targetKey(target);
+    if (!target || !currentTargetKey || loadingOlderMessages() || historyLoading() || !hasOlderMessages()) {
       return;
     }
 
@@ -650,8 +739,8 @@ export default function MessageArea() {
 
     setLoadingOlderMessages(true);
     try {
-      const loadedHistory = await fetchMessagesPage(channelId, oldestMessage.id);
-      if (channelId !== activeChannelId()) {
+      const loadedHistory = await fetchMessagesPage(target, oldestMessage.id);
+      if (currentTargetKey !== targetKey(activeTarget())) {
         return;
       }
 
@@ -664,7 +753,7 @@ export default function MessageArea() {
       isPrependingHistory = true;
       setMessages((current) => mergeMessagesById(loadedHistory, current));
       queueMicrotask(() => {
-        if (channelId !== activeChannelId() || !listRef) {
+        if (currentTargetKey !== targetKey(activeTarget()) || !listRef) {
           isPrependingHistory = false;
           return;
         }
@@ -675,21 +764,21 @@ export default function MessageArea() {
         isPrependingHistory = false;
       });
     } catch (error) {
-      if (channelId === activeChannelId()) {
+      if (currentTargetKey === targetKey(activeTarget())) {
         setWsError(errorMessage(error, "Failed to load older messages"));
       }
     } finally {
-      if (channelId === activeChannelId()) {
+      if (currentTargetKey === targetKey(activeTarget())) {
         setLoadingOlderMessages(false);
       }
     }
   }
 
-  async function fillViewportWithHistory(channelId: string, requestId: number) {
+  async function fillViewportWithHistory(expectedTargetKey: string, requestId: number) {
     let attempts = 0;
 
     while (attempts < 10) {
-      if (!listRef || channelId !== activeChannelId() || requestId !== latestHistoryRequest || !hasOlderMessages()) {
+      if (!listRef || expectedTargetKey !== targetKey(activeTarget()) || requestId !== latestHistoryRequest || !hasOlderMessages()) {
         return;
       }
 
@@ -731,13 +820,18 @@ export default function MessageArea() {
     event.preventDefault();
     setWsError("");
 
-    const channelId = activeChannelId();
+    const target = activeTarget();
     const content = draft().trim();
     const attachmentIds = pendingAttachments()
       .filter((attachment) => attachment.status !== "uploading" && attachment.status !== "failed" && attachment.media_id)
       .map((attachment) => attachment.media_id as string);
 
-    if (!channelId || hasBlockingAttachment() || hasFailedAttachment()) {
+    if (!target || hasBlockingAttachment() || hasFailedAttachment()) {
+      return;
+    }
+
+    if (target.kind === "dm" && attachmentIds.length > 0) {
+      setWsError("Attachments are not available in DMs yet.");
       return;
     }
 
@@ -752,7 +846,11 @@ export default function MessageArea() {
     }
 
     setIsSending(true);
-    send({ type: "send_message", channel_id: channelId, content, attachment_media_ids: attachmentIds });
+    if (target.kind === "dm") {
+      send({ type: "send_dm_message", thread_id: target.id, content });
+    } else {
+      send({ type: "send_message", channel_id: target.id, content, attachment_media_ids: attachmentIds });
+    }
     typing.stopTypingBroadcast();
     setDraft("");
     setPendingAttachments([]);
@@ -794,7 +892,11 @@ export default function MessageArea() {
       }
 
       if (msg.type === "new_message") {
-        upsertUserProfile({ username: msg.author_username, avatar_url: null });
+        upsertUserProfile({
+          username: msg.author_username,
+          display_name: msg.author_display_name,
+          avatar_url: null,
+        });
         typing.removeTypingUser(msg.author_username);
 
         const selfUsername = username();
@@ -819,6 +921,7 @@ export default function MessageArea() {
               channel_id: msg.channel_id,
               author_id: msg.author_id,
               author_username: msg.author_username,
+              author_display_name: msg.author_display_name,
               content: msg.content,
               created_at: msg.created_at,
               edited_at: msg.edited_at ?? null,
@@ -827,6 +930,45 @@ export default function MessageArea() {
             },
           ];
         });
+        return;
+      }
+
+      if (msg.type === "new_dm_message") {
+        upsertUserProfile({
+          username: msg.author_username,
+          display_name: msg.author_display_name,
+          avatar_url: null,
+        });
+
+        removeDmTypingUser(msg.thread_id, msg.author_username);
+
+        if (msg.thread_id !== activeDmThreadId()) {
+          return;
+        }
+
+        setMessages((current) => {
+          if (current.some((entry) => entry.id === msg.id)) {
+            return current;
+          }
+
+          return [
+            ...current,
+            {
+              id: msg.id,
+              channel_id: msg.thread_id,
+              author_id: msg.author_id,
+              author_username: msg.author_username,
+              author_display_name: msg.author_display_name,
+              content: msg.content,
+              created_at: msg.created_at,
+              edited_at: msg.edited_at ?? null,
+              attachments: [],
+              reactions: [],
+            },
+          ];
+        });
+
+        void markDmRead(msg.thread_id, msg.id).catch(() => undefined);
         return;
       }
 
@@ -840,8 +982,29 @@ export default function MessageArea() {
         return;
       }
 
+      if (msg.type === "dm_message_edited") {
+        if (msg.thread_id !== activeDmThreadId()) {
+          return;
+        }
+        setMessages((current) => current.map((message) => (
+          message.id === msg.id ? { ...message, content: msg.content, edited_at: msg.edited_at } : message
+        )));
+        return;
+      }
+
       if (msg.type === "message_deleted") {
         if (msg.channel_id !== activeChannelId()) {
+          return;
+        }
+        setMessages((current) => current.filter((message) => message.id !== msg.id));
+        if (editingMessageId() === msg.id) {
+          cancelEdit();
+        }
+        return;
+      }
+
+      if (msg.type === "dm_message_deleted") {
+        if (msg.thread_id !== activeDmThreadId()) {
           return;
         }
         setMessages((current) => current.filter((message) => message.id !== msg.id));
@@ -924,6 +1087,37 @@ export default function MessageArea() {
 
       if (msg.type === "typing_stop" && msg.channel_id === activeChannelId()) {
         typing.removeTypingUser(msg.username);
+        return;
+      }
+
+      if (msg.type === "dm_typing_start") {
+        if (msg.thread_id !== activeDmThreadId() || msg.username === username()) {
+          return;
+        }
+        touchDmTypingUser(msg.thread_id, msg.username);
+        return;
+      }
+
+      if (msg.type === "dm_typing_stop") {
+        removeDmTypingUser(msg.thread_id, msg.username);
+        return;
+      }
+
+      if (msg.type === "dm_unread_updated") {
+        if (msg.thread_id === activeDmThreadId()) {
+          setDmUnreadCount(msg.thread_id, 0);
+        }
+        return;
+      }
+
+      if (msg.type === "user_profile_updated") {
+        upsertUserProfile({
+          username: msg.username,
+          display_name: msg.display_name,
+          avatar_url: msg.avatar_url,
+          profile_description: msg.profile_description,
+          profile_status: msg.profile_status,
+        });
       }
     });
 
@@ -936,8 +1130,8 @@ export default function MessageArea() {
   });
 
   createEffect(() => {
-    const channelId = activeChannelId();
-    typing.handleChannelChanged(channelId);
+    const target = activeTarget();
+    typing.handleChannelChanged(target?.id ?? null);
     setMessages([]);
     cancelEdit();
     setDeletingMessageId(null);
@@ -957,9 +1151,15 @@ export default function MessageArea() {
     daySeparatorRefs.clear();
     setStickyDateLabel("");
 
-    if (channelId) {
-      send({ type: "subscribe_channel", channel_id: channelId });
-      void loadInitialMessages(channelId);
+    if (target) {
+      if (target.kind === "dm") {
+        send({ type: "subscribe_dm", thread_id: target.id });
+        clearDmTypingUsers(target.id);
+        setDmUnreadCount(target.id, 0);
+      } else {
+        send({ type: "subscribe_channel", channel_id: target.id });
+      }
+      void loadInitialMessages(target);
     }
   });
 
@@ -981,6 +1181,30 @@ export default function MessageArea() {
   createEffect(() => {
     groupedMessages();
     queueMicrotask(updateStickyDate);
+  });
+
+  createEffect(() => {
+    const threadId = activeDmThreadId();
+    if (!threadId) {
+      return;
+    }
+
+    const latestMessage = messages()[messages().length - 1];
+    if (!latestMessage) {
+      return;
+    }
+
+    void markDmRead(threadId, latestMessage.id).catch(() => undefined);
+    setDmUnreadCount(threadId, 0);
+  });
+
+  const visibleTypingUsernames = createMemo(() => {
+    const threadId = activeDmThreadId();
+    if (threadId) {
+      return dmTypingUsernames(threadId);
+    }
+
+    return typing.typingUsernames();
   });
 
   return (
@@ -1029,7 +1253,7 @@ export default function MessageArea() {
       />
       <VideoStage />
       <MessageComposer
-        activeChannelId={activeChannelId()}
+        activeChannelId={activeTarget()?.id ?? null}
         draft={draft()}
         isSending={isSending()}
         savingMessageId={savingMessageId()}
@@ -1050,8 +1274,8 @@ export default function MessageArea() {
         onRemoveAttachment={removePendingAttachment}
         onGifSelect={handleGifSelect}
       />
-      <Show when={typing.typingUsernames().length > 0}>
-        <p class="typing-indicator">{typingText(typing.typingUsernames())}</p>
+        <Show when={visibleTypingUsernames().length > 0}>
+        <p class="typing-indicator">{typingText(visibleTypingUsernames().map((entry) => displayNameFor(entry)))}</p>
       </Show>
       <Show when={wsError()}>
         <p class="error message-error">{wsError()}</p>

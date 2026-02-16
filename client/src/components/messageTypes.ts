@@ -13,6 +13,7 @@ export interface ChannelMessage {
   channel_id: string;
   author_id: string;
   author_username: string;
+  author_display_name: string;
   content: string;
   created_at: string;
   edited_at?: string | null;
@@ -27,7 +28,13 @@ export interface MessageDayGroup {
 }
 
 export interface UsersResponse {
-  users?: { username: string; avatar_url: string | null }[];
+  users?: {
+    username: string;
+    display_name: string;
+    avatar_url: string | null;
+    profile_description?: string | null;
+    profile_status?: string | null;
+  }[];
 }
 
 export interface PendingAttachment {

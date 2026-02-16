@@ -1039,8 +1039,8 @@ pub async fn handle_media_signal_message(
                 "Client media diagnostic"
             );
 
-            if request_id.is_some() {
-                if send_media_signal_payload(
+            if request_id.is_some()
+                && send_media_signal_payload(
                     state,
                     connection_id,
                     username,
@@ -1053,9 +1053,8 @@ pub async fn handle_media_signal_message(
                     }),
                 )
                 .should_disconnect()
-                {
-                    return true;
-                }
+            {
+                return true;
             }
         }
     }

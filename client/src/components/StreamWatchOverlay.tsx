@@ -11,6 +11,7 @@ import {
   videoTiles,
   watchedStreamProducerId,
 } from "../stores/voice";
+import { displayNameFor } from "../stores/userProfiles";
 import { FullscreenIcon, DisconnectIcon, MinimizeIcon } from "./icons";
 
 interface StreamPlaybackProps {
@@ -111,7 +112,7 @@ export default function StreamWatchOverlay() {
           <section
             class="stream-watch-focused"
             role="region"
-            aria-label={`${tile().username} stream`}
+            aria-label={`${displayNameFor(tile().username)} stream`}
             onKeyDown={(event) => {
               if (event.key === "Escape") {
                 event.preventDefault();
@@ -122,7 +123,7 @@ export default function StreamWatchOverlay() {
             <header class="stream-watch-focused-header">
               <div class="stream-watch-focused-context">
                 <span class="stream-watch-live-badge" aria-label="LIVE">LIVE</span>
-                <span class="stream-watch-focused-title">{tile().username} is streaming</span>
+                <span class="stream-watch-focused-title">{displayNameFor(tile().username)} is streaming</span>
               </div>
               <div class="stream-watch-focused-actions">
                 <button
@@ -170,7 +171,7 @@ export default function StreamWatchOverlay() {
           <aside
             class="stream-watch-mini"
             role="region"
-            aria-label={`${tile().username} mini player`}
+            aria-label={`${displayNameFor(tile().username)} mini player`}
             tabIndex={0}
             onClick={(e) => {
               if (!(e.target instanceof HTMLButtonElement)) {
@@ -181,7 +182,7 @@ export default function StreamWatchOverlay() {
           >
             <StreamPlayback stream={tile().stream} class="stream-watch-mini-video" />
             <div class="stream-watch-mini-overlay">
-              <span class="stream-watch-mini-title">{tile().username}</span>
+              <span class="stream-watch-mini-title">{displayNameFor(tile().username)}</span>
               <button
                 type="button"
                 class="stream-watch-icon-btn stream-watch-icon-btn-danger"

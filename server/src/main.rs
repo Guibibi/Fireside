@@ -40,8 +40,10 @@ pub struct AppState {
     pub active_usernames: Arc<RwLock<HashSet<String>>>,
     pub ws_connections: Arc<RwLock<HashMap<Uuid, mpsc::Sender<String>>>>,
     pub connection_usernames: Arc<RwLock<HashMap<Uuid, String>>>,
+    pub connection_user_ids: Arc<RwLock<HashMap<Uuid, Uuid>>>,
     pub user_presence_by_username: Arc<RwLock<HashMap<String, String>>>,
     pub channel_subscriptions: Arc<RwLock<HashMap<Uuid, Uuid>>>,
+    pub dm_subscriptions: Arc<RwLock<HashMap<Uuid, Uuid>>>,
     pub voice_members_by_connection: Arc<RwLock<HashMap<Uuid, Uuid>>>,
     pub voice_members_by_channel: Arc<RwLock<HashMap<Uuid, HashSet<String>>>>,
     pub media_signal_rate_by_connection: Arc<RwLock<HashMap<Uuid, MediaSignalRateState>>>,
@@ -105,8 +107,10 @@ async fn main() {
         active_usernames: Arc::new(RwLock::new(HashSet::new())),
         ws_connections: Arc::new(RwLock::new(HashMap::new())),
         connection_usernames: Arc::new(RwLock::new(HashMap::new())),
+        connection_user_ids: Arc::new(RwLock::new(HashMap::new())),
         user_presence_by_username: Arc::new(RwLock::new(HashMap::new())),
         channel_subscriptions: Arc::new(RwLock::new(HashMap::new())),
+        dm_subscriptions: Arc::new(RwLock::new(HashMap::new())),
         voice_members_by_connection: Arc::new(RwLock::new(HashMap::new())),
         voice_members_by_channel: Arc::new(RwLock::new(HashMap::new())),
         media_signal_rate_by_connection: Arc::new(RwLock::new(HashMap::new())),
@@ -125,6 +129,7 @@ async fn main() {
     let app = Router::new()
         .nest("/api", routes::auth_routes::router())
         .nest("/api", routes::channel_routes::router())
+        .nest("/api", routes::dm_routes::router())
         .nest(
             "/api",
             routes::media_routes::router(config.storage.max_upload_bytes),

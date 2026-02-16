@@ -1,5 +1,5 @@
 import { Show, createEffect, createSignal } from "solid-js";
-import { avatarUrlFor } from "../stores/userProfiles";
+import { avatarUrlFor, displayNameFor } from "../stores/userProfiles";
 
 interface UserAvatarProps {
   username: string;
@@ -20,6 +20,7 @@ export default function UserAvatar(props: UserAvatarProps) {
 
   const classes = () => `user-avatar${props.class ? ` ${props.class}` : ""}`;
   const avatarUrl = () => avatarUrlFor(props.username);
+  const displayName = () => displayNameFor(props.username);
   const shouldShowImage = () => !!avatarUrl() && !broken();
 
   createEffect(() => {
@@ -31,10 +32,10 @@ export default function UserAvatar(props: UserAvatarProps) {
     <span
       class={classes()}
       style={props.size ? { "--avatar-size": `${props.size}px` } : undefined}
-      aria-label={`${props.username} avatar`}
+      aria-label={`${displayName()} avatar`}
       role="img"
     >
-      <Show when={shouldShowImage()} fallback={<span>{initialFor(props.username)}</span>}>
+      <Show when={shouldShowImage()} fallback={<span>{initialFor(displayName())}</span>}>
         <img src={avatarUrl() ?? ""} alt="" onError={() => setBroken(true)} />
       </Show>
     </span>

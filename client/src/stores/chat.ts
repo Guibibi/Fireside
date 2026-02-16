@@ -13,6 +13,7 @@ export interface Channel {
 }
 
 const [activeChannelId, setActiveChannelId] = createSignal<string | null>(null);
+const [activeDmThreadId, setActiveDmThreadId] = createSignal<string | null>(null);
 const [unreadByChannel, setUnreadByChannel] = createSignal<Record<string, number>>({});
 
 export function unreadCount(channelId: string): number {
@@ -44,7 +45,18 @@ export function removeUnreadChannel(channelId: string) {
 
 export function resetChatState() {
   setActiveChannelId(null);
+  setActiveDmThreadId(null);
   setUnreadByChannel({});
 }
 
-export { activeChannelId, setActiveChannelId };
+export function setActiveTextChannel(channelId: string | null) {
+  setActiveDmThreadId(null);
+  setActiveChannelId(channelId);
+}
+
+export function setActiveDmThread(threadId: string | null) {
+  setActiveChannelId(null);
+  setActiveDmThreadId(threadId);
+}
+
+export { activeChannelId, setActiveChannelId, activeDmThreadId, setActiveDmThreadId };

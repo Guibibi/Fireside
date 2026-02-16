@@ -102,3 +102,52 @@
 .member-item-idle {
   color: var(--snow);
 }
+
+.user-profile-modal {
+  width: min(420px, calc(100vw - 2.5rem));
+}
+
+.user-profile-modal-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.user-profile-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+}
+
+.user-profile-identity h5 {
+  margin: 0;
+  color: var(--snow);
+  font-size: 1rem;
+}
+
+.user-profile-identity p {
+  margin: 0;
+  color: var(--mist);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+}
+
+.user-profile-status {
+  margin: 0;
+  padding: var(--space-sm) var(--space-md);
+  border: 1px solid var(--cloud-dark);
+  border-radius: var(--radius-md);
+  color: var(--pearl);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.user-profile-description {
+  margin: 0;
+  color: var(--pearl);
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.user-profile-actions {
+  justify-content: flex-start;
+}

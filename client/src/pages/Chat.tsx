@@ -4,6 +4,7 @@ import MessageArea from "../components/MessageArea";
 import MemberList from "../components/MemberList";
 import SettingsPage from "../components/SettingsPage";
 import ContextMenuContainer from "../components/ContextMenuContainer";
+import UserProfileModal from "../components/UserProfileModal";
 import { handleContextMenuKeyDown } from "../stores/contextMenu";
 import { isStreamWatchFocused } from "../stores/voice";
 import { settingsOpen } from "../stores/settings";
@@ -33,6 +34,7 @@ export default function Chat() {
         <SettingsPage />
       </Show>
       <ContextMenuContainer />
+      <UserProfileModal />
     </div>
   );
 }

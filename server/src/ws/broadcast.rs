@@ -153,6 +153,117 @@ pub async fn broadcast_global_message(
     }
 }
 
+pub async fn broadcast_dm_thread_message(
+    state: &AppState,
+    thread_id: Uuid,
+    participant_ids: &[Uuid],
+    msg: ServerMessage,
+    exclude_connection_id: Option<Uuid>,
+) {
+    let payload = match serde_json::to_string(&msg) {
+        Ok(payload) => payload,
+        Err(_) => return,
+    };
+
+    let participant_set: std::collections::HashSet<Uuid> =
+        participant_ids.iter().copied().collect();
+
+    let target_connections: Vec<Uuid> = {
+        let dm_subscriptions = state.dm_subscriptions.read().await;
+        let connection_user_ids = state.connection_user_ids.read().await;
+        dm_subscriptions
+            .iter()
+            .filter_map(|(connection_id, subscribed_thread_id)| {
+                if *subscribed_thread_id != thread_id
+                    || Some(*connection_id) == exclude_connection_id
+                {
+                    return None;
+                }
+
+                let user_id = connection_user_ids.get(connection_id)?;
+                if participant_set.contains(user_id) {
+                    Some(*connection_id)
+                } else {
+                    None
+                }
+            })
+            .collect()
+    };
+
+    enqueue_broadcast_payload(state, target_connections, payload).await;
+}
+
+pub async fn broadcast_user_ids_message(
+    state: &AppState,
+    user_ids: &[Uuid],
+    msg: ServerMessage,
+    exclude_connection_id: Option<Uuid>,
+) {
+    let payload = match serde_json::to_string(&msg) {
+        Ok(payload) => payload,
+        Err(_) => return,
+    };
+
+    let user_id_set: std::collections::HashSet<Uuid> = user_ids.iter().copied().collect();
+    let target_connections: Vec<Uuid> = {
+        let connection_user_ids = state.connection_user_ids.read().await;
+        connection_user_ids
+            .iter()
+            .filter_map(|(connection_id, connected_user_id)| {
+                if Some(*connection_id) == exclude_connection_id {
+                    return None;
+                }
+
+                if user_id_set.contains(connected_user_id) {
+                    Some(*connection_id)
+                } else {
+                    None
+                }
+            })
+            .collect()
+    };
+
+    enqueue_broadcast_payload(state, target_connections, payload).await;
+}
+
+async fn enqueue_broadcast_payload(
+    state: &AppState,
+    target_connections: Vec<Uuid>,
+    payload: String,
+) {
+    let mut stale = Vec::new();
+    {
+        let connections = state.ws_connections.read().await;
+        for connection_id in target_connections {
+            let Some(tx) = connections.get(&connection_id) else {
+                stale.push(connection_id);
+                continue;
+            };
+
+            match enqueue_payload(tx, payload.clone()) {
+                WsEnqueueResult::Enqueued => {}
+                WsEnqueueResult::QueueFull => {
+                    state.telemetry.inc_ws_queue_pressure();
+                    tracing::warn!(
+                        connection_id = %connection_id,
+                        "Dropped targeted websocket message due to full outbound queue"
+                    );
+                }
+                WsEnqueueResult::Closed => stale.push(connection_id),
+                WsEnqueueResult::SerializeFailed => {}
+            }
+        }
+    }
+
+    if !stale.is_empty() {
+        for connection_id in stale {
+            cleanup_connection(state, None, Some(connection_id)).await;
+            let closed_producers = state.media.cleanup_connection_media(connection_id).await;
+            broadcast_closed_producers(state, &closed_producers, Some(connection_id)).await;
+        }
+    }
+}
+
 async fn broadcast_closed_producers(
     state: &AppState,
     closed_producers: &[crate::media::transport::ClosedProducer],
@@ -226,6 +337,9 @@ pub async fn cleanup_connection(
         let mut connection_usernames = state.connection_usernames.write().await;
         removed_username_from_connection = connection_usernames.remove(&connection_id);
 
+        let mut connection_user_ids = state.connection_user_ids.write().await;
+        connection_user_ids.remove(&connection_id);
+
         if let Some(removed_username) = removed_username_from_connection.as_deref() {
             has_remaining_connection_for_removed_username = connection_usernames
                 .values()
@@ -238,6 +352,9 @@ pub async fn cleanup_connection(
 
         let mut subscriptions = state.channel_subscriptions.write().await;
         subscriptions.remove(&connection_id);
+
+        let mut dm_subscriptions = state.dm_subscriptions.write().await;
+        dm_subscriptions.remove(&connection_id);
 
         let mut voice_members_by_connection = state.voice_members_by_connection.write().await;
         removed_voice_channel = voice_members_by_connection.remove(&connection_id);

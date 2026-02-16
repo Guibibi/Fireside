@@ -65,6 +65,35 @@ pub struct Message {
     pub edited_at: Option<DateTime<Utc>>,
 }
 
+#[allow(dead_code)]
+#[derive(Debug, Serialize, Deserialize, Clone, sqlx::FromRow)]
+pub struct DmThread {
+    pub id: Uuid,
+    pub user_a_id: Uuid,
+    pub user_b_id: Uuid,
+    pub created_at: DateTime<Utc>,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Serialize, Deserialize, Clone, sqlx::FromRow)]
+pub struct DmMessage {
+    pub id: Uuid,
+    pub thread_id: Uuid,
+    pub author_id: Uuid,
+    pub content: String,
+    pub created_at: DateTime<Utc>,
+    pub edited_at: Option<DateTime<Utc>>,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Serialize, Deserialize, Clone, sqlx::FromRow)]
+pub struct DmReadState {
+    pub thread_id: Uuid,
+    pub user_id: Uuid,
+    pub last_read_message_id: Option<Uuid>,
+    pub updated_at: DateTime<Utc>,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone, sqlx::FromRow)]
 pub struct MediaAsset {
     pub id: Uuid,
