@@ -136,6 +136,7 @@ Single-test quick reference:
 ## Planning, QA, and Deployment Notes
 
 - Treat `PLAN.md` as roadmap and `PLAN-EXECUTION.md` as current-phase implementation detail.
+- Make sure to add checklist to plans to track completion.
 - Put manual verification backlog in `QA.md` (not in planning docs).
 - Never commit secrets (`.env`, tokens, credentials).
 - For deployment-sensitive config changes (CORS/media/TURN/ICE), update:
