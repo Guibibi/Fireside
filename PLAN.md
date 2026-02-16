@@ -28,12 +28,6 @@ Yankcord is a self-hosted, minimal chat app. One server instance = one community
 - Add admin-only server settings.
 - Add a UI page for management, overlaid on top of the chat and members list as a layout.
 
-### 4.3 Rate limiting and abuse controls
-
-- Add request limits for auth/connect, message send, and high-cost media endpoints.
-- Add WS event throttling for spam-prone actions (message send, typing, reaction bursts).
-- Add temporary penalties/backoff behavior with clear client-safe errors.
-
 ### 4.4 Stronger validation and payload safety
 
 - Enforce stricter length/charset/shape validation at server boundaries.
@@ -69,10 +63,16 @@ Yankcord is a self-hosted, minimal chat app. One server instance = one community
 
 - **Profile customization**: Add profile description and status.
 - **Private messages (DMs)**: Enable one-to-one messaging outside of channels. Add a DM list to the sidebar. Support initiating DMs from user profiles or member lists.
+- **Add Profile Viewing**: Add option to see other user profile.
 
 ### 5.5 Notifications
 
-- **Native desktop notifications**: Integrate with the OS notification system for message alerts, mentions, and calls. Include notification preferences (sounds, badges, quiet hours). Deep link notifications to the relevant channel or conversation.
+- **Native desktop notifications**: Integrate with the OS notification system for message alerts, mentions, and calls. Include notification preferences (sounds, badges, quiet hours). Deep link notifications to the relevant channel or conversation. Use tauri plugin if possible
+
+5.6 Deep Link
+
+- **Deep Linking**: Implement deep linking using the tauri plugin to specific channels, messages, and users within the app. Ensure that deep links work correctly across different platforms and devices.
+- Implement deep linking for invites too
 
 ### 5.6 Client and deployment improvements
 

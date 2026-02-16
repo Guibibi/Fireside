@@ -119,6 +119,7 @@ Run restore drills in a non-production environment before relying on backups.
 
 - `docker-compose.prod.yml` binds PostgreSQL on `127.0.0.1:5432` to avoid exposing it publicly.
 - `server` and `web` use `network_mode: host` so media and reverse-proxy networking remain predictable on a single VM; backend HTTP bind remains loopback by default unless you override `HOST`.
+- `server/Dockerfile` uses `cargo-chef` to cache Rust dependency builds between deploys when Cargo manifests remain unchanged.
 - Keep `server/.env.docker` out of version control and rotate secrets regularly.
 - For browser clients, HTTPS (`SITE_ADDRESS=<domain>`) is strongly recommended.
 

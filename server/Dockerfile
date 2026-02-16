@@ -1,4 +1,4 @@
-FROM rust:bookworm AS builder
+FROM rust:bookworm AS chef
 
 WORKDIR /app
 
@@ -15,11 +15,31 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   && rm -rf /var/lib/apt/lists/* \
   && pip3 install --break-system-packages invoke meson ninja
 
-COPY server/Cargo.toml server/Cargo.lock ./server/
-COPY server/src ./server/src
-COPY server/migrations ./server/migrations
+RUN cargo install cargo-chef --locked
 
-RUN cargo build --release --manifest-path server/Cargo.toml
+FROM chef AS planner
+
+WORKDIR /app/server
+
+COPY server/Cargo.toml server/Cargo.lock ./
+COPY server/src ./src
+COPY server/migrations ./migrations
+
+RUN cargo chef prepare --recipe-path recipe.json
+
+FROM chef AS builder
+
+WORKDIR /app/server
+
+COPY --from=planner /app/server/recipe.json ./recipe.json
+
+RUN cargo chef cook --release --recipe-path recipe.json
+
+COPY server/Cargo.toml server/Cargo.lock ./
+COPY server/src ./src
+COPY server/migrations ./migrations
+
+RUN cargo build --release
 
 FROM debian:bookworm-slim
 
