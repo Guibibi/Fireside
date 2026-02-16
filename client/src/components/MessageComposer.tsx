@@ -1,4 +1,4 @@
-import { For, Show } from "solid-js";
+import { For, Show, createMemo, createSignal } from "solid-js";
 import type { PendingAttachment } from "./messageTypes";
 
 interface MessageComposerProps {
@@ -10,6 +10,7 @@ interface MessageComposerProps {
   pendingAttachments: PendingAttachment[];
   hasBlockingAttachment: boolean;
   hasFailedAttachment: boolean;
+  mentionUsernames: string[];
   onSubmit: (event: Event) => void;
   onDraftInput: (value: string) => void;
   onAttachmentInput: (event: Event) => void;
@@ -19,6 +20,100 @@ interface MessageComposerProps {
 
 export default function MessageComposer(props: MessageComposerProps) {
   let fileInputRef: HTMLInputElement | undefined;
+  let draftInputRef: HTMLInputElement | undefined;
+
+  const [mentionRange, setMentionRange] = createSignal<{ start: number; end: number } | null>(null);
+  const [mentionQuery, setMentionQuery] = createSignal("");
+  const [selectedMentionIndex, setSelectedMentionIndex] = createSignal(0);
+
+  function closeMentionPicker() {
+    setMentionRange(null);
+    setMentionQuery("");
+    setSelectedMentionIndex(0);
+  }
+
+  function refreshMentionPicker(nextDraft: string, caretIndex: number | null | undefined) {
+    if (caretIndex == null || caretIndex < 0) {
+      closeMentionPicker();
+      return;
+    }
+
+    let tokenStart = caretIndex - 1;
+    while (tokenStart >= 0 && !/\s/.test(nextDraft[tokenStart])) {
+      tokenStart -= 1;
+    }
+
+    tokenStart += 1;
+    if (tokenStart >= caretIndex) {
+      closeMentionPicker();
+      return;
+    }
+
+    const token = nextDraft.slice(tokenStart, caretIndex);
+    if (!token.startsWith("@") || !/^@[a-zA-Z0-9._-]*$/.test(token)) {
+      closeMentionPicker();
+      return;
+    }
+
+    const prefixCharacter = tokenStart > 0 ? nextDraft[tokenStart - 1] : "";
+    if (prefixCharacter && /[a-zA-Z0-9._-]/.test(prefixCharacter)) {
+      closeMentionPicker();
+      return;
+    }
+
+    const nextQuery = token.slice(1);
+    const currentRange = mentionRange();
+    const currentQuery = mentionQuery();
+
+    if (
+      currentRange
+      && currentRange.start === tokenStart
+      && currentRange.end === caretIndex
+      && currentQuery === nextQuery
+    ) {
+      return;
+    }
+
+    setMentionRange({ start: tokenStart, end: caretIndex });
+    setMentionQuery(nextQuery);
+    setSelectedMentionIndex(0);
+  }
+
+  const mentionSuggestions = createMemo(() => {
+    const query = mentionQuery().trim().toLowerCase();
+    const allUsers = props.mentionUsernames;
+    const byPrefix = allUsers
+      .filter((entry) => entry.toLowerCase().startsWith(query))
+      .sort((left, right) => left.localeCompare(right));
+    const byContain = allUsers
+      .filter((entry) => !entry.toLowerCase().startsWith(query) && entry.toLowerCase().includes(query))
+      .sort((left, right) => left.localeCompare(right));
+
+    const suggestions = [...byPrefix, ...byContain].slice(0, 6);
+    if (suggestions.length === 0) {
+      return [];
+    }
+
+    return suggestions;
+  });
+
+  function applyMention(username: string) {
+    const range = mentionRange();
+    if (!range) {
+      return;
+    }
+
+    const nextDraft = `${props.draft.slice(0, range.start)}@${username} ${props.draft.slice(range.end)}`;
+    const nextCaret = range.start + username.length + 2;
+    props.onDraftInput(nextDraft);
+    closeMentionPicker();
+    queueMicrotask(() => {
+      if (draftInputRef) {
+        draftInputRef.focus();
+        draftInputRef.setSelectionRange(nextCaret, nextCaret);
+      }
+    });
+  }
 
   return (
     <>
@@ -77,10 +172,74 @@ export default function MessageComposer(props: MessageComposerProps) {
           type="text"
           placeholder={props.activeChannelId ? "Send a message or share an image..." : "Select a channel to start messaging"}
           value={props.draft}
-          onInput={(event) => props.onDraftInput(event.currentTarget.value)}
+          ref={draftInputRef}
+          onInput={(event) => {
+            props.onDraftInput(event.currentTarget.value);
+            refreshMentionPicker(event.currentTarget.value, event.currentTarget.selectionStart);
+          }}
+          onClick={(event) => refreshMentionPicker(event.currentTarget.value, event.currentTarget.selectionStart)}
+          onKeyUp={(event) => {
+            if (["ArrowDown", "ArrowUp", "Enter", "Tab", "Escape"].includes(event.key)) {
+              return;
+            }
+            refreshMentionPicker(event.currentTarget.value, event.currentTarget.selectionStart);
+          }}
+          onKeyDown={(event) => {
+            const suggestions = mentionSuggestions();
+            if (suggestions.length === 0 || !mentionRange()) {
+              return;
+            }
+
+            if (event.key === "ArrowDown") {
+              event.preventDefault();
+              setSelectedMentionIndex((current) => (current + 1) % suggestions.length);
+              return;
+            }
+
+            if (event.key === "ArrowUp") {
+              event.preventDefault();
+              setSelectedMentionIndex((current) => (current - 1 + suggestions.length) % suggestions.length);
+              return;
+            }
+
+            if (event.key === "Escape") {
+              event.preventDefault();
+              closeMentionPicker();
+              return;
+            }
+
+            if (event.key === "Enter" || event.key === "Tab") {
+              event.preventDefault();
+              const nextIndex = selectedMentionIndex() % suggestions.length;
+              applyMention(suggestions[nextIndex] ?? suggestions[0]);
+            }
+          }}
           onPaste={(event) => props.onDraftPaste(event)}
+          onBlur={() => {
+            setTimeout(() => {
+              closeMentionPicker();
+            }, 100);
+          }}
           disabled={!props.activeChannelId || !!props.savingMessageId || !!props.deletingMessageId}
         />
+        <Show when={mentionSuggestions().length > 0 && mentionRange() !== null}>
+          <div class="mention-picker" role="listbox" aria-label="Mention suggestions">
+            <For each={mentionSuggestions()}>
+              {(entry, index) => (
+                <button
+                  type="button"
+                  class={`mention-picker-item${index() === selectedMentionIndex() ? " is-selected" : ""}`}
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                    applyMention(entry);
+                  }}
+                >
+                  @{entry}
+                </button>
+              )}
+            </For>
+          </div>
+        </Show>
         <button
           type="submit"
           disabled={

@@ -55,6 +55,10 @@ import {
     preloadVoiceCues,
 } from "../utils/voiceCue";
 import {
+    playMessageNotificationCue,
+    preloadMessageNotificationCue,
+} from "../utils/messageCue";
+import {
     applyVoiceJoined,
     applyVoiceLeft,
     applyVoiceSpeaking,
@@ -642,6 +646,7 @@ export default function ChannelList() {
 
     onMount(() => {
         preloadVoiceCues();
+        preloadMessageNotificationCue();
         connect();
         startConnectionStatusSubscription();
         void loadInitialChannels();
@@ -705,9 +710,20 @@ export default function ChannelList() {
             }
 
             if (msg.type === "channel_activity") {
-                if (msg.channel_id !== activeChannelId()) {
+                const isCurrentChannel = msg.channel_id === activeChannelId();
+                const isWindowFocused =
+                    document.visibilityState === "visible" &&
+                    document.hasFocus();
+
+                if (!isCurrentChannel) {
                     incrementUnread(msg.channel_id);
                     pulseBadge(msg.channel_id);
+                    playMessageNotificationCue();
+                    return;
+                }
+
+                if (!isWindowFocused) {
+                    playMessageNotificationCue();
                 }
                 return;
             }

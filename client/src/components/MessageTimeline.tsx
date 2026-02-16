@@ -12,6 +12,7 @@ import AsyncContent from "./AsyncContent";
 import MessageRichContent from "./MessageRichContent";
 import UserAvatar from "./UserAvatar";
 import type { ChannelMessage, MessageDayGroup } from "./messageTypes";
+import { isMentioningUsername } from "../utils/mentions";
 
 interface MessageTimelineProps {
   activeChannel: Channel | null | undefined;
@@ -98,6 +99,14 @@ function LazyAttachmentImage(props: LazyAttachmentImageProps) {
 export default function MessageTimeline(props: MessageTimelineProps) {
   const [attachmentPreview, setAttachmentPreview] = createSignal<AttachmentPreview | null>(null);
 
+  function messageClassName(content: string): string {
+    const currentUsername = username();
+    const mentioned = currentUsername
+      ? isMentioningUsername(content, currentUsername)
+      : false;
+    return mentioned ? "message-item message-item-mentioned" : "message-item";
+  }
+
   createEffect(() => {
     if (!attachmentPreview()) {
       return;
@@ -162,7 +171,7 @@ export default function MessageTimeline(props: MessageTimelineProps) {
                   <For each={group.messages}>
                     {(message) => (
                       <li
-                        class="message-item"
+                        class={messageClassName(message.content)}
                         onContextMenu={(event) => {
                           event.preventDefault();
                           openContextMenu(event.clientX, event.clientY, "message", message.id, message);

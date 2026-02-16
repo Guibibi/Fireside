@@ -11,6 +11,8 @@ const SCREEN_SHARE_CUSTOM_BITRATE_KEY = "yankcord_screen_share_custom_bitrate_kb
 const SCREEN_SHARE_SOURCE_KIND_KEY = "yankcord_screen_share_source_kind";
 const VOICE_JOIN_SOUND_ENABLED_KEY = "yankcord_voice_join_sound_enabled";
 const VOICE_LEAVE_SOUND_ENABLED_KEY = "yankcord_voice_leave_sound_enabled";
+const MESSAGE_NOTIFICATION_SOUND_ENABLED_KEY = "yankcord_message_notification_sound_enabled";
+const MENTION_DESKTOP_NOTIFICATIONS_ENABLED_KEY = "yankcord_mention_desktop_notifications_enabled";
 const VOICE_AUTO_LEVEL_ENABLED_KEY = "yankcord_voice_auto_level_enabled";
 const VOICE_NOISE_SUPPRESSION_ENABLED_KEY = "yankcord_voice_noise_suppression_enabled";
 const VOICE_ECHO_CANCELLATION_ENABLED_KEY = "yankcord_voice_echo_cancellation_enabled";
@@ -147,6 +149,14 @@ const [voiceLeaveSoundEnabled, setVoiceLeaveSoundEnabled] = createSignal<boolean
   readBooleanPreference(VOICE_LEAVE_SOUND_ENABLED_KEY, true),
 );
 
+const [messageNotificationSoundEnabled, setMessageNotificationSoundEnabled] = createSignal<boolean>(
+  readBooleanPreference(MESSAGE_NOTIFICATION_SOUND_ENABLED_KEY, true),
+);
+
+const [mentionDesktopNotificationsEnabled, setMentionDesktopNotificationsEnabled] = createSignal<boolean>(
+  readBooleanPreference(MENTION_DESKTOP_NOTIFICATIONS_ENABLED_KEY, false),
+);
+
 const [voiceAutoLevelEnabled, setVoiceAutoLevelEnabled] = createSignal<boolean>(
   readBooleanPreference(VOICE_AUTO_LEVEL_ENABLED_KEY, true),
 );
@@ -179,6 +189,8 @@ export {
   preferredScreenShareSourceKind,
   voiceJoinSoundEnabled,
   voiceLeaveSoundEnabled,
+  messageNotificationSoundEnabled,
+  mentionDesktopNotificationsEnabled,
   voiceAutoLevelEnabled,
   voiceNoiseSuppressionEnabled,
   voiceEchoCancellationEnabled,
@@ -260,6 +272,16 @@ export function saveVoiceJoinSoundEnabled(enabled: boolean) {
 export function saveVoiceLeaveSoundEnabled(enabled: boolean) {
   localStorage.setItem(VOICE_LEAVE_SOUND_ENABLED_KEY, String(enabled));
   setVoiceLeaveSoundEnabled(enabled);
+}
+
+export function saveMessageNotificationSoundEnabled(enabled: boolean) {
+  localStorage.setItem(MESSAGE_NOTIFICATION_SOUND_ENABLED_KEY, String(enabled));
+  setMessageNotificationSoundEnabled(enabled);
+}
+
+export function saveMentionDesktopNotificationsEnabled(enabled: boolean) {
+  localStorage.setItem(MENTION_DESKTOP_NOTIFICATIONS_ENABLED_KEY, String(enabled));
+  setMentionDesktopNotificationsEnabled(enabled);
 }
 
 export function saveVoiceAutoLevelEnabled(enabled: boolean) {

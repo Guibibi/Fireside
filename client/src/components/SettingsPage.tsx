@@ -47,6 +47,8 @@ import {
   saveVoiceIncomingVolume,
   saveVoiceJoinSoundEnabled,
   saveVoiceLeaveSoundEnabled,
+  saveMessageNotificationSoundEnabled,
+  saveMentionDesktopNotificationsEnabled,
   saveVoiceNoiseSuppressionEnabled,
   saveVoiceOutgoingVolume,
   voiceAutoLevelEnabled,
@@ -54,6 +56,8 @@ import {
   voiceIncomingVolume,
   voiceJoinSoundEnabled,
   voiceLeaveSoundEnabled,
+  messageNotificationSoundEnabled,
+  mentionDesktopNotificationsEnabled,
   voiceNoiseSuppressionEnabled,
   voiceOutgoingVolume,
   activeSettingsSection,
@@ -116,6 +120,7 @@ export default function SettingsPage() {
   const [draftUsername, setDraftUsername] = createSignal(currentUsername() ?? "");
   const [profileError, setProfileError] = createSignal("");
   const [audioError, setAudioError] = createSignal("");
+  const [notificationError, setNotificationError] = createSignal("");
   const [isSavingProfile, setIsSavingProfile] = createSignal(false);
   const [isRefreshingDevices, setIsRefreshingDevices] = createSignal(false);
   const [audioInputs, setAudioInputs] = createSignal<AudioDeviceOption[]>([]);
@@ -326,6 +331,36 @@ export default function SettingsPage() {
 
   function handleVoiceLeaveSoundToggle(event: Event) {
     saveVoiceLeaveSoundEnabled((event.currentTarget as HTMLInputElement).checked);
+  }
+
+  async function handleMentionDesktopNotificationsToggle(event: Event) {
+    const enabled = (event.currentTarget as HTMLInputElement).checked;
+    setNotificationError("");
+
+    if (!enabled) {
+      saveMentionDesktopNotificationsEnabled(false);
+      return;
+    }
+
+    if (typeof Notification === "undefined") {
+      setNotificationError("Desktop notifications are not supported in this browser.");
+      return;
+    }
+
+    if (Notification.permission === "granted") {
+      saveMentionDesktopNotificationsEnabled(true);
+      return;
+    }
+
+    const permission = await Notification.requestPermission();
+    saveMentionDesktopNotificationsEnabled(permission === "granted");
+    if (permission !== "granted") {
+      setNotificationError("Desktop notification permission was not granted.");
+    }
+  }
+
+  function handleMessageNotificationSoundToggle(event: Event) {
+    saveMessageNotificationSoundEnabled((event.currentTarget as HTMLInputElement).checked);
   }
 
   function handleVoiceAutoLevelToggle(event: Event) {
@@ -786,6 +821,30 @@ export default function SettingsPage() {
                 />
                 Play sound when someone leaves your current voice channel
               </label>
+
+              <label class="settings-checkbox" for="settings-message-notification-sound-enabled">
+                <input
+                  id="settings-message-notification-sound-enabled"
+                  type="checkbox"
+                  checked={messageNotificationSoundEnabled()}
+                  onInput={handleMessageNotificationSoundToggle}
+                />
+                Play sound for new messages when app or channel is not focused
+              </label>
+
+              <label class="settings-checkbox" for="settings-mention-desktop-notifications-enabled">
+                <input
+                  id="settings-mention-desktop-notifications-enabled"
+                  type="checkbox"
+                  checked={mentionDesktopNotificationsEnabled()}
+                  onInput={(event) => void handleMentionDesktopNotificationsToggle(event)}
+                />
+                Show desktop notifications when someone mentions you
+              </label>
+
+              <Show when={notificationError()}>
+                <p class="error">{notificationError()}</p>
+              </Show>
             </section>
           </Show>
 

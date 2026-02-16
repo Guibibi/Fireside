@@ -75,3 +75,7 @@ export function renameUserProfile(previousUsername: string, nextUsername: string
     return next;
   });
 }
+
+export function knownUsernames(): string[] {
+  return Object.keys(profilesByUsername()).sort((left, right) => left.localeCompare(right));
+}

@@ -144,6 +144,16 @@
   border-color: var(--cloud-dark);
 }
 
+.message-item-mentioned {
+  border-color: rgba(164, 131, 252, 0.5);
+  background: linear-gradient(140deg, rgba(164, 131, 252, 0.14), rgba(255, 255, 255, 0.03));
+}
+
+.message-item-mentioned:hover {
+  border-color: rgba(164, 131, 252, 0.7);
+  background: linear-gradient(140deg, rgba(164, 131, 252, 0.2), rgba(255, 255, 255, 0.05));
+}
+
 .message-meta {
   display: flex;
   align-items: baseline;
@@ -573,6 +583,7 @@
   padding: var(--space-xl);
   border-top: 1px solid var(--cloud-dark);
   background: rgba(0, 0, 0, 0.15);
+  position: relative;
 }
 
 .message-attach-button {
@@ -637,6 +648,50 @@
 
 .message-input button {
   padding: var(--space-md) var(--space-2xl);
+}
+
+.mention-picker {
+  position: absolute;
+  left: calc(var(--space-xl) + 44px + var(--space-md));
+  right: calc(var(--space-xl) + 8.6rem + var(--space-md));
+  bottom: calc(var(--space-xl) + 3rem);
+  max-height: 13rem;
+  overflow-y: auto;
+  z-index: 8;
+  display: grid;
+  gap: 2px;
+  padding: 6px;
+  border: 1px solid var(--cloud);
+  border-radius: var(--radius-md);
+  background: rgba(16, 14, 24, 0.96);
+  box-shadow: 0 12px 26px rgba(0, 0, 0, 0.3);
+}
+
+.mention-picker-item {
+  width: 100%;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--soft);
+  font-size: 0.86rem;
+  text-align: left;
+  padding: 0.45rem 0.58rem;
+  box-shadow: none;
+}
+
+.mention-picker-item:hover,
+.mention-picker-item.is-selected {
+  background: var(--lavender-soft);
+  color: var(--snow);
+  transform: none;
+}
+
+@media (max-width: 800px) {
+  .mention-picker {
+    left: calc(var(--space-xl) + 44px + var(--space-sm));
+    right: calc(var(--space-xl) + 5.8rem + var(--space-sm));
+    bottom: calc(var(--space-xl) + 3.2rem);
+  }
 }
 
 .message-input .message-attach-button {

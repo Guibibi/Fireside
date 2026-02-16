@@ -4,8 +4,10 @@ import { connect, onMessage, send } from "../api/ws";
 import { getApiBaseUrl, token, username } from "../stores/auth";
 import { activeChannelId, type Channel } from "../stores/chat";
 import { registerContextMenuHandlers } from "../stores/contextMenu";
-import { setUserProfiles, upsertUserProfile } from "../stores/userProfiles";
+import { knownUsernames, setUserProfiles, upsertUserProfile } from "../stores/userProfiles";
 import { errorMessage } from "../utils/error";
+import { isMentioningUsername } from "../utils/mentions";
+import { mentionDesktopNotificationsEnabled } from "../stores/settings";
 import MessageComposer from "./MessageComposer";
 import MessageTimeline from "./MessageTimeline";
 import VideoStage from "./VideoStage";
@@ -232,6 +234,48 @@ export default function MessageArea() {
     setEditingMessageId(message.id);
     setEditDraft(message.content);
     setWsError("");
+  }
+
+  function maybeShowMentionDesktopNotification(message: {
+    id: string;
+    author_username: string;
+    content: string;
+    channel_id: string;
+  }) {
+    const currentUsername = username();
+    if (!currentUsername) {
+      return;
+    }
+
+    if (!isMentioningUsername(message.content, currentUsername)) {
+      return;
+    }
+
+    const isWindowFocused = document.visibilityState === "visible" && document.hasFocus();
+    const isCurrentChannel = message.channel_id === activeChannelId();
+    if (isWindowFocused && isCurrentChannel) {
+      return;
+    }
+
+    if (!mentionDesktopNotificationsEnabled() || typeof Notification === "undefined") {
+      return;
+    }
+
+    if (Notification.permission !== "granted") {
+      return;
+    }
+
+    const body = message.content.trim().length > 0
+      ? message.content.trim()
+      : "You were mentioned in a new message.";
+    const notification = new Notification(`@${currentUsername} mention from ${message.author_username}`, {
+      body,
+      tag: `mention-${message.id}`,
+    });
+
+    notification.onclick = () => {
+      window.focus();
+    };
   }
 
   function cancelEdit() {
@@ -639,6 +683,12 @@ export default function MessageArea() {
       return;
     }
 
+    const selfUsername = username();
+    if (selfUsername && isMentioningUsername(content, selfUsername)) {
+      setWsError("You cannot mention yourself.");
+      return;
+    }
+
     setIsSending(true);
     send({ type: "send_message", channel_id: channelId, content, attachment_media_ids: attachmentIds });
     typing.stopTypingBroadcast();
@@ -684,6 +734,13 @@ export default function MessageArea() {
       if (msg.type === "new_message") {
         upsertUserProfile({ username: msg.author_username, avatar_url: null });
         typing.removeTypingUser(msg.author_username);
+
+        const selfUsername = username();
+        const isOwnMessage = selfUsername ? msg.author_username === selfUsername : false;
+        if (!isOwnMessage) {
+          maybeShowMentionDesktopNotification(msg);
+        }
+
         if (msg.channel_id !== activeChannelId()) {
           return;
         }
@@ -848,6 +905,10 @@ export default function MessageArea() {
         pendingAttachments={pendingAttachments()}
         hasBlockingAttachment={hasBlockingAttachment()}
         hasFailedAttachment={hasFailedAttachment()}
+        mentionUsernames={knownUsernames().filter((entry) => {
+          const selfUsername = username();
+          return !selfUsername || entry.toLowerCase() !== selfUsername.toLowerCase();
+        })}
         onSubmit={handleSubmit}
         onDraftInput={typing.handleDraftInput}
         onAttachmentInput={handleAttachmentInput}
