@@ -28,6 +28,7 @@ use crate::message_attachments::{
 use crate::AppState;
 
 const WS_IDLE_TIMEOUT: Duration = Duration::from_secs(45);
+const WS_AUTH_TIMEOUT: Duration = Duration::from_secs(15);
 const PRESENCE_IDLE_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 
 pub async fn ws_upgrade(ws: WebSocketUpgrade, State(state): State<AppState>) -> impl IntoResponse {
@@ -38,8 +39,23 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
     let (mut sink, mut stream) = socket.split();
 
     let (claims, user_id) = loop {
-        match stream.next().await {
-            Some(Ok(Message::Text(text))) => match serde_json::from_str::<ClientMessage>(&text) {
+        let next_message = timeout(WS_AUTH_TIMEOUT, stream.next()).await;
+        let Some(next_result) = (match next_message {
+            Ok(result) => result,
+            Err(_) => {
+                if let Ok(json) = serde_json::to_string(&ServerMessage::Error {
+                    message: "Authentication timed out".into(),
+                }) {
+                    let _ = sink.send(Message::Text(json.into())).await;
+                }
+                return;
+            }
+        }) else {
+            return;
+        };
+
+        match next_result {
+            Ok(Message::Text(text)) => match serde_json::from_str::<ClientMessage>(&text) {
                 Ok(ClientMessage::Authenticate { token }) => {
                     let claims: Claims = match validate_token(&token, &state.config.jwt.secret) {
                         Ok(claims) => claims,
@@ -96,8 +112,11 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                     return;
                 }
             },
-            Some(Ok(Message::Close(_))) | None => {
+            Ok(Message::Close(_)) => {
                 return;
+            }
+            Err(_) => {
+                continue;
             }
             _ => continue,
         }
@@ -107,7 +126,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
     let writer = tokio::spawn(async move {
         while let Some(payload) = out_rx.recv().await {
             if sink.send(Message::Text(payload.into())).await.is_err() {
-                break;
+                return;
             }
         }
     });
@@ -219,6 +238,15 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
             }
         };
 
+        if !is_connection_active(&state, connection_id, &claims.username).await {
+            tracing::info!(
+                connection_id = %connection_id,
+                username = %claims.username,
+                "Closing stale websocket session after replacement"
+            );
+            break;
+        }
+
         match msg {
             Message::Text(text) => {
                 last_client_activity_at = Instant::now();
@@ -315,6 +343,14 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
     )
     .await;
     writer.abort();
+}
+
+async fn is_connection_active(state: &AppState, connection_id: Uuid, username: &str) -> bool {
+    let connection_usernames = state.connection_usernames.read().await;
+    matches!(
+        connection_usernames.get(&connection_id),
+        Some(connected_username) if connected_username == username
+    )
 }
 
 async fn update_presence_status(state: &AppState, username: &str, status: &str) {

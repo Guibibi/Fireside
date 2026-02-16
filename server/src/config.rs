@@ -114,7 +114,7 @@ impl AppConfig {
     pub fn load() -> Self {
         let config_path = std::env::var("CONFIG_PATH").unwrap_or_else(|_| "config.toml".into());
 
-        if Path::new(&config_path).exists() {
+        let config = if Path::new(&config_path).exists() {
             let contents =
                 std::fs::read_to_string(&config_path).expect("Failed to read config file");
             toml::from_str(&contents).expect("Failed to parse config file")
@@ -191,6 +191,12 @@ impl AppConfig {
                     tenor_api_key: std::env::var("TENOR_API_KEY").ok(),
                 },
             }
+        };
+
+        if config.media.worker_count == 0 {
+            panic!("MEDIA_WORKER_COUNT must be at least 1");
         }
+
+        config
     }
 }

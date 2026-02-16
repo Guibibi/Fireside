@@ -51,6 +51,8 @@ impl UploadService {
             )));
         }
 
+        validate_image_dimensions(&bytes, MAX_IMAGE_UPLOAD_DIMENSION, "Image")?;
+
         let media_id = Uuid::new_v4();
         let storage_key = format!("original/{media_id}.{}", extension_for_mime(mime_type));
         let checksum = sha256_hex(&bytes);
@@ -157,6 +159,8 @@ impl UploadService {
                 "Avatar upload exceeds limit of 2097152 bytes".into(),
             ));
         }
+
+        validate_image_dimensions(&bytes, MAX_AVATAR_UPLOAD_DIMENSION, "Avatar")?;
 
         let media_id = Uuid::new_v4();
         let storage_key = format!("original/{media_id}.{}", extension_for_mime(mime_type));
@@ -558,4 +562,35 @@ fn crop_square(image: &image::DynamicImage) -> image::DynamicImage {
     let offset_x = (width - size) / 2;
     let offset_y = (height - size) / 2;
     image.crop_imm(offset_x, offset_y, size, size)
+}
+
+const MAX_IMAGE_UPLOAD_DIMENSION: u32 = 8192;
+const MAX_AVATAR_UPLOAD_DIMENSION: u32 = 4096;
+
+fn validate_image_dimensions(
+    bytes: &[u8],
+    max_dimension: u32,
+    label: &str,
+) -> Result<(), AppError> {
+    let reader = image::ImageReader::new(Cursor::new(bytes))
+        .with_guessed_format()
+        .map_err(|error| AppError::BadRequest(format!("Invalid {label} payload: {error}")))?;
+
+    let (width, height) = reader
+        .into_dimensions()
+        .map_err(|error| AppError::BadRequest(format!("Invalid {label} payload: {error}")))?;
+
+    if width == 0 || height == 0 {
+        return Err(AppError::BadRequest(format!(
+            "{label} dimensions must be greater than zero",
+        )));
+    }
+
+    if width > max_dimension || height > max_dimension {
+        return Err(AppError::BadRequest(format!(
+            "{label} dimensions must not exceed {max_dimension}x{max_dimension} pixels",
+        )));
+    }
+
+    Ok(())
 }
