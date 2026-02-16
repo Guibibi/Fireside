@@ -207,12 +207,6 @@ Yankcord is a self-hosted, minimal chat app. One server instance = one community
 - Skip the server address input step for web deployments while preserving it for desktop app users.
   - For tauri user, they should be prompted to select their instance, and then presented with the username and password
 
-### @ Mentions for Users
-
-- Support `@username` mentions in chat messages with autocomplete.
-- Highlight mentioned messages for the target user.
-- Send notification to mentioned users (in-app and optional push).
-
 ### Private Messages (Direct Messages)
 
 - Enable one-to-one private messaging between users outside of channels.
@@ -239,26 +233,18 @@ Yankcord is a self-hosted, minimal chat app. One server instance = one community
 - Tooltip or panel with detailed stats for troubleshooting.
 
 
-### Add notification sound for new messages
-- When a new messages comes in, add a notification sound if you arent focused on the app or channel.
-
 
 ### Lazy loading messages
 - When opening a text channel, we should scroll to the bottom to see the most recent messages.
 - We should only fetch the first 20 or so message, and if we scroll up we lazy load them to have the API chill a bit.
 
-
 ### Add edit channel options
 - Change name and description
 - Be able to change bitrate for voice channel
 
-
 ### Merge message together
 - If a user sends multiple message back to back without someone else sending a message, merge all of them into one message (like discord)
 
-## Better image handling in chat
-- If a user copy an image from a website and copies it in the chat, it should upload automatically.
-- If a user sends a link to an image in the chat, it should display the image under the link
 
 ### Auto-updater
 - Add an auto updater for the tauri build to allow distribution of new version easily.
@@ -268,10 +254,13 @@ Yankcord is a self-hosted, minimal chat app. One server instance = one community
 -- Capture and send the audio when streaming a window
 
 ### Invitation better implementation
--- The UI for the invitation should be reworked to be able to customize invitation options.
--- Add option to either have a single use or multiple uses and max uses
--- Custom expiration date
--- Look at the database model for invitation for implementation
+- The UI for the invitation should be reworked to be able to customize invitation options.
+- Add option to either have a single use or multiple uses and max uses
+- Custom expiration date
+- Look at the database model for invitation for implementation
+
+
+
 ---
 
 ## Validation Baseline
