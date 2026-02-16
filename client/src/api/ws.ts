@@ -28,11 +28,20 @@ export type ServerMessage =
   | { type: "user_status_changed"; username: string; status: PresenceStatus }
   | { type: "user_disconnected"; username: string }
   | {
+    type: "user_profile_updated";
+    username: string;
+    display_name: string;
+    avatar_url: string | null;
+    profile_description: string | null;
+    profile_status: string | null;
+  }
+  | {
     type: "new_message";
     id: string;
     channel_id: string;
     author_id: string;
     author_username: string;
+    author_display_name: string;
     content: string;
     created_at: string;
     edited_at?: string | null;
@@ -51,6 +60,30 @@ export type ServerMessage =
   | { type: "channel_activity"; channel_id: string }
   | { type: "typing_start"; channel_id: string; username: string }
   | { type: "typing_stop"; channel_id: string; username: string }
+  | { type: "new_dm_message"; id: string; thread_id: string; author_id: string; author_username: string; author_display_name: string; content: string; created_at: string; edited_at?: string | null }
+  | { type: "dm_message_edited"; id: string; thread_id: string; content: string; edited_at: string }
+  | { type: "dm_message_deleted"; id: string; thread_id: string }
+  | { type: "dm_typing_start"; thread_id: string; username: string }
+  | { type: "dm_typing_stop"; thread_id: string; username: string }
+  | {
+    type: "dm_thread_created";
+    thread_id: string;
+    other_username: string;
+    other_display_name: string;
+    other_avatar_url: string | null;
+    last_message_id: string | null;
+    last_message_preview: string | null;
+    last_message_at: string | null;
+    unread_count: number;
+  }
+  | {
+    type: "dm_thread_updated";
+    thread_id: string;
+    last_message_id: string | null;
+    last_message_preview: string | null;
+    last_message_at: string | null;
+  }
+  | { type: "dm_unread_updated"; thread_id: string; unread_count: number }
   | {
     type: "voice_presence_snapshot";
     channels: { channel_id: string; usernames: string[] }[];

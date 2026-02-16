@@ -10,6 +10,7 @@ import {
 } from "solid-js";
 import { username as currentUsername } from "../stores/auth";
 import { del, get, post } from "../api/http";
+import { listDmThreads } from "../api/dms";
 import {
     cleanupMediaTransports,
     initializeMediaTransports,
@@ -30,11 +31,13 @@ import {
 import { connect, onClose, onMessage, send } from "../api/ws";
 import {
     activeChannelId,
+    activeDmThreadId,
     Channel,
     clearUnread,
     incrementUnread,
     removeUnreadChannel,
-    setActiveChannelId,
+    setActiveDmThread,
+    setActiveTextChannel,
     unreadCount,
 } from "../stores/chat";
 import {
@@ -111,6 +114,14 @@ import {
     setContextMenuTarget,
 } from "../stores/contextMenu";
 import UserAvatar from "./UserAvatar";
+import { displayNameFor, profileFor, upsertUserProfile } from "../stores/userProfiles";
+import {
+    dmThreads,
+    setDmThreads,
+    setDmUnreadCount,
+    updateDmThreadActivity,
+    upsertDmThread,
+} from "../stores/dms";
 
 async function fetchChannels() {
     return get<Channel[]>("/channels");
@@ -330,6 +341,10 @@ export default function ChannelList() {
     }
 
     function ensureValidActiveChannel(nextChannels: Channel[]) {
+        if (activeDmThreadId()) {
+            return;
+        }
+
         const selected = activeChannelId();
         const selectedStillExists = selected
             ? nextChannels.some((channel) => channel.id === selected)
@@ -339,7 +354,7 @@ export default function ChannelList() {
             return;
         }
 
-        setActiveChannelId(nextChannels[0]?.id ?? null);
+        setActiveTextChannel(nextChannels[0]?.id ?? null);
     }
 
     function joinVoiceChannel(channelId: string) {
@@ -483,7 +498,7 @@ export default function ChannelList() {
             closeSettings();
         }
 
-        setActiveChannelId(channel.id);
+        setActiveTextChannel(channel.id);
         clearUnread(channel.id);
     }
 
@@ -501,6 +516,23 @@ export default function ChannelList() {
         }
 
         return count > 99 ? "99+" : String(count);
+    }
+
+    function formatDmUnreadBadge(count: number) {
+        if (count <= 0) {
+            return "";
+        }
+
+        return count > 99 ? "99+" : String(count);
+    }
+
+    function selectDmThread(threadId: string) {
+        if (settingsOpen()) {
+            closeSettings();
+        }
+
+        setActiveDmThread(threadId);
+        setDmUnreadCount(threadId, 0);
     }
 
     function voiceMembers(channelId: string) {
@@ -564,6 +596,15 @@ export default function ChannelList() {
             setLoadError(errorMessage(error, "Failed to load channels"));
         } finally {
             setIsLoading(false);
+        }
+    }
+
+    async function loadInitialDms() {
+        try {
+            const threads = await listDmThreads();
+            setDmThreads(threads);
+        } catch {
+            // no-op: DM list can recover from websocket updates
         }
     }
 
@@ -651,6 +692,7 @@ export default function ChannelList() {
         connect();
         startConnectionStatusSubscription();
         void loadInitialChannels();
+        void loadInitialDms();
 
         registerContextMenuHandlers({
             channel: {
@@ -792,6 +834,53 @@ export default function ChannelList() {
                     resetVoiceMediaState();
                 }
                 setVoiceActionState("idle");
+                return;
+            }
+
+            if (msg.type === "dm_thread_created") {
+                upsertDmThread({
+                    thread_id: msg.thread_id,
+                    other_username: msg.other_username,
+                    other_display_name: msg.other_display_name,
+                    other_avatar_url: msg.other_avatar_url,
+                    last_message_id: msg.last_message_id,
+                    last_message_preview: msg.last_message_preview,
+                    last_message_at: msg.last_message_at,
+                    unread_count: msg.unread_count,
+                });
+                return;
+            }
+
+            if (msg.type === "dm_thread_updated") {
+                updateDmThreadActivity(
+                    msg.thread_id,
+                    msg.last_message_id,
+                    msg.last_message_preview,
+                    msg.last_message_at,
+                );
+                return;
+            }
+
+            if (msg.type === "dm_unread_updated") {
+                if (msg.thread_id !== activeDmThreadId()) {
+                    setDmUnreadCount(msg.thread_id, msg.unread_count);
+                    if (msg.unread_count > 0) {
+                        playMessageNotificationCue();
+                    }
+                } else {
+                    setDmUnreadCount(msg.thread_id, 0);
+                }
+                return;
+            }
+
+            if (msg.type === "user_profile_updated") {
+                upsertUserProfile({
+                    username: msg.username,
+                    display_name: msg.display_name,
+                    avatar_url: msg.avatar_url,
+                    profile_description: msg.profile_description,
+                    profile_status: msg.profile_status,
+                });
                 return;
             }
 
@@ -1018,6 +1107,59 @@ export default function ChannelList() {
 
                     <section
                         class="channel-group"
+                        aria-labelledby="dm-channels-heading"
+                    >
+                        <div class="channel-group-header">
+                            <h4 id="dm-channels-heading" class="channel-group-heading">Direct Messages</h4>
+                        </div>
+                        <Show
+                            when={dmThreads().length > 0}
+                            fallback={
+                                <p class="channel-group-empty">
+                                    No direct messages yet
+                                </p>
+                            }
+                        >
+                            <ul class="channel-items">
+                                <For each={dmThreads()}>
+                                    {(thread) => (
+                                        <li class="channel-row">
+                                            <button
+                                                type="button"
+                                                class={`channel-item${activeDmThreadId() === thread.thread_id ? " is-active" : ""}`}
+                                                onClick={() =>
+                                                    selectDmThread(
+                                                        thread.thread_id,
+                                                    )
+                                                }
+                                            >
+                                                <span class="channel-prefix">
+                                                    @
+                                                </span>
+                                                <span class="channel-name">
+                                                    {profileFor(thread.other_username)
+                                                        ? displayNameFor(thread.other_username)
+                                                        : thread.other_display_name}
+                                                </span>
+                                                <Show
+                                                    when={thread.unread_count > 0}
+                                                >
+                                                    <span class="channel-badge">
+                                                        {formatDmUnreadBadge(
+                                                            thread.unread_count,
+                                                        )}
+                                                    </span>
+                                                </Show>
+                                            </button>
+                                        </li>
+                                    )}
+                                </For>
+                            </ul>
+                        </Show>
+                    </section>
+
+                    <section
+                        class="channel-group"
                         aria-labelledby="voice-channels-heading"
                     >
                         <div class="channel-group-header">
@@ -1164,7 +1306,7 @@ export default function ChannelList() {
                                                                     }
                                                                 />
                                                                 <span class="channel-voice-member-name">
-                                                                    {memberUsername}
+                                                                    {displayNameFor(memberUsername)}
                                                                 </span>
                                                                 <Show
                                                                     when={streamTileForVoiceMember(channel.id, memberUsername)}
@@ -1173,7 +1315,7 @@ export default function ChannelList() {
                                                                         <>
                                                                             <span
                                                                                 class="channel-voice-live-badge"
-                                                                                aria-label={`${memberUsername} is streaming live`}
+                                                                                aria-label={`${displayNameFor(memberUsername)} is streaming live`}
                                                                             >
                                                                                 LIVE
                                                                             </span>
@@ -1186,10 +1328,10 @@ export default function ChannelList() {
                                                                                 <div
                                                                                     class="channel-stream-hover-popover"
                                                                                     role="dialog"
-                                                                                    aria-label={`Watch ${memberUsername} stream`}
+                                                                                    aria-label={`Watch ${displayNameFor(memberUsername)} stream`}
                                                                                 >
                                                                                     <p class="channel-stream-hover-title">
-                                                                                        {memberUsername}
+                                                                                        {displayNameFor(memberUsername)}
                                                                                     </p>
                                                                                     <p class="channel-stream-hover-text">
                                                                                         Live screen share

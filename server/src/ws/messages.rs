@@ -33,11 +33,29 @@ pub enum ClientMessage {
     #[serde(rename = "subscribe_channel")]
     SubscribeChannel { channel_id: Uuid },
 
+    #[serde(rename = "subscribe_dm")]
+    SubscribeDm { thread_id: Uuid },
+
     #[serde(rename = "typing_start")]
     TypingStart { channel_id: Uuid },
 
     #[serde(rename = "typing_stop")]
     TypingStop { channel_id: Uuid },
+
+    #[serde(rename = "typing_start_dm")]
+    TypingStartDm { thread_id: Uuid },
+
+    #[serde(rename = "typing_stop_dm")]
+    TypingStopDm { thread_id: Uuid },
+
+    #[serde(rename = "send_dm_message")]
+    SendDmMessage { thread_id: Uuid, content: String },
+
+    #[serde(rename = "dm_read")]
+    DmRead {
+        thread_id: Uuid,
+        last_read_message_id: Option<Uuid>,
+    },
 
     #[serde(rename = "join_voice")]
     JoinVoice { channel_id: Uuid },
@@ -89,12 +107,22 @@ pub enum ServerMessage {
     #[serde(rename = "user_disconnected")]
     UserDisconnected { username: String },
 
+    #[serde(rename = "user_profile_updated")]
+    UserProfileUpdated {
+        username: String,
+        display_name: String,
+        avatar_url: Option<String>,
+        profile_description: Option<String>,
+        profile_status: Option<String>,
+    },
+
     #[serde(rename = "new_message")]
     NewMessage {
         id: Uuid,
         channel_id: Uuid,
         author_id: Uuid,
         author_username: String,
+        author_display_name: String,
         content: String,
         created_at: String,
         attachments: Vec<MessageAttachmentPayload>,
@@ -146,6 +174,58 @@ pub enum ServerMessage {
 
     #[serde(rename = "typing_stop")]
     TypingStop { channel_id: Uuid, username: String },
+
+    #[serde(rename = "new_dm_message")]
+    NewDmMessage {
+        id: Uuid,
+        thread_id: Uuid,
+        author_id: Uuid,
+        author_username: String,
+        author_display_name: String,
+        content: String,
+        created_at: String,
+        edited_at: Option<String>,
+    },
+
+    #[serde(rename = "dm_message_edited")]
+    DmMessageEdited {
+        id: Uuid,
+        thread_id: Uuid,
+        content: String,
+        edited_at: String,
+    },
+
+    #[serde(rename = "dm_message_deleted")]
+    DmMessageDeleted { id: Uuid, thread_id: Uuid },
+
+    #[serde(rename = "dm_typing_start")]
+    DmTypingStart { thread_id: Uuid, username: String },
+
+    #[serde(rename = "dm_typing_stop")]
+    DmTypingStop { thread_id: Uuid, username: String },
+
+    #[serde(rename = "dm_thread_created")]
+    DmThreadCreated {
+        thread_id: Uuid,
+        other_username: String,
+        other_display_name: String,
+        other_avatar_url: Option<String>,
+        last_message_id: Option<Uuid>,
+        last_message_preview: Option<String>,
+        last_message_at: Option<String>,
+        unread_count: i64,
+    },
+
+    #[serde(rename = "dm_thread_updated")]
+    DmThreadUpdated {
+        thread_id: Uuid,
+        last_message_id: Option<Uuid>,
+        last_message_preview: Option<String>,
+        last_message_at: Option<String>,
+    },
+
+    #[serde(rename = "dm_unread_updated")]
+    DmUnreadUpdated { thread_id: Uuid, unread_count: i64 },
 
     #[serde(rename = "voice_joined")]
     VoiceJoined { channel_id: Uuid, user_id: Uuid },

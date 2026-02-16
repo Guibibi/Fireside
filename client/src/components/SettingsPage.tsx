@@ -20,7 +20,7 @@ import {
   updateIncomingVoiceGainNodes,
   updateVoiceNormalizationNodesEnabled,
 } from "../api/media/consumers";
-import { connect, disconnect } from "../api/ws";
+import { disconnect } from "../api/ws";
 import { updateOutgoingMicrophoneGain } from "../api/media/microphoneProcessing";
 import {
   clearAuth,
@@ -28,18 +28,11 @@ import {
   role,
   token,
   serverUrl,
-  updateAuthIdentity,
   username as currentUsername,
 } from "../stores/auth";
 import { resetChatState } from "../stores/chat";
-import {
-  clearVoiceRejoinNotice,
-  joinedVoiceChannelId,
-  resetVoiceState,
-  setJoinedVoiceChannel,
-  setVoiceActionState,
-  showVoiceRejoinNotice,
-} from "../stores/voice";
+import { resetDmState } from "../stores/dms";
+import { resetVoiceState } from "../stores/voice";
 import {
   preferredAudioInputDeviceId,
   preferredAudioOutputDeviceId,
@@ -68,20 +61,26 @@ import {
 } from "../stores/settings";
 import { openSettings } from "../stores/settings";
 import UserAvatar from "./UserAvatar";
-import { renameUserProfile, setUserAvatar, upsertUserProfile } from "../stores/userProfiles";
+import { displayNameFor, setUserAvatar, upsertUserProfile } from "../stores/userProfiles";
 import VoiceAudioPreferences from "./settings/VoiceAudioPreferences";
 
 interface UpdateCurrentUserResponse {
   token: string;
   user_id: string;
   username: string;
+  display_name: string;
   role: string;
   avatar_url: string | null;
+  profile_description: string | null;
+  profile_status: string | null;
 }
 
 interface CurrentUserResponse {
   username: string;
+  display_name: string;
   avatar_url: string | null;
+  profile_description: string | null;
+  profile_status: string | null;
 }
 
 interface UploadAvatarResponse {
@@ -99,7 +98,9 @@ const NAV_ITEMS: { key: SettingsSection; label: string; adminOnly?: boolean }[] 
 
 export default function SettingsPage() {
   const navigate = useNavigate();
-  const [draftUsername, setDraftUsername] = createSignal(currentUsername() ?? "");
+  const [draftDisplayName, setDraftDisplayName] = createSignal("");
+  const [draftProfileDescription, setDraftProfileDescription] = createSignal("");
+  const [draftProfileStatus, setDraftProfileStatus] = createSignal("");
   const [profileError, setProfileError] = createSignal("");
   const [audioError, setAudioError] = createSignal("");
   const [notificationError, setNotificationError] = createSignal("");
@@ -127,7 +128,8 @@ export default function SettingsPage() {
   });
 
   onMount(() => {
-    setDraftUsername(currentUsername() ?? "");
+    const usernameValue = currentUsername();
+    setDraftDisplayName(usernameValue ? displayNameFor(usernameValue) : "");
     void refreshMediaDevices();
     void refreshCurrentUserProfile();
   });
@@ -153,7 +155,16 @@ export default function SettingsPage() {
       }
 
       const profile = await response.json() as CurrentUserResponse;
-      upsertUserProfile({ username: profile.username, avatar_url: profile.avatar_url });
+      upsertUserProfile({
+        username: profile.username,
+        display_name: profile.display_name,
+        avatar_url: profile.avatar_url,
+        profile_description: profile.profile_description,
+        profile_status: profile.profile_status,
+      });
+      setDraftDisplayName(profile.display_name);
+      setDraftProfileDescription(profile.profile_description ?? "");
+      setDraftProfileStatus(profile.profile_status ?? "");
     } catch {
       // no-op
     }
@@ -182,35 +193,42 @@ export default function SettingsPage() {
     event.preventDefault();
     setProfileError("");
 
-    const nextUsername = draftUsername().trim();
-    if (nextUsername.length < 3 || nextUsername.length > 32) {
-      setProfileError("Username must be between 3 and 32 characters");
+    const nextDisplayName = draftDisplayName().trim();
+    const nextProfileDescription = draftProfileDescription().trim();
+    const nextProfileStatus = draftProfileStatus().trim();
+    if (nextDisplayName.length < 1 || nextDisplayName.length > 32) {
+      setProfileError("Display name must be between 1 and 32 characters");
+      return;
+    }
+
+    if (nextProfileDescription.length > 280) {
+      setProfileError("Profile description must be 280 characters or fewer");
+      return;
+    }
+
+    if (nextProfileStatus.length > 80) {
+      setProfileError("Profile status must be 80 characters or fewer");
       return;
     }
 
     setIsSavingProfile(true);
     try {
-      const wasInVoice = !!joinedVoiceChannelId();
       const response = await patch<UpdateCurrentUserResponse>("/users/me", {
-        username: nextUsername,
+        display_name: nextDisplayName,
+        profile_description: nextProfileDescription.length > 0 ? nextProfileDescription : null,
+        profile_status: nextProfileStatus.length > 0 ? nextProfileStatus : null,
       });
 
-      const previousUsername = currentUsername();
-      updateAuthIdentity(response.token, response.user_id, response.username, response.role);
-      if (previousUsername && previousUsername !== response.username) {
-        renameUserProfile(previousUsername, response.username);
-      }
-      upsertUserProfile({ username: response.username, avatar_url: response.avatar_url });
-      cleanupMediaTransports();
-      if (wasInVoice) {
-        setJoinedVoiceChannel(null);
-        showVoiceRejoinNotice();
-      } else {
-        clearVoiceRejoinNotice();
-      }
-      setVoiceActionState("idle");
-      disconnect();
-      connect();
+      upsertUserProfile({
+        username: response.username,
+        display_name: response.display_name,
+        avatar_url: response.avatar_url,
+        profile_description: response.profile_description,
+        profile_status: response.profile_status,
+      });
+      setDraftDisplayName(response.display_name);
+      setDraftProfileDescription(response.profile_description ?? "");
+      setDraftProfileStatus(response.profile_status ?? "");
       closeSettings();
     } catch (error) {
       setProfileError(errorMessage(error, "Failed to update profile"));
@@ -379,6 +397,7 @@ export default function SettingsPage() {
     cleanupMediaTransports();
     disconnect();
     resetChatState();
+    resetDmState();
     resetVoiceState();
     clearAuth();
     closeSettings();
@@ -436,16 +455,37 @@ export default function SettingsPage() {
               <div class="settings-profile-grid">
                 <section class="settings-profile-card">
                   <h6>Identity</h6>
-                  <label class="settings-label" for="settings-username">Username</label>
+                  <label class="settings-label" for="settings-display-name">Display name</label>
                   <input
-                    id="settings-username"
+                    id="settings-display-name"
                     type="text"
-                    value={draftUsername()}
+                    value={draftDisplayName()}
                     maxlength={32}
-                    onInput={(event) => setDraftUsername(event.currentTarget.value)}
+                    onInput={(event) => setDraftDisplayName(event.currentTarget.value)}
                     disabled={isSavingProfile()}
                   />
+                  <p class="settings-help">Username (login): {currentUsername() ?? "Unknown"}</p>
                   <p class="settings-help">Server URL: {serverUrl()}</p>
+
+                  <label class="settings-label" for="settings-profile-status">Profile status</label>
+                  <input
+                    id="settings-profile-status"
+                    type="text"
+                    value={draftProfileStatus()}
+                    maxlength={80}
+                    onInput={(event) => setDraftProfileStatus(event.currentTarget.value)}
+                    disabled={isSavingProfile()}
+                  />
+
+                  <label class="settings-label" for="settings-profile-description">Profile description</label>
+                  <textarea
+                    id="settings-profile-description"
+                    rows={4}
+                    value={draftProfileDescription()}
+                    maxlength={280}
+                    onInput={(event) => setDraftProfileDescription(event.currentTarget.value)}
+                    disabled={isSavingProfile()}
+                  />
                 </section>
 
                 <section class="settings-profile-card">

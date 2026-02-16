@@ -12,7 +12,8 @@ use tokio::time::timeout;
 use uuid::Uuid;
 
 use super::broadcast::{
-    broadcast_channel_message, broadcast_global_message, cleanup_connection, send_server_message,
+    broadcast_channel_message, broadcast_dm_thread_message, broadcast_global_message,
+    broadcast_user_ids_message, cleanup_connection, send_server_message,
 };
 use super::media_signal::{
     allow_media_signal_event, handle_media_signal_message, media_signal_payload_size_bytes,
@@ -140,6 +141,10 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
     {
         let mut connection_usernames = state.connection_usernames.write().await;
         connection_usernames.insert(connection_id, claims.username.clone());
+    }
+    {
+        let mut connection_user_ids = state.connection_user_ids.write().await;
+        connection_user_ids.insert(connection_id, claims.user_id);
     }
 
     send_server_message(
@@ -483,6 +488,20 @@ async fn handle_client_message(
             let mut subscriptions = state.channel_subscriptions.write().await;
             subscriptions.insert(connection_id, channel_id);
         }
+        ClientMessage::SubscribeDm { thread_id } => {
+            if !is_dm_thread_participant(state, thread_id, claims.user_id).await {
+                send_server_message(
+                    out_tx,
+                    ServerMessage::Error {
+                        message: "DM thread not found".into(),
+                    },
+                );
+                return false;
+            }
+
+            let mut subscriptions = state.dm_subscriptions.write().await;
+            subscriptions.insert(connection_id, thread_id);
+        }
         ClientMessage::SendMessage {
             channel_id,
             content,
@@ -513,6 +532,75 @@ async fn handle_client_message(
             };
 
             broadcast_channel_message(state, channel_id, response, Some(connection_id)).await;
+        }
+        ClientMessage::TypingStartDm { thread_id } => {
+            let Some((user_a_id, user_b_id)) = dm_thread_participants(state, thread_id).await
+            else {
+                send_server_message(
+                    out_tx,
+                    ServerMessage::Error {
+                        message: "DM thread not found".into(),
+                    },
+                );
+                return false;
+            };
+
+            if claims.user_id != user_a_id && claims.user_id != user_b_id {
+                return false;
+            }
+
+            let participant_ids = [user_a_id, user_b_id];
+            let response = ServerMessage::DmTypingStart {
+                thread_id,
+                username: claims.username.clone(),
+            };
+            broadcast_dm_thread_message(
+                state,
+                thread_id,
+                &participant_ids,
+                response,
+                Some(connection_id),
+            )
+            .await;
+        }
+        ClientMessage::TypingStopDm { thread_id } => {
+            let Some((user_a_id, user_b_id)) = dm_thread_participants(state, thread_id).await
+            else {
+                send_server_message(
+                    out_tx,
+                    ServerMessage::Error {
+                        message: "DM thread not found".into(),
+                    },
+                );
+                return false;
+            };
+
+            if claims.user_id != user_a_id && claims.user_id != user_b_id {
+                return false;
+            }
+
+            let participant_ids = [user_a_id, user_b_id];
+            let response = ServerMessage::DmTypingStop {
+                thread_id,
+                username: claims.username.clone(),
+            };
+            broadcast_dm_thread_message(
+                state,
+                thread_id,
+                &participant_ids,
+                response,
+                Some(connection_id),
+            )
+            .await;
+        }
+        ClientMessage::SendDmMessage { thread_id, content } => {
+            handle_send_dm_message(state, claims, connection_id, thread_id, content, out_tx).await;
+        }
+        ClientMessage::DmRead {
+            thread_id,
+            last_read_message_id,
+        } => {
+            handle_dm_read(state, claims, thread_id, last_read_message_id, out_tx).await;
         }
         ClientMessage::JoinVoice { channel_id } => {
             handle_join_voice(state, claims, connection_id, channel_id, out_tx).await;
@@ -622,6 +710,345 @@ async fn handle_client_message(
     }
 
     false
+}
+
+async fn dm_thread_participants(state: &AppState, thread_id: Uuid) -> Option<(Uuid, Uuid)> {
+    sqlx::query_as::<_, (Uuid, Uuid)>("SELECT user_a_id, user_b_id FROM dm_threads WHERE id = $1")
+        .bind(thread_id)
+        .fetch_optional(&state.db)
+        .await
+        .ok()
+        .flatten()
+}
+
+async fn is_dm_thread_participant(state: &AppState, thread_id: Uuid, user_id: Uuid) -> bool {
+    dm_thread_participants(state, thread_id)
+        .await
+        .is_some_and(|(user_a_id, user_b_id)| user_id == user_a_id || user_id == user_b_id)
+}
+
+async fn dm_unread_count_for_user(
+    state: &AppState,
+    thread_id: Uuid,
+    user_id: Uuid,
+) -> Result<i64, sqlx::Error> {
+    sqlx::query_scalar(
+        "SELECT COUNT(*)
+         FROM dm_messages m
+         LEFT JOIN dm_read_state rs
+           ON rs.thread_id = m.thread_id
+          AND rs.user_id = $2
+         LEFT JOIN dm_messages lr
+           ON lr.id = rs.last_read_message_id
+         WHERE m.thread_id = $1
+           AND m.author_id <> $2
+           AND (
+             rs.last_read_message_id IS NULL
+             OR (m.created_at, m.id) > (lr.created_at, lr.id)
+           )",
+    )
+    .bind(thread_id)
+    .bind(user_id)
+    .fetch_one(&state.db)
+    .await
+}
+
+async fn current_dm_read_marker_for_user(
+    state: &AppState,
+    thread_id: Uuid,
+    user_id: Uuid,
+) -> Result<Option<(Uuid, chrono::DateTime<chrono::Utc>)>, sqlx::Error> {
+    let row: Option<(Option<Uuid>, Option<chrono::DateTime<chrono::Utc>>)> = sqlx::query_as(
+        "SELECT rs.last_read_message_id, m.created_at
+         FROM dm_read_state rs
+         LEFT JOIN dm_messages m
+           ON m.id = rs.last_read_message_id
+         WHERE rs.thread_id = $1
+           AND rs.user_id = $2",
+    )
+    .bind(thread_id)
+    .bind(user_id)
+    .fetch_optional(&state.db)
+    .await?;
+
+    Ok(match row {
+        Some((Some(message_id), Some(created_at))) => Some((message_id, created_at)),
+        _ => None,
+    })
+}
+
+async fn handle_send_dm_message(
+    state: &AppState,
+    claims: &crate::auth::Claims,
+    connection_id: Uuid,
+    thread_id: Uuid,
+    content: String,
+    out_tx: &mpsc::Sender<String>,
+) {
+    let trimmed = content.trim();
+    if trimmed.is_empty() || trimmed.len() > 4000 {
+        send_server_message(
+            out_tx,
+            ServerMessage::Error {
+                message: "Message content must be between 1 and 4000 characters".into(),
+            },
+        );
+        return;
+    }
+
+    let Some((user_a_id, user_b_id)) = dm_thread_participants(state, thread_id).await else {
+        send_server_message(
+            out_tx,
+            ServerMessage::Error {
+                message: "DM thread not found".into(),
+            },
+        );
+        return;
+    };
+
+    if claims.user_id != user_a_id && claims.user_id != user_b_id {
+        send_server_message(
+            out_tx,
+            ServerMessage::Error {
+                message: "DM thread not found".into(),
+            },
+        );
+        return;
+    }
+
+    let participant_ids = [user_a_id, user_b_id];
+    let message_id = Uuid::new_v4();
+    let created_at = match sqlx::query_scalar::<_, chrono::DateTime<chrono::Utc>>(
+        "INSERT INTO dm_messages (id, thread_id, author_id, content)
+         VALUES ($1, $2, $3, $4)
+         RETURNING created_at",
+    )
+    .bind(message_id)
+    .bind(thread_id)
+    .bind(claims.user_id)
+    .bind(trimmed)
+    .fetch_one(&state.db)
+    .await
+    {
+        Ok(created_at) => created_at,
+        Err(error) => {
+            tracing::error!(thread_id = %thread_id, error = ?error, "Failed to insert DM message");
+            send_server_message(
+                out_tx,
+                ServerMessage::Error {
+                    message: "Failed to save DM message".into(),
+                },
+            );
+            return;
+        }
+    };
+
+    let _ = sqlx::query(
+        "INSERT INTO dm_read_state (thread_id, user_id, last_read_message_id, updated_at)
+         VALUES ($1, $2, $3, now())
+         ON CONFLICT (thread_id, user_id)
+         DO UPDATE SET
+           last_read_message_id = EXCLUDED.last_read_message_id,
+           updated_at = now()",
+    )
+    .bind(thread_id)
+    .bind(claims.user_id)
+    .bind(message_id)
+    .execute(&state.db)
+    .await;
+
+    let author_display_name: String =
+        sqlx::query_scalar("SELECT COALESCE(display_name, username) FROM users WHERE id = $1")
+            .bind(claims.user_id)
+            .fetch_optional(&state.db)
+            .await
+            .ok()
+            .flatten()
+            .unwrap_or_else(|| claims.username.clone());
+
+    let preview = trimmed.chars().take(120).collect::<String>();
+    let created_at_rfc3339 = created_at.to_rfc3339();
+
+    broadcast_dm_thread_message(
+        state,
+        thread_id,
+        &participant_ids,
+        ServerMessage::NewDmMessage {
+            id: message_id,
+            thread_id,
+            author_id: claims.user_id,
+            author_username: claims.username.clone(),
+            author_display_name,
+            content: trimmed.to_string(),
+            created_at: created_at_rfc3339.clone(),
+            edited_at: None,
+        },
+        None,
+    )
+    .await;
+
+    broadcast_user_ids_message(
+        state,
+        &participant_ids,
+        ServerMessage::DmThreadUpdated {
+            thread_id,
+            last_message_id: Some(message_id),
+            last_message_preview: Some(preview),
+            last_message_at: Some(created_at_rfc3339),
+        },
+        None,
+    )
+    .await;
+
+    for participant_id in participant_ids {
+        if let Ok(unread_count) = dm_unread_count_for_user(state, thread_id, participant_id).await {
+            broadcast_user_ids_message(
+                state,
+                &[participant_id],
+                ServerMessage::DmUnreadUpdated {
+                    thread_id,
+                    unread_count,
+                },
+                None,
+            )
+            .await;
+        }
+    }
+
+    broadcast_dm_thread_message(
+        state,
+        thread_id,
+        &participant_ids,
+        ServerMessage::DmTypingStop {
+            thread_id,
+            username: claims.username.clone(),
+        },
+        Some(connection_id),
+    )
+    .await;
+}
+
+async fn handle_dm_read(
+    state: &AppState,
+    claims: &crate::auth::Claims,
+    thread_id: Uuid,
+    last_read_message_id: Option<Uuid>,
+    out_tx: &mpsc::Sender<String>,
+) {
+    if !is_dm_thread_participant(state, thread_id, claims.user_id).await {
+        send_server_message(
+            out_tx,
+            ServerMessage::Error {
+                message: "DM thread not found".into(),
+            },
+        );
+        return;
+    }
+
+    let requested_marker = if let Some(message_id) = last_read_message_id {
+        match sqlx::query_scalar::<_, chrono::DateTime<chrono::Utc>>(
+            "SELECT created_at FROM dm_messages WHERE id = $1 AND thread_id = $2",
+        )
+        .bind(message_id)
+        .bind(thread_id)
+        .fetch_optional(&state.db)
+        .await
+        {
+            Ok(Some(created_at)) => Some((message_id, created_at)),
+            Ok(None) => {
+                send_server_message(
+                    out_tx,
+                    ServerMessage::Error {
+                        message: "DM message not found".into(),
+                    },
+                );
+                return;
+            }
+            Err(error) => {
+                tracing::error!(thread_id = %thread_id, user_id = %claims.user_id, error = ?error, "Failed to load requested DM read marker");
+                send_server_message(
+                    out_tx,
+                    ServerMessage::Error {
+                        message: "Failed to update read marker".into(),
+                    },
+                );
+                return;
+            }
+        }
+    } else {
+        None
+    };
+
+    let current_marker = match current_dm_read_marker_for_user(state, thread_id, claims.user_id)
+        .await
+    {
+        Ok(marker) => marker,
+        Err(error) => {
+            tracing::error!(thread_id = %thread_id, user_id = %claims.user_id, error = ?error, "Failed to load current DM read marker");
+            send_server_message(
+                out_tx,
+                ServerMessage::Error {
+                    message: "Failed to update read marker".into(),
+                },
+            );
+            return;
+        }
+    };
+
+    let next_marker = match (current_marker, requested_marker) {
+        (Some((current_id, current_at)), Some((requested_id, requested_at))) => {
+            if (requested_at, requested_id) >= (current_at, current_id) {
+                Some(requested_id)
+            } else {
+                Some(current_id)
+            }
+        }
+        (None, Some((requested_id, _))) => Some(requested_id),
+        (Some((current_id, _)), None) => Some(current_id),
+        (None, None) => None,
+    };
+
+    if let Err(error) = sqlx::query(
+        "INSERT INTO dm_read_state (thread_id, user_id, last_read_message_id, updated_at)
+         VALUES ($1, $2, $3, now())
+         ON CONFLICT (thread_id, user_id)
+         DO UPDATE SET
+           last_read_message_id = EXCLUDED.last_read_message_id,
+           updated_at = now()",
+    )
+    .bind(thread_id)
+    .bind(claims.user_id)
+    .bind(next_marker)
+    .execute(&state.db)
+    .await
+    {
+        tracing::error!(thread_id = %thread_id, user_id = %claims.user_id, error = ?error, "Failed to upsert DM read marker");
+        send_server_message(
+            out_tx,
+            ServerMessage::Error {
+                message: "Failed to update read marker".into(),
+            },
+        );
+        return;
+    }
+
+    match dm_unread_count_for_user(state, thread_id, claims.user_id).await {
+        Ok(unread_count) => {
+            broadcast_user_ids_message(
+                state,
+                &[claims.user_id],
+                ServerMessage::DmUnreadUpdated {
+                    thread_id,
+                    unread_count,
+                },
+                None,
+            )
+            .await;
+        }
+        Err(error) => {
+            tracing::error!(thread_id = %thread_id, user_id = %claims.user_id, error = ?error, "Failed to compute DM unread count");
+        }
+    }
 }
 
 #[tracing::instrument(skip(state, claims, out_tx, content, attachment_media_ids), fields(channel_id = %channel_id, user_id = %claims.user_id))]
@@ -775,11 +1202,21 @@ async fn handle_send_message(
         attachments_load_started.elapsed(),
     );
 
+    let author_display_name: String =
+        sqlx::query_scalar("SELECT COALESCE(display_name, username) FROM users WHERE id = $1")
+            .bind(user_id)
+            .fetch_optional(&state.db)
+            .await
+            .ok()
+            .flatten()
+            .unwrap_or_else(|| claims.username.clone());
+
     let response = ServerMessage::NewMessage {
         id: message_id,
         channel_id,
         author_id: user_id,
         author_username: claims.username.clone(),
+        author_display_name,
         content: trimmed.to_string(),
         created_at: created_at.to_rfc3339(),
         attachments,
