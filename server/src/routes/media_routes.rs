@@ -20,6 +20,8 @@ struct UploadMediaResponse {
     status: String,
 }
 
+type MediaFetchRow = (Uuid, Option<Uuid>, Uuid, Option<String>, String, String);
+
 pub fn router(max_upload_bytes: usize) -> Router<AppState> {
     Router::new()
         .route("/media/upload", post(upload_media))
@@ -29,11 +31,14 @@ pub fn router(max_upload_bytes: usize) -> Router<AppState> {
 
 async fn get_media_asset(
     axum::extract::State(state): axum::extract::State<AppState>,
+    headers: axum::http::HeaderMap,
     axum::extract::Path((media_id, variant)): axum::extract::Path<(Uuid, String)>,
 ) -> Result<Response, AppError> {
-    let record: Option<(String, String)> = if variant == "original" {
+    let claims = extract_claims(&headers, &state.config.jwt.secret)?;
+
+    let record: Option<MediaFetchRow> = if variant == "original" {
         sqlx::query_as(
-            "SELECT storage_key, mime_type
+            "SELECT id, parent_id, owner_id, derivative_kind, storage_key, mime_type
              FROM media_assets
              WHERE id = $1 AND derivative_kind IS NULL AND status = 'ready'",
         )
@@ -42,7 +47,7 @@ async fn get_media_asset(
         .await?
     } else {
         sqlx::query_as(
-            "SELECT storage_key, mime_type
+            "SELECT id, parent_id, owner_id, derivative_kind, storage_key, mime_type
              FROM media_assets
              WHERE parent_id = $1 AND derivative_kind = $2 AND status = 'ready'",
         )
@@ -52,8 +57,39 @@ async fn get_media_asset(
         .await?
     };
 
-    let (storage_key, mime_type) =
+    let (_asset_id, parent_id, owner_id, derivative_kind, storage_key, mime_type) =
         record.ok_or_else(|| AppError::NotFound("Media asset not found".into()))?;
+
+    let root_media_id = parent_id.unwrap_or(media_id);
+    let allow_public_derivative = matches!(
+        derivative_kind.as_deref(),
+        Some("avatar_64") | Some("avatar_256")
+    );
+
+    let requester_can_access = if claims.user_id == owner_id || allow_public_derivative {
+        true
+    } else {
+        let linked_to_message: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM message_attachments WHERE media_id = $1)",
+        )
+        .bind(root_media_id)
+        .fetch_one(&state.db)
+        .await?;
+
+        let linked_to_emoji: bool =
+            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM emojis WHERE media_id = $1)")
+                .bind(root_media_id)
+                .fetch_one(&state.db)
+                .await?;
+
+        linked_to_message || linked_to_emoji
+    };
+
+    if !requester_can_access {
+        return Err(AppError::Unauthorized(
+            "You do not have access to this media asset".into(),
+        ));
+    }
 
     let bytes = state.storage.read(&storage_key).await?;
 

@@ -9,10 +9,12 @@ mod storage;
 mod uploads;
 mod ws;
 
+use axum::http::{header::HeaderName, HeaderValue, Method};
 use axum::Router;
 use config::AppConfig;
 use sqlx::postgres::PgPoolOptions;
 use std::collections::{HashMap, HashSet};
+use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::{mpsc, RwLock};
@@ -109,10 +111,7 @@ async fn main() {
 
     start_derivative_cleanup_job(state.clone());
 
-    let cors = CorsLayer::new()
-        .allow_origin(Any)
-        .allow_methods(Any)
-        .allow_headers(Any);
+    let cors = build_cors_layer(&config);
 
     let app = Router::new()
         .nest("/api", routes::auth_routes::router())
@@ -141,6 +140,61 @@ async fn main() {
         .expect("Failed to bind");
 
     axum::serve(listener, app).await.expect("Server error");
+}
+
+fn build_cors_layer(config: &AppConfig) -> CorsLayer {
+    let server_config = &config.server;
+
+    let cors = CorsLayer::new();
+
+    let cors = if is_wildcard(&server_config.cors_allowed_origins) {
+        cors.allow_origin(Any)
+    } else {
+        let allowed_origins: Vec<HeaderValue> = server_config
+            .cors_allowed_origins
+            .iter()
+            .map(|origin| {
+                HeaderValue::from_str(origin)
+                    .unwrap_or_else(|_| panic!("Invalid CORS origin configured: {origin}"))
+            })
+            .collect();
+
+        cors.allow_origin(tower_http::cors::AllowOrigin::list(allowed_origins))
+    };
+
+    let cors = if is_wildcard(&server_config.cors_allowed_methods) {
+        cors.allow_methods(Any)
+    } else {
+        let allowed_methods: Vec<Method> = server_config
+            .cors_allowed_methods
+            .iter()
+            .map(|method| {
+                Method::from_str(method)
+                    .unwrap_or_else(|_| panic!("Invalid CORS method configured: {method}"))
+            })
+            .collect();
+
+        cors.allow_methods(tower_http::cors::AllowMethods::list(allowed_methods))
+    };
+
+    if is_wildcard(&server_config.cors_allowed_headers) {
+        cors.allow_headers(Any)
+    } else {
+        let allowed_headers: Vec<HeaderName> = server_config
+            .cors_allowed_headers
+            .iter()
+            .map(|name| {
+                HeaderName::from_str(name)
+                    .unwrap_or_else(|_| panic!("Invalid CORS header configured: {name}"))
+            })
+            .collect();
+
+        cors.allow_headers(tower_http::cors::AllowHeaders::list(allowed_headers))
+    }
+}
+
+fn is_wildcard(values: &[String]) -> bool {
+    values.len() == 1 && values[0] == "*"
 }
 
 fn start_derivative_cleanup_job(state: AppState) {

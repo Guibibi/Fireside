@@ -17,6 +17,12 @@ pub struct AppConfig {
 pub struct ServerConfig {
     pub host: String,
     pub port: u16,
+    #[serde(default = "default_cors_allowed_origins")]
+    pub cors_allowed_origins: Vec<String>,
+    #[serde(default = "default_cors_allowed_methods")]
+    pub cors_allowed_methods: Vec<String>,
+    #[serde(default = "default_cors_allowed_headers")]
+    pub cors_allowed_headers: Vec<String>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -81,6 +87,49 @@ fn default_storage_backend() -> String {
     "local".to_string()
 }
 
+fn default_cors_allowed_origins() -> Vec<String> {
+    vec![
+        "http://localhost:5173".to_string(),
+        "http://127.0.0.1:5173".to_string(),
+        "http://localhost:4173".to_string(),
+        "http://127.0.0.1:4173".to_string(),
+    ]
+}
+
+fn default_cors_allowed_methods() -> Vec<String> {
+    vec![
+        "GET".to_string(),
+        "POST".to_string(),
+        "PATCH".to_string(),
+        "DELETE".to_string(),
+        "OPTIONS".to_string(),
+    ]
+}
+
+fn default_cors_allowed_headers() -> Vec<String> {
+    vec!["authorization".to_string(), "content-type".to_string()]
+}
+
+fn parse_csv_env_or_default(env_key: &str, default: Vec<String>) -> Vec<String> {
+    match std::env::var(env_key) {
+        Ok(value) => {
+            let parsed: Vec<String> = value
+                .split(',')
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(ToOwned::to_owned)
+                .collect();
+
+            if parsed.is_empty() {
+                default
+            } else {
+                parsed
+            }
+        }
+        Err(_) => default,
+    }
+}
+
 fn default_storage_local_root() -> String {
     "data/media".to_string()
 }
@@ -127,6 +176,18 @@ impl AppConfig {
                         .unwrap_or_else(|_| "3000".into())
                         .parse()
                         .expect("PORT must be a number"),
+                    cors_allowed_origins: parse_csv_env_or_default(
+                        "CORS_ALLOWED_ORIGINS",
+                        default_cors_allowed_origins(),
+                    ),
+                    cors_allowed_methods: parse_csv_env_or_default(
+                        "CORS_ALLOWED_METHODS",
+                        default_cors_allowed_methods(),
+                    ),
+                    cors_allowed_headers: parse_csv_env_or_default(
+                        "CORS_ALLOWED_HEADERS",
+                        default_cors_allowed_headers(),
+                    ),
                 },
                 database: DatabaseConfig {
                     url: std::env::var("DATABASE_URL").expect("DATABASE_URL must be set"),

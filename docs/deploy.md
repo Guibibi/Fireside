@@ -43,6 +43,7 @@ Edit `server/.env.docker` and set at minimum:
 - `WEBRTC_ANNOUNCED_IP` only when browser clients connect over the public internet and need voice/media
 - `NATIVE_RTP_ANNOUNCED_IP` when Tauri desktop clients on other hosts use native screen share
 - `STORAGE_BACKEND` and `STORAGE_LOCAL_ROOT` for media upload storage
+- `CORS_ALLOWED_ORIGINS` for browser origin allowlist (comma-separated)
 - `TENOR_API_KEY` (optional) for GIF search via the Tenor API
 
 Notes:
@@ -54,6 +55,7 @@ Notes:
 - `STORAGE_BACKEND=s3` is scaffolded for future S3/MinIO support but is not fully implemented in this phase.
 - `HOST` defaults to `127.0.0.1` in the Docker production path to avoid exposing backend port `3000` publicly when using host networking.
 - If you intentionally want the backend reachable directly from outside the VM, set `HOST=0.0.0.0` in `server/.env.docker` and restrict access with firewall rules.
+- Set `CORS_ALLOWED_ORIGINS` to your deployed web origin(s), for example `https://chat.example.com`.
 
 ### 3) Deploy
 
