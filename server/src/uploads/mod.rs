@@ -96,6 +96,48 @@ impl UploadService {
         })
     }
 
+    pub async fn upload_emoji(
+        &self,
+        owner_id: Uuid,
+        _declared_mime_type: &str,
+        bytes: Vec<u8>,
+    ) -> Result<UploadResult, AppError> {
+        let media_id = Uuid::new_v4();
+        let storage_key = format!("original/{media_id}.emoji");
+        let checksum = sha256_hex(&bytes);
+
+        sqlx::query(
+            "INSERT INTO media_assets (id, owner_id, parent_id, derivative_kind, mime_type, bytes, checksum, storage_key, status)
+             VALUES ($1, $2, NULL, NULL, $3, $4, $5, $6, 'ready')",
+        )
+        .bind(media_id)
+        .bind(owner_id)
+        .bind(_declared_mime_type)
+        .bind(bytes.len() as i64)
+        .bind(&checksum)
+        .bind(&storage_key)
+        .execute(&self.db)
+        .await?;
+
+        if let Err(error) = self
+            .storage
+            .put(&storage_key, bytes, _declared_mime_type)
+            .await
+        {
+            self.mark_failed(
+                media_id,
+                &format!("Failed to persist emoji upload: {error:?}"),
+            )
+            .await?;
+            return Err(error);
+        }
+
+        Ok(UploadResult {
+            id: media_id,
+            status: "ready".to_string(),
+        })
+    }
+
     pub async fn upload_avatar(
         &self,
         owner_id: Uuid,
@@ -404,7 +446,7 @@ impl UploadService {
         Ok(())
     }
 
-    async fn delete_media_family(&self, parent_id: Uuid) -> Result<bool, AppError> {
+    pub async fn delete_media_family(&self, parent_id: Uuid) -> Result<bool, AppError> {
         let assets: Vec<(String,)> =
             sqlx::query_as("SELECT storage_key FROM media_assets WHERE id = $1 OR parent_id = $1")
                 .bind(parent_id)

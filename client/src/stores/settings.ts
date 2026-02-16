@@ -311,7 +311,7 @@ export function saveVoiceOutgoingVolume(volume: number) {
   setVoiceOutgoingVolume(normalized);
 }
 
-export type SettingsSection = "profile" | "audio" | "invites" | "notifications" | "session";
+export type SettingsSection = "profile" | "audio" | "invites" | "emojis" | "notifications" | "session";
 
 const [settingsOpen, setSettingsOpen] = createSignal(false);
 const [activeSettingsSection, setActiveSettingsSection] = createSignal<SettingsSection>("profile");

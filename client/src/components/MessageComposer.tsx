@@ -1,5 +1,9 @@
-import { For, Show, createMemo, createSignal } from "solid-js";
+import { For, Show, createMemo, createSignal, lazy, Suspense } from "solid-js";
 import type { PendingAttachment } from "./messageTypes";
+import type { GifResult } from "../api/gifs";
+
+const EmojiPicker = lazy(() => import("./EmojiPicker"));
+const GifPicker = lazy(() => import("./GifPicker"));
 
 interface MessageComposerProps {
   activeChannelId: string | null;
@@ -16,15 +20,36 @@ interface MessageComposerProps {
   onAttachmentInput: (event: Event) => void;
   onDraftPaste: (event: ClipboardEvent) => void;
   onRemoveAttachment: (clientId: string) => void;
+  onGifSelect?: (gif: GifResult) => void;
 }
 
 export default function MessageComposer(props: MessageComposerProps) {
   let fileInputRef: HTMLInputElement | undefined;
   let draftInputRef: HTMLInputElement | undefined;
+  let emojiButtonRef: HTMLButtonElement | undefined;
+  let gifButtonRef: HTMLButtonElement | undefined;
 
   const [mentionRange, setMentionRange] = createSignal<{ start: number; end: number } | null>(null);
   const [mentionQuery, setMentionQuery] = createSignal("");
   const [selectedMentionIndex, setSelectedMentionIndex] = createSignal(0);
+  const [showEmojiPicker, setShowEmojiPicker] = createSignal(false);
+  const [showGifPicker, setShowGifPicker] = createSignal(false);
+
+  function insertEmoji(emoji: string) {
+    const input = draftInputRef;
+    if (!input) return;
+
+    const start = input.selectionStart || 0;
+    const end = input.selectionEnd || 0;
+    const newDraft = props.draft.slice(0, start) + emoji + props.draft.slice(end);
+    props.onDraftInput(newDraft);
+
+    queueMicrotask(() => {
+      input.focus();
+      const newCursor = start + emoji.length;
+      input.setSelectionRange(newCursor, newCursor);
+    });
+  }
 
   function closeMentionPicker() {
     setMentionRange(null);
@@ -240,6 +265,63 @@ export default function MessageComposer(props: MessageComposerProps) {
             </For>
           </div>
         </Show>
+        <button
+          type="button"
+          ref={emojiButtonRef}
+          class="message-emoji-button"
+          onClick={() => setShowEmojiPicker((v) => !v)}
+          disabled={!props.activeChannelId || props.isSending || !!props.savingMessageId || !!props.deletingMessageId}
+          aria-label="Add emoji"
+          title="Add emoji"
+        >
+          <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true">
+            <circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" stroke-width="1.6" />
+            <circle cx="7" cy="8" r="1" fill="currentColor" />
+            <circle cx="13" cy="8" r="1" fill="currentColor" />
+            <path d="M7 12c1 1.5 2.5 2 3 2s2-.5 3-2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+          </svg>
+        </button>
+        <Show when={showEmojiPicker()}>
+          <Suspense fallback={<div>Loading...</div>}>
+            <EmojiPicker
+              anchorRef={emojiButtonRef}
+              onSelect={(selection) => {
+                if (selection.type === "unicode") {
+                  insertEmoji(selection.emoji);
+                } else {
+                  insertEmoji(`:${selection.emoji.shortcode}:`);
+                }
+                setShowEmojiPicker(false);
+              }}
+              onClose={() => setShowEmojiPicker(false)}
+            />
+          </Suspense>
+        </Show>
+
+        <button
+          type="button"
+          ref={gifButtonRef}
+          class="message-gif-button"
+          onClick={() => setShowGifPicker((v) => !v)}
+          disabled={!props.activeChannelId || props.isSending || !!props.savingMessageId || !!props.deletingMessageId}
+          aria-label="Add GIF"
+          title="Add GIF"
+        >
+          <span class="gif-button-text">GIF</span>
+        </button>
+        <Show when={showGifPicker()}>
+          <Suspense fallback={<div>Loading...</div>}>
+            <GifPicker
+              anchorRef={gifButtonRef}
+              onSelect={(gif) => {
+                props.onGifSelect?.(gif);
+                setShowGifPicker(false);
+              }}
+              onClose={() => setShowGifPicker(false)}
+            />
+          </Suspense>
+        </Show>
+
         <button
           type="submit"
           disabled={

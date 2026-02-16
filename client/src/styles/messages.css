@@ -225,6 +225,14 @@
   grid-column: 2;
 }
 
+.message-inline-emoji {
+  width: 1.25rem;
+  height: 1.25rem;
+  margin: 0 0.08rem;
+  vertical-align: text-bottom;
+  object-fit: contain;
+}
+
 .message-link {
   color: var(--lavender);
   text-decoration: underline;
@@ -361,6 +369,51 @@
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-md);
+}
+
+.message-reactions {
+  grid-column: 2;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+}
+
+.message-reaction-chip,
+.message-reaction-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: 1px solid var(--cloud-dark);
+  border-radius: var(--radius-full);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--pearl);
+  padding: 0.2rem 0.5rem;
+  font-size: 0.75rem;
+  line-height: 1;
+  box-shadow: none;
+}
+
+.message-reaction-chip:hover,
+.message-reaction-add:hover {
+  background: rgba(255, 255, 255, 0.08);
+  transform: none;
+  box-shadow: none;
+}
+
+.message-reaction-chip.is-active {
+  border-color: var(--lavender);
+  background: rgba(164, 131, 252, 0.14);
+  color: var(--snow);
+}
+
+.message-reaction-emoji {
+  font-size: 0.85rem;
+}
+
+.message-reaction-count {
+  font-family: var(--font-mono);
+  color: var(--mist);
 }
 
 .message-attachment {
@@ -598,6 +651,40 @@
 
 .message-attach-button svg {
   display: block;
+}
+
+.message-emoji-button,
+.message-gif-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  min-width: 44px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--mist);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.message-emoji-button:hover:not(:disabled),
+.message-gif-button:hover:not(:disabled) {
+  background: var(--cloud-dark);
+  color: var(--snow);
+}
+
+.message-emoji-button:disabled,
+.message-gif-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.message-gif-button .gif-button-text {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
 }
 
 .message-attach-input {

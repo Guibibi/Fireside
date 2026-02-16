@@ -2,6 +2,7 @@ import { For, Show, createEffect, createMemo, createSignal, onCleanup, untrack }
 import { Portal } from "solid-js/web";
 import { get } from "../api/http";
 import { ZoomIcon, CloseIcon, DownloadIcon, ExternalLinkIcon } from "./icons";
+import { loadEmojis, useEmojiStore } from "../stores/emojis";
 
 interface MessageRichContentProps {
   content: string;
@@ -26,7 +27,13 @@ interface TextSegment {
   text: string;
 }
 
-type ContentSegment = LinkSegment | TextSegment;
+interface EmojiSegment {
+  type: "emoji";
+  shortcode: string;
+  url: string;
+}
+
+type ContentSegment = LinkSegment | TextSegment | EmojiSegment;
 
 interface EmbedLoadState {
   status: "loading" | "ready" | "error";
@@ -47,6 +54,7 @@ const embedCache = new Map<string, EmbedLoadState>();
 const EMBED_CACHE_MAX_ENTRIES = 300;
 
 const URL_REGEX = /https?:\/\/[^\s<>"`]+/gi;
+const CUSTOM_EMOJI_REGEX = /:([a-zA-Z0-9_]{1,32}):/g;
 const MAX_EMBEDS_PER_MESSAGE = 3;
 const IMAGE_PATH_EXT_REGEX = /\.(?:apng|avif|bmp|gif|jpe?g|png|svg|webp)$/;
 
@@ -92,7 +100,41 @@ function normalizeHttpUrl(rawUrl: string): string | null {
   }
 }
 
-function splitMessageContent(content: string): ContentSegment[] {
+function splitTextAndCustomEmojis(text: string, emojiByShortcode: Map<string, string>): ContentSegment[] {
+  const segments: ContentSegment[] = [];
+  let lastIndex = 0;
+
+  CUSTOM_EMOJI_REGEX.lastIndex = 0;
+  for (const match of text.matchAll(CUSTOM_EMOJI_REGEX)) {
+    const raw = match[0];
+    const shortcode = match[1];
+    const matchIndex = match.index ?? 0;
+    const emojiUrl = emojiByShortcode.get(shortcode);
+
+    if (!emojiUrl) {
+      continue;
+    }
+
+    if (matchIndex > lastIndex) {
+      segments.push({ type: "text", text: text.slice(lastIndex, matchIndex) });
+    }
+
+    segments.push({ type: "emoji", shortcode, url: emojiUrl });
+    lastIndex = matchIndex + raw.length;
+  }
+
+  if (lastIndex < text.length) {
+    segments.push({ type: "text", text: text.slice(lastIndex) });
+  }
+
+  if (segments.length === 0) {
+    segments.push({ type: "text", text });
+  }
+
+  return segments;
+}
+
+function splitMessageContent(content: string, emojiByShortcode: Map<string, string>): ContentSegment[] {
   const segments: ContentSegment[] = [];
   let lastIndex = 0;
 
@@ -104,23 +146,23 @@ function splitMessageContent(content: string): ContentSegment[] {
     const normalized = normalizeHttpUrl(clean);
 
     if (matchIndex > lastIndex) {
-      segments.push({ type: "text", text: content.slice(lastIndex, matchIndex) });
+      segments.push(...splitTextAndCustomEmojis(content.slice(lastIndex, matchIndex), emojiByShortcode));
     }
 
     if (normalized) {
       segments.push({ type: "link", href: normalized, text: clean });
       if (trailing.length > 0) {
-        segments.push({ type: "text", text: trailing });
+        segments.push(...splitTextAndCustomEmojis(trailing, emojiByShortcode));
       }
     } else {
-      segments.push({ type: "text", text: raw });
+      segments.push(...splitTextAndCustomEmojis(raw, emojiByShortcode));
     }
 
     lastIndex = matchIndex + raw.length;
   }
 
   if (lastIndex < content.length) {
-    segments.push({ type: "text", text: content.slice(lastIndex) });
+    segments.push(...splitTextAndCustomEmojis(content.slice(lastIndex), emojiByShortcode));
   }
 
   if (segments.length === 0) {
@@ -256,7 +298,15 @@ function isDirectImageEmbed(state: EmbedLoadState | undefined, sourceUrl: string
 }
 
 export default function MessageRichContent(props: MessageRichContentProps) {
-  const segments = createMemo(() => splitMessageContent(props.content));
+  const emojiStore = useEmojiStore();
+  const emojiByShortcode = createMemo(() => {
+    const lookup = new Map<string, string>();
+    for (const emoji of emojiStore.emojis) {
+      lookup.set(emoji.shortcode, emoji.url);
+    }
+    return lookup;
+  });
+  const segments = createMemo(() => splitMessageContent(props.content, emojiByShortcode()));
   const previewUrls = createMemo(() => extractUniqueUrls(props.content).slice(0, MAX_EMBEDS_PER_MESSAGE));
   const embedCandidateUrls = createMemo(() => previewUrls().filter((url) => !isDirectImageUrl(url)));
   const [embedsByUrl, setEmbedsByUrl] = createSignal<Record<string, EmbedLoadState>>({});
@@ -301,8 +351,24 @@ export default function MessageRichContent(props: MessageRichContentProps) {
       return segment.text.length > 0;
     }
 
+    if (segment.type === "emoji") {
+      return true;
+    }
+
     return !hiddenLinkUrls().has(segment.href);
   }));
+
+  createEffect(() => {
+    if (!props.content.includes(":")) {
+      return;
+    }
+
+    if (emojiStore.loading || emojiStore.emojis.length > 0) {
+      return;
+    }
+
+    void loadEmojis();
+  });
 
   createEffect(() => {
     if (!imagePreview()) {
@@ -412,6 +478,8 @@ export default function MessageRichContent(props: MessageRichContentProps) {
                     </a>
                   </Show>
                 )
+                : segment.type === "emoji"
+                  ? <img class="message-inline-emoji" src={segment.url} alt={`:${segment.shortcode}:`} loading="lazy" decoding="async" />
                 : segment.text
             )}
           </For>

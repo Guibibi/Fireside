@@ -1,6 +1,9 @@
 pub mod auth_routes;
 pub mod channel_routes;
 pub mod embed_routes;
+pub mod emoji_routes;
+pub mod gif_routes;
 pub mod invite_routes;
 pub mod media_routes;
+pub mod reaction_routes;
 pub mod user_routes;

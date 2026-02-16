@@ -80,3 +80,23 @@ pub struct MediaAsset {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
+
+#[derive(Debug, Serialize, Deserialize, Clone, sqlx::FromRow)]
+pub struct Emoji {
+    pub id: Uuid,
+    pub shortcode: String,
+    pub name: String,
+    pub media_id: Uuid,
+    pub created_by: Uuid,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, sqlx::FromRow)]
+pub struct Reaction {
+    pub id: Uuid,
+    pub message_id: Uuid,
+    pub user_id: Uuid,
+    pub emoji_id: Option<Uuid>,
+    pub unicode_emoji: Option<String>,
+    pub created_at: DateTime<Utc>,
+}

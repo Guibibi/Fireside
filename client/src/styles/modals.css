@@ -206,6 +206,49 @@
   gap: var(--space-xs);
 }
 
+.emoji-settings-list {
+  list-style: none;
+  display: grid;
+  gap: var(--space-sm);
+  margin: 0;
+  padding: 0;
+}
+
+.emoji-settings-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  border: 1px solid var(--cloud-dark);
+  border-radius: var(--radius-md);
+  padding: var(--space-sm) var(--space-md);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.emoji-settings-item-main {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  min-width: 0;
+}
+
+.emoji-settings-item-main img {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+}
+
+.emoji-settings-shortcode {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--snow);
+}
+
+.emoji-settings-name {
+  font-size: 0.75rem;
+  color: var(--mist);
+}
+
 .settings-volume-header {
   display: flex;
   align-items: center;

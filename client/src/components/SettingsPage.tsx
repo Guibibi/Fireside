@@ -3,7 +3,7 @@ import { useNavigate } from "@solidjs/router";
 import { patch } from "../api/http";
 import { errorMessage } from "../utils/error";
 import { CloseIcon } from "./icons";
-import { InviteSettings } from "./settings-sections";
+import { EmojiSettings, InviteSettings } from "./settings-sections";
 import {
   isSpeakerSelectionSupported,
   listAudioDevices,
@@ -92,6 +92,7 @@ const NAV_ITEMS: { key: SettingsSection; label: string; adminOnly?: boolean }[] 
   { key: "profile", label: "Profile" },
   { key: "audio", label: "Audio" },
   { key: "invites", label: "Invites", adminOnly: true },
+  { key: "emojis", label: "Emojis", adminOnly: true },
   { key: "notifications", label: "Notifications" },
   { key: "session", label: "Session" },
 ];
@@ -542,6 +543,10 @@ export default function SettingsPage() {
 
           <Show when={activeSettingsSection() === "invites"}>
             <InviteSettings isOperatorOrAdmin={role() === "operator" || role() === "admin"} />
+          </Show>
+
+          <Show when={activeSettingsSection() === "emojis"}>
+            <EmojiSettings isOperatorOrAdmin={role() === "operator" || role() === "admin"} />
           </Show>
 
           <Show when={activeSettingsSection() === "notifications"}>
