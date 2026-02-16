@@ -10,6 +10,7 @@ import {
 import { onConnectionStatus, type WsConnectionStatus } from "../api/ws";
 
 export type VoiceActionState = "idle" | "joining" | "leaving";
+export type StreamWatchMode = "none" | "focused" | "mini";
 
 export interface VoicePresenceChannel {
   channel_id: string;
@@ -32,6 +33,9 @@ const [localScreenShareStream, setLocalScreenShareStream] = createSignal<MediaSt
 const [screenShareRoutingMode, setScreenShareRoutingMode] = createSignal<"sfu" | null>(null);
 const [videoTiles, setVideoTiles] = createSignal<RemoteVideoTile[]>([]);
 const [voiceConnectionStatus, setVoiceConnectionStatus] = createSignal<WsConnectionStatus>("disconnected");
+const [streamWatchMode, setStreamWatchMode] = createSignal<StreamWatchMode>("none");
+const [watchedStreamProducerId, setWatchedStreamProducerId] = createSignal<string | null>(null);
+const [streamWatchNotice, setStreamWatchNotice] = createSignal<string | null>(null);
 let unsubscribeVideoTiles: (() => void) | null = null;
 let unsubscribeCameraState: (() => void) | null = null;
 let unsubscribeScreenState: (() => void) | null = null;
@@ -267,6 +271,8 @@ export function resetVoiceMediaState() {
   setScreenShareError(null);
   setLocalScreenShareStream(null);
   setScreenShareRoutingMode(null);
+  setStreamWatchMode("none");
+  setWatchedStreamProducerId(null);
 }
 
 export function resetVoiceState() {
@@ -278,7 +284,40 @@ export function resetVoiceState() {
   setSpeakerMuted(false);
   setVoiceRejoinNotice(false);
   setVoiceConnectionStatus("disconnected");
+  setStreamWatchNotice(null);
   resetVoiceMediaState();
+}
+
+export function startWatchingStream(producerId: string) {
+  setWatchedStreamProducerId(producerId);
+  setStreamWatchMode("focused");
+  setStreamWatchNotice(null);
+}
+
+export function minimizeWatchingStream() {
+  if (!watchedStreamProducerId()) {
+    setStreamWatchMode("none");
+    return;
+  }
+
+  setStreamWatchMode("mini");
+}
+
+export function stopWatchingStream() {
+  setStreamWatchMode("none");
+  setWatchedStreamProducerId(null);
+}
+
+export function isStreamWatchFocused(): boolean {
+  return streamWatchMode() === "focused" && watchedStreamProducerId() !== null;
+}
+
+export function showStreamWatchNotice(message: string) {
+  setStreamWatchNotice(message);
+}
+
+export function clearStreamWatchNotice() {
+  setStreamWatchNotice(null);
 }
 
 export function showVoiceRejoinNotice() {
@@ -310,6 +349,9 @@ export {
   speakingByChannel,
   videoTiles,
   voiceConnectionStatus,
+  streamWatchMode,
+  watchedStreamProducerId,
+  streamWatchNotice,
   voiceActionState,
   setVoiceActionState,
   micMuted,

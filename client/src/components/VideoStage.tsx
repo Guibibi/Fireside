@@ -37,7 +37,8 @@ function StreamVideo(props: StreamVideoProps) {
 }
 
 export default function VideoStage() {
-  const hasVideo = () => cameraEnabled() || screenShareEnabled() || videoTiles().length > 0;
+  const cameraTiles = () => videoTiles().filter((tile) => tile.source === "camera");
+  const hasVideo = () => cameraEnabled() || screenShareEnabled() || cameraTiles().length > 0;
 
   return (
     <Show when={hasVideo()}>
@@ -61,13 +62,11 @@ export default function VideoStage() {
             )}
           </Show>
 
-          <For each={videoTiles()}>
+          <For each={cameraTiles()}>
             {(tile) => (
-              <article class={`video-stage-tile${tile.source === "screen" ? " is-screen-share" : ""}`}>
+              <article class="video-stage-tile">
                 <StreamVideo stream={tile.stream} muted={false} />
-                <p class="video-stage-label">
-                  {tile.username} - {tile.source === "screen" ? "Screen" : "Camera"}
-                </p>
+                <p class="video-stage-label">{tile.username} - Camera</p>
               </article>
             )}
           </For>
