@@ -13,6 +13,7 @@ interface MessageComposerProps {
   onSubmit: (event: Event) => void;
   onDraftInput: (value: string) => void;
   onAttachmentInput: (event: Event) => void;
+  onDraftPaste: (event: ClipboardEvent) => void;
   onRemoveAttachment: (clientId: string) => void;
 }
 
@@ -77,6 +78,7 @@ export default function MessageComposer(props: MessageComposerProps) {
           placeholder={props.activeChannelId ? "Send a message or share an image..." : "Select a channel to start messaging"}
           value={props.draft}
           onInput={(event) => props.onDraftInput(event.currentTarget.value)}
+          onPaste={(event) => props.onDraftPaste(event)}
           disabled={!props.activeChannelId || !!props.savingMessageId || !!props.deletingMessageId}
         />
         <button

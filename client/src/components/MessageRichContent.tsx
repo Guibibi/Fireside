@@ -1,4 +1,5 @@
-import { For, Show, createEffect, createMemo, createSignal, untrack } from "solid-js";
+import { For, Show, createEffect, createMemo, createSignal, onCleanup, untrack } from "solid-js";
+import { Portal } from "solid-js/web";
 import { get } from "../api/http";
 
 interface MessageRichContentProps {
@@ -31,11 +32,22 @@ interface EmbedLoadState {
   embed?: EmbedPreview;
 }
 
+interface ImagePreview {
+  displayUrl: string;
+  originalUrl: string;
+}
+
+interface InlineImageEntry {
+  sourceUrl: string;
+  imageUrl: string;
+}
+
 const embedCache = new Map<string, EmbedLoadState>();
 const EMBED_CACHE_MAX_ENTRIES = 300;
 
 const URL_REGEX = /https?:\/\/[^\s<>"`]+/gi;
 const MAX_EMBEDS_PER_MESSAGE = 3;
+const IMAGE_PATH_EXT_REGEX = /\.(?:apng|avif|bmp|gif|jpe?g|png|svg|webp)$/;
 
 function trimTrailingPunctuation(url: string): { clean: string; trailing: string } {
   let end = url.length;
@@ -207,12 +219,111 @@ function extractYouTubeVideoId(rawUrl: string): string | null {
   return null;
 }
 
+function isDirectImageUrl(rawUrl: string): boolean {
+  try {
+    const parsed = new URL(rawUrl);
+    return IMAGE_PATH_EXT_REGEX.test(parsed.pathname.toLowerCase());
+  } catch {
+    return false;
+  }
+}
+
+function normalizeComparableUrl(rawUrl: string): string | null {
+  try {
+    const parsed = new URL(rawUrl);
+    parsed.hash = "";
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+}
+
+function isDirectImageEmbed(state: EmbedLoadState | undefined, sourceUrl: string): boolean {
+  if (state?.status !== "ready" || !state.embed?.image_url) {
+    return false;
+  }
+
+  const normalizedImage = normalizeComparableUrl(state.embed.image_url);
+  const normalizedEmbedUrl = normalizeComparableUrl(state.embed.url ?? sourceUrl);
+  const normalizedSourceUrl = normalizeComparableUrl(sourceUrl);
+
+  if (!normalizedImage) {
+    return false;
+  }
+
+  return normalizedImage === normalizedEmbedUrl || normalizedImage === normalizedSourceUrl;
+}
+
 export default function MessageRichContent(props: MessageRichContentProps) {
   const segments = createMemo(() => splitMessageContent(props.content));
   const previewUrls = createMemo(() => extractUniqueUrls(props.content).slice(0, MAX_EMBEDS_PER_MESSAGE));
+  const embedCandidateUrls = createMemo(() => previewUrls().filter((url) => !isDirectImageUrl(url)));
   const [embedsByUrl, setEmbedsByUrl] = createSignal<Record<string, EmbedLoadState>>({});
   const [playingVideos, setPlayingVideos] = createSignal<Record<string, boolean>>({});
   const [isLoadingEmbeds, setIsLoadingEmbeds] = createSignal(false);
+  const [imagePreview, setImagePreview] = createSignal<ImagePreview | null>(null);
+
+  const inlineImageEntries = createMemo<InlineImageEntry[]>(() => {
+    const entries: InlineImageEntry[] = [];
+    const states = embedsByUrl();
+
+    for (const url of previewUrls()) {
+      if (isDirectImageUrl(url)) {
+        entries.push({ sourceUrl: url, imageUrl: url });
+        continue;
+      }
+
+      const state = states[url];
+      if (isDirectImageEmbed(state, url) && state?.embed?.image_url) {
+        entries.push({ sourceUrl: url, imageUrl: state.embed.image_url });
+      }
+    }
+
+    return entries;
+  });
+
+  const embedUrls = createMemo(() => {
+    const inlineSources = new Set(inlineImageEntries().map((entry) => entry.sourceUrl));
+    return previewUrls().filter((url) => !inlineSources.has(url));
+  });
+
+  const hiddenLinkUrls = createMemo(() => {
+    const urls = new Set<string>();
+    for (const entry of inlineImageEntries()) {
+      urls.add(entry.sourceUrl);
+    }
+    return urls;
+  });
+
+  const hasVisibleMessageContent = createMemo(() => segments().some((segment) => {
+    if (segment.type === "text") {
+      return segment.text.length > 0;
+    }
+
+    return !hiddenLinkUrls().has(segment.href);
+  }));
+
+  createEffect(() => {
+    if (!imagePreview()) {
+      return;
+    }
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setImagePreview(null);
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    onCleanup(() => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", onKeyDown);
+    });
+  });
 
   async function loadEmbeds(candidateUrls: string[]) {
     if (isLoadingEmbeds()) {
@@ -266,7 +377,7 @@ export default function MessageRichContent(props: MessageRichContentProps) {
   }
 
   createEffect(() => {
-    const urls = previewUrls();
+    const urls = embedCandidateUrls();
     if (urls.length === 0) {
       return;
     }
@@ -288,23 +399,65 @@ export default function MessageRichContent(props: MessageRichContentProps) {
 
   return (
     <>
-      <p class="message-content">
-        <For each={segments()}>
-          {(segment) => (
-            segment.type === "link"
-              ? (
-                <a class="message-link" href={segment.href} target="_blank" rel="noopener noreferrer nofollow ugc">
-                  {segment.text}
-                </a>
-              )
-              : segment.text
-          )}
-        </For>
-      </p>
+      <Show when={hasVisibleMessageContent()}>
+        <p class="message-content">
+          <For each={segments()}>
+            {(segment) => (
+              segment.type === "link"
+                ? (
+                  <Show when={!hiddenLinkUrls().has(segment.href)}>
+                    <a class="message-link" href={segment.href} target="_blank" rel="noopener noreferrer nofollow ugc">
+                      {segment.text}
+                    </a>
+                  </Show>
+                )
+                : segment.text
+            )}
+          </For>
+        </p>
+      </Show>
 
       <Show when={previewUrls().length > 0}>
         <div class="message-embeds">
-          <For each={previewUrls()}>
+          <For each={inlineImageEntries()}>
+            {(entry) => (
+              <figure class="message-attachment" data-status="ready">
+                <div class="message-attachment-media">
+                  <button
+                    type="button"
+                    class="message-attachment-open"
+                    onClick={() => {
+                      setImagePreview({
+                        displayUrl: entry.imageUrl,
+                        originalUrl: entry.imageUrl,
+                      });
+                    }}
+                    aria-label="Open image preview"
+                    title="Open image preview"
+                  >
+                    <img src={entry.imageUrl} alt="Shared image link" loading="lazy" decoding="async" />
+                  </button>
+                  <button
+                    type="button"
+                    class="message-attachment-preview-overlay"
+                    onClick={() => {
+                      setImagePreview({
+                        displayUrl: entry.imageUrl,
+                        originalUrl: entry.imageUrl,
+                      });
+                    }}
+                    aria-label="Open image preview"
+                    title="Open image preview"
+                  >
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M3 12s3.6-6 9-6 9 6 9 6-3.6 6-9 6-9-6-9-6Zm9 3.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" />
+                    </svg>
+                  </button>
+                </div>
+              </figure>
+            )}
+          </For>
+          <For each={embedUrls()}>
             {(url) => {
               const state = createMemo(() => embedsByUrl()[url]);
               return (
@@ -417,10 +570,63 @@ export default function MessageRichContent(props: MessageRichContentProps) {
               );
             }}
           </For>
-          <Show when={isLoadingEmbeds()}>
+          <Show when={isLoadingEmbeds() && embedUrls().length > 0}>
             <p class="message-embed-loading-indicator">Loading previews...</p>
           </Show>
         </div>
+      </Show>
+      <Show when={imagePreview()}>
+        <Portal>
+          <div class="message-image-popup" role="presentation" onClick={() => setImagePreview(null)}>
+            <div
+              class="message-image-popup-content"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Image preview"
+            >
+              <div class="message-image-popup-stage" onClick={(event) => event.stopPropagation()}>
+                <img src={imagePreview()?.displayUrl ?? ""} alt="Expanded chat image" loading="eager" decoding="async" />
+                <div class="message-image-modal-actions" role="group" aria-label="Image actions">
+                  <button
+                    type="button"
+                    class="message-image-modal-action"
+                    onClick={() => setImagePreview(null)}
+                    aria-label="Close preview"
+                    title="Close"
+                  >
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M6.7 5.3a1 1 0 0 1 1.4 0L12 9.17l3.9-3.88a1 1 0 0 1 1.4 1.42L13.42 10.6l3.88 3.9a1 1 0 1 1-1.42 1.4L12 12.01l-3.9 3.88a1 1 0 1 1-1.4-1.42l3.89-3.88-3.88-3.9a1 1 0 0 1 0-1.4Z" />
+                    </svg>
+                  </button>
+                  <a
+                    class="message-image-modal-action"
+                    href={imagePreview()?.originalUrl ?? "#"}
+                    download="attachment"
+                    aria-label="Download image"
+                    title="Download"
+                  >
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M12 3a1 1 0 0 1 1 1v8.59l2.3-2.3a1 1 0 1 1 1.4 1.42l-4 4a1 1 0 0 1-1.4 0l-4-4a1 1 0 1 1 1.4-1.42l2.3 2.3V4a1 1 0 0 1 1-1Zm-7 14a1 1 0 0 1 1 1v1h12v-1a1 1 0 1 1 2 0v2a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-2a1 1 0 0 1 1-1Z" />
+                    </svg>
+                  </a>
+                  <a
+                    class="message-image-modal-action"
+                    href={imagePreview()?.originalUrl ?? "#"}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label="Open full image in new tab"
+                    title="Open full image"
+                  >
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M14 4a1 1 0 0 0 0 2h4.59l-7.3 7.29a1 1 0 0 0 1.42 1.42L20 7.41V12a1 1 0 1 0 2 0V4h-8Z" />
+                      <path d="M5 6a3 3 0 0 0-3 3v10a3 3 0 0 0 3 3h10a3 3 0 0 0 3-3v-5a1 1 0 1 0-2 0v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1h5a1 1 0 1 0 0-2H5Z" />
+                    </svg>
+                  </a>
+                </div>
+              </div>
+            </div>
+          </div>
+        </Portal>
       </Show>
     </>
   );

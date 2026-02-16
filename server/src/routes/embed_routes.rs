@@ -96,11 +96,17 @@ async fn fetch_embed(
         .to_ascii_lowercase();
 
     if !content_type.contains("text/html") {
+        let image_url = if content_type.starts_with("image/") {
+            Some(final_url.to_string())
+        } else {
+            None
+        };
+
         let basic = EmbedResponse {
             url: final_url.to_string(),
             title: sanitize_text(final_url.domain().or(final_url.host_str())),
             description: None,
-            image_url: None,
+            image_url,
             site_name: sanitize_text(final_url.domain()),
         };
 

@@ -37,6 +37,120 @@ interface EditedMessageResponse {
 
 const MESSAGE_PAGE_SIZE = 20;
 
+function extensionFromMimeType(mimeType: string): string {
+  if (mimeType === "image/jpeg") {
+    return "jpg";
+  }
+  if (mimeType === "image/png") {
+    return "png";
+  }
+  if (mimeType === "image/webp") {
+    return "webp";
+  }
+  if (mimeType === "image/gif") {
+    return "gif";
+  }
+
+  return "img";
+}
+
+function filenameFromImageSource(src: string, mimeType: string, index: number): string {
+  try {
+    const parsed = new URL(src);
+    const pathname = parsed.pathname || "";
+    const candidate = pathname.split("/").pop()?.trim();
+    if (candidate) {
+      return decodeURIComponent(candidate);
+    }
+  } catch {
+    // fall back to generated name
+  }
+
+  return `pasted-image-${Date.now()}-${index}.${extensionFromMimeType(mimeType)}`;
+}
+
+async function clipboardHtmlImageFiles(clipboard: DataTransfer): Promise<File[]> {
+  const html = clipboard.getData("text/html");
+  if (!html) {
+    return [];
+  }
+
+  const parser = new DOMParser();
+  const document = parser.parseFromString(html, "text/html");
+  const sources = Array.from(document.querySelectorAll("img"))
+    .map((image) => image.getAttribute("src")?.trim() ?? "")
+    .filter((src) => src.length > 0);
+
+  const uniqueSources = Array.from(new Set(sources));
+  const fetchedFiles = await Promise.all(uniqueSources.map(async (source, index) => {
+    try {
+      const response = await fetch(source);
+      if (!response.ok) {
+        return null;
+      }
+
+      const blob = await response.blob();
+      if (!blob.type.startsWith("image/")) {
+        return null;
+      }
+
+      const filename = filenameFromImageSource(source, blob.type, index + 1);
+      return new File([blob], filename, { type: blob.type });
+    } catch {
+      return null;
+    }
+  }));
+
+  return fetchedFiles.filter((file): file is File => !!file);
+}
+
+async function extractPastedImageFiles(event: ClipboardEvent): Promise<File[]> {
+  const clipboard = event.clipboardData;
+  if (!clipboard) {
+    return [];
+  }
+
+  const imageFiles: File[] = [];
+  const dedupe = new Set<string>();
+
+  function maybeAddImage(file: File | null) {
+    if (!file || !file.type.startsWith("image/")) {
+      return;
+    }
+
+    const key = `${file.name}:${file.size}:${file.type}`;
+    if (dedupe.has(key)) {
+      return;
+    }
+
+    dedupe.add(key);
+    imageFiles.push(file);
+  }
+
+  for (const file of Array.from(clipboard.files)) {
+    maybeAddImage(file);
+  }
+
+  for (const item of Array.from(clipboard.items)) {
+    if (item.kind !== "file") {
+      continue;
+    }
+
+    maybeAddImage(item.getAsFile());
+  }
+
+  if (imageFiles.length > 0) {
+    return imageFiles;
+  }
+
+  const htmlImageFiles = await clipboardHtmlImageFiles(clipboard);
+  for (const file of htmlImageFiles) {
+    maybeAddImage(file);
+  }
+
+  return imageFiles;
+}
+
 async function fetchMessagesPage(channelId: string, before?: string) {
   const params = new URLSearchParams({ limit: String(MESSAGE_PAGE_SIZE) });
   if (before) {
@@ -240,6 +354,23 @@ export default function MessageArea() {
       void uploadAttachment(file);
     }
     input.value = "";
+  }
+
+  async function handleDraftPaste(event: ClipboardEvent) {
+    if (!activeChannelId() || isSending() || savingMessageId() || deletingMessageId()) {
+      return;
+    }
+
+    const files = await extractPastedImageFiles(event);
+    if (files.length === 0) {
+      return;
+    }
+
+    event.preventDefault();
+    setWsError("");
+    for (const file of files) {
+      void uploadAttachment(file);
+    }
   }
 
   function updateStickyDate() {
@@ -720,6 +851,9 @@ export default function MessageArea() {
         onSubmit={handleSubmit}
         onDraftInput={typing.handleDraftInput}
         onAttachmentInput={handleAttachmentInput}
+        onDraftPaste={(event) => {
+          void handleDraftPaste(event);
+        }}
         onRemoveAttachment={removePendingAttachment}
       />
       <Show when={typing.typingUsernames().length > 0}>
