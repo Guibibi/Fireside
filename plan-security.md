@@ -14,8 +14,8 @@
 - [x] Use combined limiter keys (IP + username where applicable) to reduce credential stuffing risk.
 - [x] Keep auth error responses generic and uniform to avoid account enumeration.
 - [x] Add structured security logs for auth failures and rate-limit triggers.
-- [ ] Add endpoint/body-size guardrails where missing.
-- [ ] Add tests for rate-limit behavior (allow, block, and reset window).
+- [x] Add endpoint/body-size guardrails where missing.
+- [x] Add tests for rate-limit behavior (allow, block, and reset window).
 
 ## Phase 2 - Performance Bottlenecks
 

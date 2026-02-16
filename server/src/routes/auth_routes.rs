@@ -1,5 +1,5 @@
 use axum::{
-    extract::State,
+    extract::{DefaultBodyLimit, State},
     http::HeaderMap,
     routing::{get, post},
     Json, Router,
@@ -20,6 +20,7 @@ const AUTH_RATE_LIMIT_WINDOW: Duration = Duration::from_secs(60);
 const LOGIN_MAX_ATTEMPTS_PER_WINDOW: u32 = 12;
 const REGISTER_MAX_ATTEMPTS_PER_WINDOW: u32 = 10;
 const SETUP_MAX_ATTEMPTS_PER_WINDOW: u32 = 5;
+const AUTH_MAX_REQUEST_BODY_BYTES: usize = 16 * 1024;
 
 #[derive(Debug, Clone)]
 struct AuthRateLimitEntry {
@@ -68,6 +69,7 @@ pub fn router() -> Router<AppState> {
         .route("/setup", post(setup))
         .route("/register", post(register))
         .route("/login", post(login))
+        .layer(DefaultBodyLimit::max(AUTH_MAX_REQUEST_BODY_BYTES))
 }
 
 async fn setup_status(
@@ -382,4 +384,68 @@ fn validate_password(password: &str) -> Result<(), AppError> {
         ));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::http::HeaderValue;
+
+    #[tokio::test]
+    async fn rate_limiter_blocks_after_limit() {
+        let key = "test:login:block".to_string();
+        {
+            let mut limits = AUTH_RATE_LIMITS.lock().await;
+            limits.clear();
+        }
+
+        for _ in 0..LOGIN_MAX_ATTEMPTS_PER_WINDOW {
+            assert!(allow_auth_attempt(key.clone(), LOGIN_MAX_ATTEMPTS_PER_WINDOW).await);
+        }
+
+        assert!(!allow_auth_attempt(key, LOGIN_MAX_ATTEMPTS_PER_WINDOW).await);
+    }
+
+    #[tokio::test]
+    async fn rate_limiter_resets_after_window() {
+        let key = "test:login:reset".to_string();
+        {
+            let mut limits = AUTH_RATE_LIMITS.lock().await;
+            limits.clear();
+            limits.insert(
+                key.clone(),
+                AuthRateLimitEntry {
+                    window_started_at: Instant::now()
+                        - AUTH_RATE_LIMIT_WINDOW
+                        - Duration::from_secs(1),
+                    attempts: LOGIN_MAX_ATTEMPTS_PER_WINDOW,
+                },
+            );
+        }
+
+        assert!(allow_auth_attempt(key.clone(), LOGIN_MAX_ATTEMPTS_PER_WINDOW).await);
+
+        let limits = AUTH_RATE_LIMITS.lock().await;
+        let entry = limits.get(&key).expect("entry should exist");
+        assert_eq!(entry.attempts, 1);
+    }
+
+    #[test]
+    fn client_ip_uses_forwarded_for_first_value() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "x-forwarded-for",
+            HeaderValue::from_static(" 203.0.113.8 , 10.0.0.1"),
+        );
+
+        assert_eq!(client_ip_from_headers(&headers), "203.0.113.8");
+    }
+
+    #[test]
+    fn client_ip_falls_back_to_x_real_ip() {
+        let mut headers = HeaderMap::new();
+        headers.insert("x-real-ip", HeaderValue::from_static("198.51.100.9"));
+
+        assert_eq!(client_ip_from_headers(&headers), "198.51.100.9");
+    }
 }
