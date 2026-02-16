@@ -23,6 +23,10 @@ export function audioInputConstraint(deviceId: string | null = preferredAudioInp
     constraints.echoCancellation = voiceEchoCancellationEnabled();
   }
 
+  if (supportedConstraints?.channelCount) {
+    constraints.channelCount = 1;
+  }
+
   if (Object.keys(constraints).length === 0) {
     return true;
   }
