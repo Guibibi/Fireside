@@ -105,6 +105,16 @@
   margin-top: var(--space-md);
 }
 
+.invite-create-options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.invite-option-row {
+  max-width: 320px;
+}
+
 .invite-card {
   padding: var(--space-md);
   border-radius: var(--radius-md);
@@ -137,7 +147,8 @@
   font-size: 0.75rem;
   color: var(--soft);
   display: flex;
-  align-items: center;
+  align-items: flex-start;
+  flex-direction: column;
   gap: var(--space-sm);
 }
 

@@ -44,6 +44,8 @@ import {
     preferredScreenShareResolution,
     preferredScreenShareSourceKind,
     savePreferredScreenShareSourceKind,
+    closeSettings,
+    settingsOpen,
 } from "../stores/settings";
 import { errorMessage } from "../utils/error";
 import { isTauriRuntime } from "../utils/platform";
@@ -470,6 +472,10 @@ export default function ChannelList() {
         if (channel.kind === "voice") {
             joinVoiceChannel(channel.id);
             return;
+        }
+
+        if (settingsOpen()) {
+            closeSettings();
         }
 
         setActiveChannelId(channel.id);

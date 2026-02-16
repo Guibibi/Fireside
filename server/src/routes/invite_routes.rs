@@ -15,7 +15,7 @@ pub struct CreateInviteRequest {
     #[serde(default = "default_single_use")]
     pub single_use: bool,
     pub max_uses: Option<i32>,
-    pub expires_in_hours: Option<i64>,
+    pub expires_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 fn default_single_use() -> bool {
@@ -63,9 +63,29 @@ async fn create_invite(
     let code = generate_invite_code();
     let invite_id = Uuid::new_v4();
 
-    let expires_at = body
-        .expires_in_hours
-        .map(|hours| chrono::Utc::now() + chrono::Duration::hours(hours));
+    let now = chrono::Utc::now();
+    let expires_at = body.expires_at;
+    if let Some(expires_at_value) = expires_at.as_ref() {
+        if expires_at_value <= &now {
+            return Err(AppError::BadRequest(
+                "Invite expiration must be in the future".into(),
+            ));
+        }
+    }
+
+    let max_uses = if body.single_use {
+        None
+    } else {
+        let value = body.max_uses.ok_or_else(|| {
+            AppError::BadRequest("Max uses is required for multi-use invites".into())
+        })?;
+
+        if value < 1 {
+            return Err(AppError::BadRequest("Max uses must be at least 1".into()));
+        }
+
+        Some(value)
+    };
 
     sqlx::query(
         "INSERT INTO invites (id, code, created_by, single_use, max_uses, expires_at) VALUES ($1, $2, $3, $4, $5, $6)",
@@ -74,7 +94,7 @@ async fn create_invite(
     .bind(&code)
     .bind(user_id)
     .bind(body.single_use)
-    .bind(body.max_uses)
+    .bind(max_uses)
     .bind(expires_at)
     .execute(&state.db)
     .await?;
@@ -86,8 +106,8 @@ async fn create_invite(
         creator_username: claims.username,
         single_use: body.single_use,
         used_count: 0,
-        max_uses: body.max_uses,
-        created_at: chrono::Utc::now(),
+        max_uses,
+        created_at: now,
         expires_at,
         revoked: false,
     }))
