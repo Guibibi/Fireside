@@ -1,6 +1,7 @@
 import { Show, createEffect, createMemo, onCleanup } from "solid-js";
 import {
   clearStreamWatchNotice,
+  focusWatchingStream,
   isStreamWatchFocused,
   minimizeWatchingStream,
   showStreamWatchNotice,
@@ -125,23 +126,41 @@ export default function StreamWatchOverlay() {
               <div class="stream-watch-focused-actions">
                 <button
                   type="button"
-                  class="stream-watch-control"
+                  class="stream-watch-icon-btn"
                   onClick={() => {
                     if (focusedPlayerRef) {
                       requestFullscreenOnElement(focusedPlayerRef);
                     }
                   }}
+                  title="Fullscreen"
                   aria-label="Fullscreen"
                 >
-                  Fullscreen
+                  <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+                    <path d="M3 3h6v2H5v4H3zm12 0h6v6h-2V5h-4zm-12 12h2v4h4v2H3zm18 0v6h-6v-2h4v-4z" fill="currentColor" />
+                  </svg>
                 </button>
                 <button
                   type="button"
-                  class="stream-watch-control stream-watch-control-close"
-                  onClick={minimizeWatchingStream}
-                  aria-label="Close focused stream"
+                  class="stream-watch-icon-btn stream-watch-icon-btn-danger"
+                  onClick={stopWatchingStream}
+                  title="Stop watching"
+                  aria-label="Stop watching stream"
                 >
-                  X
+                  <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+                    <path d="M7 9a5 5 0 0 1 10 0v4h2V9a7 7 0 1 0-14 0v4h2z" fill="currentColor" />
+                    <path d="M12 22 8 18h3v-5h2v5h3z" fill="currentColor" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  class="stream-watch-icon-btn"
+                  onClick={minimizeWatchingStream}
+                  title="Minimize"
+                  aria-label="Minimize stream"
+                >
+                  <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+                    <path d="M19 13H5v-2h14z" fill="currentColor" />
+                  </svg>
                 </button>
               </div>
             </header>
@@ -154,17 +173,32 @@ export default function StreamWatchOverlay() {
 
       <Show when={streamWatchMode() === "mini" && watchedTile()}>
         {(tile) => (
-          <aside class="stream-watch-mini" role="region" aria-label={`${tile().username} mini player`} tabIndex={0}>
+          <aside
+            class="stream-watch-mini"
+            role="region"
+            aria-label={`${tile().username} mini player`}
+            tabIndex={0}
+            onClick={(e) => {
+              if (!(e.target instanceof HTMLButtonElement)) {
+                focusWatchingStream();
+              }
+            }}
+            style={{ cursor: "pointer" }}
+          >
             <StreamPlayback stream={tile().stream} class="stream-watch-mini-video" />
             <div class="stream-watch-mini-overlay">
               <span class="stream-watch-mini-title">{tile().username}</span>
               <button
                 type="button"
-                class="stream-watch-control stream-watch-control-stop"
+                class="stream-watch-icon-btn stream-watch-icon-btn-danger"
                 onClick={stopWatchingStream}
-                aria-label="Stop Watching Stream"
+                title="Stop watching"
+                aria-label="Stop watching stream"
               >
-                Stop Watching Stream
+                <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+                  <path d="M7 9a5 5 0 0 1 10 0v4h2V9a7 7 0 1 0-14 0v4h2z" fill="currentColor" />
+                  <path d="M12 22 8 18h3v-5h2v5h3z" fill="currentColor" />
+                </svg>
               </button>
             </div>
           </aside>

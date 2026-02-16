@@ -58,14 +58,28 @@
   gap: var(--space-sm);
 }
 
-.stream-watch-control {
-  padding: var(--space-xs) var(--space-md);
-  font-size: 0.76rem;
+.stream-watch-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.14);
+  color: var(--snow);
+  cursor: pointer;
+  transition: background 0.15s var(--ease-soft), color 0.15s var(--ease-soft);
 }
 
-.stream-watch-control-close {
-  min-width: 2rem;
-  padding: var(--space-xs);
+.stream-watch-icon-btn:hover {
+  background: rgba(255, 255, 255, 0.24);
+}
+
+.stream-watch-icon-btn-danger:hover {
+  background: rgba(244, 164, 164, 0.22);
+  color: var(--coral);
 }
 
 .stream-watch-focused-player {
@@ -128,11 +142,6 @@
   color: var(--snow);
   font-size: 0.78rem;
   font-weight: 600;
-}
-
-.stream-watch-control-stop {
-  padding: var(--space-xs) var(--space-sm);
-  font-size: 0.7rem;
 }
 
 .stream-watch-notice {

@@ -303,6 +303,14 @@ export function minimizeWatchingStream() {
   setStreamWatchMode("mini");
 }
 
+export function focusWatchingStream() {
+  if (!watchedStreamProducerId()) {
+    return;
+  }
+
+  setStreamWatchMode("focused");
+}
+
 export function stopWatchingStream() {
   setStreamWatchMode("none");
   setWatchedStreamProducerId(null);

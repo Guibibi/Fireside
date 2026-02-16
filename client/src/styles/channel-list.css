@@ -293,16 +293,17 @@
 
 .channel-stream-hover-popover {
   position: absolute;
-  left: calc(100% + var(--space-sm));
-  top: 50%;
-  transform: translateY(-50%);
-  width: 190px;
+  left: 0;
+  bottom: 100%;
+  width: 100%;
   padding: var(--space-sm);
+  padding-bottom: calc(var(--space-sm) + var(--space-2xs));
+  margin-bottom: calc(-1 * var(--space-2xs));
   border-radius: var(--radius-md);
   border: 1px solid var(--cloud-dark);
   background: rgba(17, 15, 24, 0.96);
   box-shadow: var(--shadow-lg);
-  z-index: 40;
+  z-index: 9999;
   display: grid;
   gap: var(--space-xs);
 }
@@ -334,9 +335,6 @@
 
 @media (max-width: 820px) {
   .channel-stream-hover-popover {
-    left: 0;
-    top: calc(100% + var(--space-xs));
-    transform: none;
-    width: min(220px, 92vw);
+    width: 100%;
   }
 }
