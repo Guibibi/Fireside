@@ -11,6 +11,7 @@ import {
   videoTiles,
   watchedStreamProducerId,
 } from "../stores/voice";
+import { FullscreenIcon, DisconnectIcon, MinimizeIcon } from "./icons";
 
 interface StreamPlaybackProps {
   stream: MediaStream;
@@ -135,9 +136,7 @@ export default function StreamWatchOverlay() {
                   title="Fullscreen"
                   aria-label="Fullscreen"
                 >
-                  <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
-                    <path d="M3 3h6v2H5v4H3zm12 0h6v6h-2V5h-4zm-12 12h2v4h4v2H3zm18 0v6h-6v-2h4v-4z" fill="currentColor" />
-                  </svg>
+                  <FullscreenIcon />
                 </button>
                 <button
                   type="button"
@@ -146,10 +145,7 @@ export default function StreamWatchOverlay() {
                   title="Stop watching"
                   aria-label="Stop watching stream"
                 >
-                  <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
-                    <path d="M7 9a5 5 0 0 1 10 0v4h2V9a7 7 0 1 0-14 0v4h2z" fill="currentColor" />
-                    <path d="M12 22 8 18h3v-5h2v5h3z" fill="currentColor" />
-                  </svg>
+                  <DisconnectIcon />
                 </button>
                 <button
                   type="button"
@@ -158,9 +154,7 @@ export default function StreamWatchOverlay() {
                   title="Minimize"
                   aria-label="Minimize stream"
                 >
-                  <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
-                    <path d="M19 13H5v-2h14z" fill="currentColor" />
-                  </svg>
+                  <MinimizeIcon />
                 </button>
               </div>
             </header>
@@ -195,10 +189,7 @@ export default function StreamWatchOverlay() {
                 title="Stop watching"
                 aria-label="Stop watching stream"
               >
-                <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
-                  <path d="M7 9a5 5 0 0 1 10 0v4h2V9a7 7 0 1 0-14 0v4h2z" fill="currentColor" />
-                  <path d="M12 22 8 18h3v-5h2v5h3z" fill="currentColor" />
-                </svg>
+                <DisconnectIcon />
               </button>
             </div>
           </aside>

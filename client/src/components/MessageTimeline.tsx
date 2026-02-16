@@ -13,6 +13,7 @@ import MessageRichContent from "./MessageRichContent";
 import UserAvatar from "./UserAvatar";
 import type { ChannelMessage, MessageDayGroup } from "./messageTypes";
 import { isMentioningUsername } from "../utils/mentions";
+import { ZoomIcon, CloseIcon, DownloadIcon, ExternalLinkIcon } from "./icons";
 
 interface MessageTimelineProps {
   activeChannel: Channel | null | undefined;
@@ -264,9 +265,7 @@ export default function MessageTimeline(props: MessageTimelineProps) {
                                               aria-label="Open image preview"
                                               title="Open image preview"
                                             >
-                                              <svg viewBox="0 0 24 24" aria-hidden="true">
-                                                <path d="M3 12s3.6-6 9-6 9 6 9 6-3.6 6-9 6-9-6-9-6Zm9 3.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" />
-                                              </svg>
+                                              <ZoomIcon />
                                             </button>
                                           </div>
                                         </Show>
@@ -332,9 +331,7 @@ export default function MessageTimeline(props: MessageTimelineProps) {
                     aria-label="Close preview"
                     title="Close"
                   >
-                    <svg viewBox="0 0 24 24" aria-hidden="true">
-                      <path d="M6.7 5.3a1 1 0 0 1 1.4 0L12 9.17l3.9-3.88a1 1 0 0 1 1.4 1.42L13.42 10.6l3.88 3.9a1 1 0 1 1-1.42 1.4L12 12.01l-3.9 3.88a1 1 0 1 1-1.4-1.42l3.89-3.88-3.88-3.9a1 1 0 0 1 0-1.4Z" />
-                    </svg>
+                    <CloseIcon />
                   </button>
                   <a
                     class="message-image-modal-action"
@@ -343,9 +340,7 @@ export default function MessageTimeline(props: MessageTimelineProps) {
                     aria-label="Download image"
                     title="Download"
                   >
-                    <svg viewBox="0 0 24 24" aria-hidden="true">
-                      <path d="M12 3a1 1 0 0 1 1 1v8.59l2.3-2.3a1 1 0 1 1 1.4 1.42l-4 4a1 1 0 0 1-1.4 0l-4-4a1 1 0 1 1 1.4-1.42l2.3 2.3V4a1 1 0 0 1 1-1Zm-7 14a1 1 0 0 1 1 1v1h12v-1a1 1 0 1 1 2 0v2a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-2a1 1 0 0 1 1-1Z" />
-                    </svg>
+                    <DownloadIcon />
                   </a>
                   <a
                     class="message-image-modal-action"
@@ -355,10 +350,7 @@ export default function MessageTimeline(props: MessageTimelineProps) {
                     aria-label="Open full image in new tab"
                     title="Open full image"
                   >
-                    <svg viewBox="0 0 24 24" aria-hidden="true">
-                      <path d="M14 4a1 1 0 0 0 0 2h4.59l-7.3 7.29a1 1 0 0 0 1.42 1.42L20 7.41V12a1 1 0 1 0 2 0V4h-8Z" />
-                      <path d="M5 6a3 3 0 0 0-3 3v10a3 3 0 0 0 3 3h10a3 3 0 0 0 3-3v-5a1 1 0 1 0-2 0v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1h5a1 1 0 1 0 0-2H5Z" />
-                    </svg>
+                    <ExternalLinkIcon />
                   </a>
                 </div>
               </div>

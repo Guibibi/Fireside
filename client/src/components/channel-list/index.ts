@@ -3,3 +3,4 @@ export { default as CreateChannelModal, type CreateChannelModalProps } from "./C
 export { default as ScreenShareModal, type ScreenShareModalProps } from "./ScreenShareModal";
 export { default as VoiceDock, type VoiceDockProps } from "./VoiceDock";
 export * from "./helpers";
+export * from "./hooks";

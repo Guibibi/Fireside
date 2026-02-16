@@ -93,6 +93,7 @@ import {
 } from "../stores/voice";
 import AsyncContent from "./AsyncContent";
 import UserSettingsDock from "./UserSettingsDock";
+import { PlusIcon } from "./icons";
 import {
     ChannelRow,
     CreateChannelModal,
@@ -960,18 +961,7 @@ export default function ChannelList() {
                                 title="Create text channel"
                                 aria-label="Create text channel"
                             >
-                                <svg
-                                    viewBox="0 0 16 16"
-                                    class="channel-group-add-icon"
-                                    aria-hidden="true"
-                                >
-                                    <path
-                                        d="M8 3v10M3 8h10"
-                                        stroke="currentColor"
-                                        stroke-width="1.8"
-                                        stroke-linecap="round"
-                                    />
-                                </svg>
+                                <PlusIcon class="channel-group-add-icon" />
                             </button>
                         </div>
                         <Show
@@ -1045,18 +1035,7 @@ export default function ChannelList() {
                                 title="Create voice channel"
                                 aria-label="Create voice channel"
                             >
-                                <svg
-                                    viewBox="0 0 16 16"
-                                    class="channel-group-add-icon"
-                                    aria-hidden="true"
-                                >
-                                    <path
-                                        d="M8 3v10M3 8h10"
-                                        stroke="currentColor"
-                                        stroke-width="1.8"
-                                        stroke-linecap="round"
-                                    />
-                                </svg>
+                                <PlusIcon class="channel-group-add-icon" />
                             </button>
                         </div>
                         <Show

@@ -12,6 +12,13 @@ import {
   voiceActionState,
   voiceConnectionStatus,
 } from "../../stores/voice";
+import {
+  DisconnectIcon,
+  MicrophoneIcon,
+  SpeakerIcon,
+  CameraIcon,
+  ScreenShareIcon,
+} from "../icons";
 import { connectionStatusLabel, formatNativeSenderRate } from "./helpers";
 
 export interface VoiceDockProps {
@@ -39,10 +46,7 @@ export default function VoiceDock(props: VoiceDockProps): JSX.Element {
           title={voiceActionState() === "leaving" ? "Disconnecting..." : "Disconnect"}
           aria-label={voiceActionState() === "leaving" ? "Disconnecting..." : "Disconnect"}
         >
-          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
-            <path d="M7 9a5 5 0 0 1 10 0v4h2V9a7 7 0 1 0-14 0v4h2z" fill="currentColor" />
-            <path d="M12 22 8 18h3v-5h2v5h3z" fill="currentColor" />
-          </svg>
+          <DisconnectIcon />
         </button>
         <button
           type="button"
@@ -51,13 +55,7 @@ export default function VoiceDock(props: VoiceDockProps): JSX.Element {
           title={micMuted() ? "Unmute microphone" : "Mute microphone"}
           aria-label={micMuted() ? "Unmute microphone" : "Mute microphone"}
         >
-          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
-            <path d="M12 15a3 3 0 0 0 3-3V7a3 3 0 1 0-6 0v5a3 3 0 0 0 3 3z" fill="currentColor" />
-            <path d="M18 11v1a6 6 0 0 1-12 0v-1H4v1a8 8 0 0 0 7 7.94V23h2v-3.06A8 8 0 0 0 20 12v-1z" fill="currentColor" />
-            <Show when={micMuted()}>
-              <path d="M4 4 20 20" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none" />
-            </Show>
-          </svg>
+          <MicrophoneIcon muted={micMuted()} />
         </button>
         <button
           type="button"
@@ -66,16 +64,7 @@ export default function VoiceDock(props: VoiceDockProps): JSX.Element {
           title={speakerMuted() ? "Unmute speakers" : "Mute speakers"}
           aria-label={speakerMuted() ? "Unmute speakers" : "Mute speakers"}
         >
-          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
-            <path d="M5 10v4h4l5 4V6l-5 4z" fill="currentColor" />
-            <Show when={!speakerMuted()}>
-              <path d="M16.5 8.5a5 5 0 0 1 0 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none" />
-            </Show>
-            <Show when={speakerMuted()}>
-              <path d="M16 8 21 16" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none" />
-              <path d="M21 8 16 16" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none" />
-            </Show>
-          </svg>
+          <SpeakerIcon muted={speakerMuted()} />
         </button>
         <button
           type="button"
@@ -85,12 +74,7 @@ export default function VoiceDock(props: VoiceDockProps): JSX.Element {
           title={cameraEnabled() ? "Turn camera off" : "Turn camera on"}
           aria-label={cameraEnabled() ? "Turn camera off" : "Turn camera on"}
         >
-          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
-            <path d="M4 7.5A1.5 1.5 0 0 1 5.5 6h9A1.5 1.5 0 0 1 16 7.5v2.1l3.86-2.18A1 1 0 0 1 21.4 8.3v7.4a1 1 0 0 1-1.54.87L16 14.4v2.1a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 4 16.5z" fill="currentColor" />
-            <Show when={cameraEnabled()}>
-              <path d="M5 5 19 19" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none" />
-            </Show>
-          </svg>
+          <CameraIcon enabled={cameraEnabled()} />
         </button>
         <button
           type="button"
@@ -100,11 +84,7 @@ export default function VoiceDock(props: VoiceDockProps): JSX.Element {
           title={screenShareEnabled() ? "Stop screen share" : "Start screen share"}
           aria-label={screenShareEnabled() ? "Stop screen share" : "Start screen share"}
         >
-          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
-            <path d="M3.5 5A1.5 1.5 0 0 1 5 3.5h14A1.5 1.5 0 0 1 20.5 5v10A1.5 1.5 0 0 1 19 16.5H5A1.5 1.5 0 0 1 3.5 15z" fill="currentColor" />
-            <path d="M8.5 20h7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none" />
-            <path d="M12 16.5V20" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none" />
-          </svg>
+          <ScreenShareIcon />
         </button>
       </div>
       <p class="voice-dock-channel">Connected: {props.connectedChannelName}</p>
