@@ -1,12 +1,17 @@
 {$SITE_ADDRESS::80} {
   encode zstd gzip
 
-  root * /srv
-  file_server
+  handle /api/* {
+    reverse_proxy 127.0.0.1:3000
+  }
 
-  @api path /api/*
-  reverse_proxy @api 127.0.0.1:3000
+  handle /ws {
+    reverse_proxy 127.0.0.1:3000
+  }
 
-  @ws path /ws
-  reverse_proxy @ws 127.0.0.1:3000
+  handle {
+    root * /srv
+    try_files {path} /index.html
+    file_server
+  }
 }

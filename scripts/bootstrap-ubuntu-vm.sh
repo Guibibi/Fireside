@@ -167,14 +167,19 @@ if is_true "${INSTALL_CADDY}"; then
 ${SITE_ADDRESS} {
   encode zstd gzip
 
-  root * ${REPO_DIR}/client/dist
-  file_server
+  handle /api/* {
+    reverse_proxy 127.0.0.1:${SERVER_PORT}
+  }
 
-  @api path /api/*
-  reverse_proxy @api 127.0.0.1:${SERVER_PORT}
+  handle /ws {
+    reverse_proxy 127.0.0.1:${SERVER_PORT}
+  }
 
-  @ws path /ws
-  reverse_proxy @ws 127.0.0.1:${SERVER_PORT}
+  handle {
+    root * ${REPO_DIR}/client/dist
+    try_files {path} /index.html
+    file_server
+  }
 }
 EOF
   fi
