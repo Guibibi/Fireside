@@ -24,6 +24,9 @@ Yankcord is a self-hosted, minimal chat app. One server instance = one community
 - Phase 5.3 is shipped: media uploads now persist metadata in Postgres, local derivative processing/cleanup are active, and S3-compatible storage is scaffolded for follow-up implementation.
 - Phase 5.4 is shipped: users can upload constrained profile avatars, server-side avatar derivatives are generated, and avatar rendering is enabled across core identity surfaces.
 - Phase 5.5 is shipped: chat supports image attachments with upload validation, message-level attachment metadata, and timeline preview/open/download UX.
+- Phase 5.6 is shipped: operators/admins can manage custom emoji uploads, composers support emoji picking, and messages render `:shortcode:` custom emoji content.
+- Phase 5.7 is shipped: message reactions now support add/remove flows with per-user uniqueness and real-time WebSocket updates.
+- Phase 5.8 is shipped: Tenor-backed GIF search is available in composer and selected GIFs can be inserted into message content.
 
 ---
 
@@ -120,7 +123,7 @@ Yankcord is a self-hosted, minimal chat app. One server instance = one community
 - Processing: normalize square variants (`256x256 webp` and `64x64 webp`), strip EXIF.
 - Client: render avatars in member list, message list, and presence surfaces with fallback initials.
 
-### 5.5 Image support in chat
+### 5.5 Image support in chat (implemented)
 
 **Goal**
 - Support image attachments with preview and optimized transfer.
@@ -131,7 +134,7 @@ Yankcord is a self-hosted, minimal chat app. One server instance = one community
 - Client: preview in message timeline; include open/download actions.
 - Server: sniff MIME by content, not extension, and enforce dimension/payload limits before persist.
 
-### 5.6 Custom emojis/icons
+### 5.6 Custom emojis/icons (completed)
 
 **Goal**
 - Add per-instance custom emoji management and message usage.
@@ -142,7 +145,7 @@ Yankcord is a self-hosted, minimal chat app. One server instance = one community
 - Server: CRUD APIs for emoji set and shortcode uniqueness validation.
 - Client: emoji picker + `:shortcode:` parsing/rendering in composer and message body.
 
-### 5.7 Message reactions
+### 5.7 Message reactions (completed)
 
 **Goal**
 - Add lightweight emoji reactions with real-time updates.
@@ -152,7 +155,7 @@ Yankcord is a self-hosted, minimal chat app. One server instance = one community
 - Data model: enforce per-user uniqueness per message/reaction key.
 - Client: render reaction chips, counts, and active-user state.
 
-### 5.8 GIF search support
+### 5.8 GIF search support (completed)
 
 **Goal**
 - Add GIF picker integration for rich inline content.
@@ -162,34 +165,6 @@ Yankcord is a self-hosted, minimal chat app. One server instance = one community
 - Server: treat GIF embeds as attachment metadata payloads with validation.
 - Client: render GIF embeds consistently with other attachment types.
 
-
-### 5.9 Streaming watch UX rework
-
-**Goal**
-- Improve stream discoverability and viewing ergonomics in voice channels while keeping watch behavior fully user-initiated.
-
-**Implementation details**
-- Presence affordance: show a distinct `LIVE` badge next to each member actively streaming in the voice channel participant view; support multiple concurrent streamers.
-- Hover discovery: hovering a streaming member row opens a compact right-side popover with streamer context and a primary `Watch Stream` action.
-- Explicit opt-in: when a stream session starts, other members remain in `Not watching`; stream playback/audio never auto-starts without a click on `Watch Stream`.
-- Focused watch mode: clicking `Watch Stream` opens the stream in a maximized layout that temporarily replaces chat and member list surfaces.
-- Focused controls: include `Fullscreen` and top-right `X` controls in focused mode; controls must remain visible on hover/focus and keyboard reachable.
-- Exit behavior: clicking `X` exits focused mode, restores the last chat + member list layout, and keeps the stream in a docked mini-player at bottom-right.
-- Mini-player controls: hovering/focusing the mini-player reveals `Stop Watching Stream`; activating it stops local viewing and dismisses the mini-player.
-- Stream end handling: if the streamer ends/disconnects, close focused/mini-player views automatically, restore standard layout, and show optional user-facing feedback (`Stream ended`).
-- Layout resilience: preserve watch state correctly across channel switches and panel toggles (focused -> mini-player on close; mini-player persists until explicit stop or stream end).
-- Accessibility and copy: support keyboard navigation and screen-reader labels for all stream controls; keep control copy consistent (`Watch Stream`, `Fullscreen`, `Stop Watching Stream`).
-
-**Viewer state model**
-- `Not watching`: user sees `LIVE` affordances only; no active playback.
-- `Watching (focused)`: stream occupies the primary content area; chat/member panels hidden.
-- `Watching (mini-player)`: chat/member panels visible while stream remains docked.
-
-**State transitions**
-- `Not watching` -> `Watching (focused)`: user clicks `Watch Stream`.
-- `Watching (focused)` -> `Watching (mini-player)`: user clicks focused `X`.
-- `Watching (mini-player)` -> `Not watching`: user clicks `Stop Watching Stream`.
-- `Watching (focused|mini-player)` -> `Not watching`: streamer stops stream or disconnects.
 
 ---
 
@@ -207,11 +182,18 @@ Yankcord is a self-hosted, minimal chat app. One server instance = one community
 - Skip the server address input step for web deployments while preserving it for desktop app users.
   - For tauri user, they should be prompted to select their instance, and then presented with the username and password
 
+### Add Profile customization
+- Add profile customization such as description and status
+
 ### Private Messages (Direct Messages)
 
 - Enable one-to-one private messaging between users outside of channels.
 - Add a DM list to the sidebar for easy access to conversations.
 - Support initiating DMs from user profiles or member lists.
+
+## Add icons to voice chat
+- Add speaker muted icons if an user has his speakers muted
+- Add microphone muted icons if an user has his microphone muted
 
 ### Native Desktop Notifications
 
@@ -224,6 +206,8 @@ Yankcord is a self-hosted, minimal chat app. One server instance = one community
 - Expose VAD sensitivity controls in audio settings.
 - Allow users to tune how aggressively their microphone activates on voice.
 - Provide presets (low/medium/high) and fine-grained slider control.
+
+### Allows jpg for image upload (avatar)
 
 
 ### Network Quality Indicator

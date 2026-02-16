@@ -2,6 +2,7 @@ import { Show, createEffect, createMemo, createResource, createSignal, onCleanup
 import { del, get, patch } from "../api/http";
 import { connect, onMessage, send } from "../api/ws";
 import { addReaction, removeCustomReaction, removeUnicodeReaction } from "../api/reactions";
+import type { GifResult } from "../api/gifs";
 import { getApiBaseUrl, token, userId, username } from "../stores/auth";
 import { activeChannelId, type Channel } from "../stores/chat";
 import { registerContextMenuHandlers } from "../stores/contextMenu";
@@ -283,6 +284,12 @@ export default function MessageArea() {
     } catch (error) {
       setWsError(errorMessage(error, "Failed to remove reaction"));
     }
+  }
+
+  function handleGifSelect(gif: GifResult) {
+    const trimmed = draft().trim();
+    const nextDraft = trimmed.length > 0 ? `${trimmed} ${gif.url}` : gif.url;
+    typing.handleDraftInput(nextDraft);
   }
 
   function beginEdit(message: ChannelMessage) {
@@ -1041,6 +1048,7 @@ export default function MessageArea() {
           void handleDraftPaste(event);
         }}
         onRemoveAttachment={removePendingAttachment}
+        onGifSelect={handleGifSelect}
       />
       <Show when={typing.typingUsernames().length > 0}>
         <p class="typing-indicator">{typingText(typing.typingUsernames())}</p>

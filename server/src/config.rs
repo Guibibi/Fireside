@@ -9,6 +9,8 @@ pub struct AppConfig {
     pub media: MediaConfig,
     #[serde(default)]
     pub storage: StorageConfig,
+    #[serde(default)]
+    pub integrations: IntegrationsConfig,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -64,6 +66,11 @@ pub struct S3Config {
     pub secret_access_key: Option<String>,
     #[serde(default)]
     pub force_path_style: bool,
+}
+
+#[derive(Debug, Deserialize, Clone, Default)]
+pub struct IntegrationsConfig {
+    pub tenor_api_key: Option<String>,
 }
 
 fn default_native_rtp_listen_ip() -> String {
@@ -179,6 +186,9 @@ impl AppConfig {
                             })
                             .unwrap_or(false),
                     },
+                },
+                integrations: IntegrationsConfig {
+                    tenor_api_key: std::env::var("TENOR_API_KEY").ok(),
                 },
             }
         }
