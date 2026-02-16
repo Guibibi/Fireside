@@ -183,8 +183,8 @@ impl UploadService {
              WHERE d.derivative_kind IS NOT NULL
                AND (
                  p.id IS NULL
-                  OR (d.status = 'failed' AND d.updated_at < now() - make_interval(hours => $1))
-                  OR (p.status = 'failed' AND p.updated_at < now() - make_interval(hours => $1))
+                  OR (d.status = 'failed' AND d.updated_at < now() - make_interval(hours => $1::int))
+                  OR (p.status = 'failed' AND p.updated_at < now() - make_interval(hours => $1::int))
                 )",
         )
         .bind(failed_retention_hours)
@@ -224,11 +224,11 @@ impl UploadService {
                AND (
                     (
                         p.status IN ('ready', 'failed')
-                        AND p.updated_at < now() - make_interval(hours => $1)
+                        AND p.updated_at < now() - make_interval(hours => $1::int)
                     )
                     OR (
                         p.status = 'processing'
-                        AND p.updated_at < now() - make_interval(hours => $1 * 4)
+                        AND p.updated_at < now() - make_interval(hours => ($1 * 4)::int)
                     )
                )
                AND NOT EXISTS (
