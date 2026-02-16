@@ -1,5 +1,12 @@
 import { getApiBaseUrl, token } from "../stores/auth";
 
+export interface AuthResponse {
+  token: string;
+  user_id: string;
+  username: string;
+  role: string;
+}
+
 async function request<T>(
   path: string,
   options: RequestInit = {},

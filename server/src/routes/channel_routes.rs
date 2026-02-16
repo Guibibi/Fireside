@@ -6,7 +6,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::auth::validate_token;
+use crate::auth::extract_claims;
 use crate::errors::AppError;
 use crate::message_attachments::{
     load_message_attachments_by_message, persist_message_attachments_in_tx,
@@ -87,21 +87,6 @@ pub fn router() -> Router<AppState> {
         )
 }
 
-fn extract_username(headers: &axum::http::HeaderMap, secret: &str) -> Result<String, AppError> {
-    let header = headers
-        .get("authorization")
-        .and_then(|v| v.to_str().ok())
-        .ok_or_else(|| AppError::Unauthorized("Missing authorization header".into()))?;
-
-    let token = header
-        .strip_prefix("Bearer ")
-        .ok_or_else(|| AppError::Unauthorized("Invalid authorization format".into()))?;
-
-    let claims = validate_token(token, secret)
-        .map_err(|_| AppError::Unauthorized("Invalid token".into()))?;
-    Ok(claims.username)
-}
-
 async fn lookup_user_id(state: &AppState, username: &str) -> Result<Uuid, AppError> {
     let row: Option<(Uuid,)> = sqlx::query_as("SELECT id FROM users WHERE username = $1")
         .bind(username)
@@ -117,7 +102,7 @@ async fn create_channel(
     headers: axum::http::HeaderMap,
     Json(body): Json<CreateChannelRequest>,
 ) -> Result<Json<Channel>, AppError> {
-    let _username = extract_username(&headers, &state.config.jwt.secret)?;
+    let _claims = extract_claims(&headers, &state.config.jwt.secret)?;
 
     let trimmed_name = body.name.trim();
     if trimmed_name.is_empty() || trimmed_name.len() > 100 {
@@ -188,7 +173,7 @@ async fn get_channels(
     State(state): State<AppState>,
     headers: axum::http::HeaderMap,
 ) -> Result<Json<Vec<Channel>>, AppError> {
-    let _username = extract_username(&headers, &state.config.jwt.secret)?;
+    let _claims = extract_claims(&headers, &state.config.jwt.secret)?;
 
     let channels: Vec<Channel> = sqlx::query_as("SELECT * FROM channels ORDER BY position ASC")
         .fetch_all(&state.db)
@@ -202,7 +187,7 @@ async fn get_channel(
     headers: axum::http::HeaderMap,
     Path(channel_id): Path<Uuid>,
 ) -> Result<Json<Channel>, AppError> {
-    let _username = extract_username(&headers, &state.config.jwt.secret)?;
+    let _claims = extract_claims(&headers, &state.config.jwt.secret)?;
 
     let channel: Channel = sqlx::query_as("SELECT * FROM channels WHERE id = $1")
         .bind(channel_id)
@@ -218,7 +203,7 @@ async fn delete_channel(
     headers: axum::http::HeaderMap,
     Path(channel_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let _username = extract_username(&headers, &state.config.jwt.secret)?;
+    let _claims = extract_claims(&headers, &state.config.jwt.secret)?;
 
     let mut tx = state.db.begin().await?;
 
@@ -329,7 +314,7 @@ async fn get_messages(
     Path(channel_id): Path<Uuid>,
     Query(query): Query<MessageQuery>,
 ) -> Result<Json<Vec<MessageWithAuthor>>, AppError> {
-    let _username = extract_username(&headers, &state.config.jwt.secret)?;
+    let _claims = extract_claims(&headers, &state.config.jwt.secret)?;
     let limit = query.limit.unwrap_or(50).min(100);
 
     let messages: Vec<MessageWithAuthorRow> = if let Some(before) = query.before {
@@ -389,7 +374,7 @@ async fn send_message(
     Path(channel_id): Path<Uuid>,
     Json(body): Json<SendMessageRequest>,
 ) -> Result<Json<Message>, AppError> {
-    let username = extract_username(&headers, &state.config.jwt.secret)?;
+    let username = extract_claims(&headers, &state.config.jwt.secret)?.username;
     let user_id = lookup_user_id(&state, &username).await?;
     let trimmed_content = body.content.trim();
     let resolved_attachments =
@@ -431,7 +416,7 @@ async fn edit_message(
     Path(message_id): Path<Uuid>,
     Json(body): Json<EditMessageRequest>,
 ) -> Result<Json<Message>, AppError> {
-    let username = extract_username(&headers, &state.config.jwt.secret)?;
+    let username = extract_claims(&headers, &state.config.jwt.secret)?.username;
     let user_id = lookup_user_id(&state, &username).await?;
 
     let trimmed_content = body.content.trim();
@@ -490,7 +475,7 @@ async fn delete_message(
     headers: axum::http::HeaderMap,
     Path(message_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let username = extract_username(&headers, &state.config.jwt.secret)?;
+    let username = extract_claims(&headers, &state.config.jwt.secret)?.username;
     let user_id = lookup_user_id(&state, &username).await?;
 
     let existing: Option<(Uuid, Uuid)> =

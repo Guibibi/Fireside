@@ -10,7 +10,7 @@ use axum::{
 use serde::Serialize;
 use uuid::Uuid;
 
-use crate::auth::validate_token;
+use crate::auth::extract_claims;
 use crate::errors::AppError;
 use crate::AppState;
 
@@ -77,7 +77,7 @@ async fn upload_media(
     headers: axum::http::HeaderMap,
     mut multipart: Multipart,
 ) -> Result<Json<UploadMediaResponse>, AppError> {
-    let username = extract_username(&headers, &state.config.jwt.secret)?;
+    let username = extract_claims(&headers, &state.config.jwt.secret)?.username;
 
     let user_id: Uuid = sqlx::query_scalar("SELECT id FROM users WHERE username = $1")
         .bind(&username)
@@ -122,20 +122,4 @@ async fn upload_media(
         id: uploaded.id,
         status: uploaded.status,
     }))
-}
-
-fn extract_username(headers: &axum::http::HeaderMap, secret: &str) -> Result<String, AppError> {
-    let header = headers
-        .get("authorization")
-        .and_then(|v| v.to_str().ok())
-        .ok_or_else(|| AppError::Unauthorized("Missing authorization header".into()))?;
-
-    let token = header
-        .strip_prefix("Bearer ")
-        .ok_or_else(|| AppError::Unauthorized("Invalid authorization format".into()))?;
-
-    let claims = validate_token(token, secret)
-        .map_err(|_| AppError::Unauthorized("Invalid token".into()))?;
-
-    Ok(claims.username)
 }

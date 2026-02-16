@@ -31,7 +31,6 @@ services:
       DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL in server/.env.docker}
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in server/.env.docker}
       JWT_EXPIRATION_HOURS: ${JWT_EXPIRATION_HOURS:-24}
-      SERVER_PASSWORD: ${SERVER_PASSWORD:?set SERVER_PASSWORD in server/.env.docker}
       HOST: ${HOST:-127.0.0.1}
       PORT: ${PORT:-3000}
       MEDIA_WORKER_COUNT: ${MEDIA_WORKER_COUNT:-2}

@@ -4,7 +4,14 @@ Manual, human-run verification tasks go here.
 
 ## Pending
 
-- (none)
+- **Auth: First-run setup**: Fresh DB -> visit `/` -> redirected to `/setup` -> create operator account -> lands on `/chat`
+- **Auth: Invite creation**: Operator opens settings -> creates single-use invite -> copies link
+- **Auth: Registration via invite**: Open invite link in incognito -> `/invite/CODE` -> fill username + password -> account created -> lands on `/chat`
+- **Auth: Login**: Log out -> `/login` -> username + password -> lands on `/chat`
+- **Auth: Invite exhaustion**: Use single-use invite -> try again -> "Invite code has been revoked"
+- **Auth: Invalid invite**: Visit `/invite/INVALID` -> try to register -> "Invalid invite code"
+- **Auth: WebSocket auth**: Verify WS connects and shows presence after login
+- **Auth: Profile update**: Change username in settings -> verify new token works
 
 ## Completed
 

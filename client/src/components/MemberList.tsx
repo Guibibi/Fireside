@@ -1,6 +1,6 @@
 import { For, Show, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import { get } from "../api/http";
-import { connect, onMessage } from "../api/ws";
+import { connect, onMessage, type PresenceUser } from "../api/ws";
 import { activeChannelId } from "../stores/chat";
 import { participantsInChannel } from "../stores/voice";
 import { openContextMenu, registerContextMenuHandlers, handleLongPressStart, handleLongPressEnd, setContextMenuTarget } from "../stores/contextMenu";
@@ -52,19 +52,17 @@ export default function MemberList() {
 
     const unsubscribe = onMessage((msg) => {
       if (msg.type === "presence_snapshot") {
-        const users = "users" in msg
-          ? msg.users
-          : msg.usernames.map((username) => ({ username, status: "online" as const }));
+        const users = msg.users;
 
         const online = users
-          .filter((user) => user.status === "online")
-          .map((user) => user.username)
-          .sort((a, b) => a.localeCompare(b));
+          .filter((user: PresenceUser) => user.status === "online")
+          .map((user: PresenceUser) => user.username)
+          .sort((a: string, b: string) => a.localeCompare(b));
         const idle = users
-          .filter((user) => user.status === "idle")
-          .map((user) => user.username)
-          .sort((a, b) => a.localeCompare(b));
-        const usernames = users.map((user) => user.username);
+          .filter((user: PresenceUser) => user.status === "idle")
+          .map((user: PresenceUser) => user.username)
+          .sort((a: string, b: string) => a.localeCompare(b));
+        const usernames = users.map((user: PresenceUser) => user.username);
 
         setOnlineMembers(online);
         setIdleMembers(idle);

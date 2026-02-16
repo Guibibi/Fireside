@@ -4,8 +4,16 @@ const [token, setToken] = createSignal<string | null>(
   localStorage.getItem("yankcord_token"),
 );
 
+const [userId, setUserId] = createSignal<string | null>(
+  localStorage.getItem("yankcord_user_id"),
+);
+
 const [username, setUsername] = createSignal<string | null>(
   localStorage.getItem("yankcord_username"),
+);
+
+const [role, setRole] = createSignal<string | null>(
+  localStorage.getItem("yankcord_role"),
 );
 
 const [serverUrl, setServerUrl] = createSignal<string>(
@@ -38,30 +46,42 @@ export function normalizeServerUrl(url: string): string {
   return withProtocol.replace(/\/api\/?$/i, "").replace(/\/+$/, "");
 }
 
-export { token, username, serverUrl };
+export { token, userId, username, role, serverUrl };
 
-export function saveAuth(t: string, uname: string, url: string) {
+export function saveAuth(t: string, uid: string, uname: string, r: string, url: string) {
   const normalizedUrl = normalizeServerUrl(url);
   localStorage.setItem("yankcord_token", t);
+  localStorage.setItem("yankcord_user_id", uid);
   localStorage.setItem("yankcord_username", uname);
+  localStorage.setItem("yankcord_role", r);
   localStorage.setItem("yankcord_server_url", normalizedUrl);
   setToken(t);
+  setUserId(uid);
   setUsername(uname);
+  setRole(r);
   setServerUrl(normalizedUrl);
 }
 
-export function updateAuthIdentity(t: string, uname: string) {
+export function updateAuthIdentity(t: string, uid: string, uname: string, r: string) {
   localStorage.setItem("yankcord_token", t);
+  localStorage.setItem("yankcord_user_id", uid);
   localStorage.setItem("yankcord_username", uname);
+  localStorage.setItem("yankcord_role", r);
   setToken(t);
+  setUserId(uid);
   setUsername(uname);
+  setRole(r);
 }
 
 export function clearAuthSession() {
   localStorage.removeItem("yankcord_token");
+  localStorage.removeItem("yankcord_user_id");
   localStorage.removeItem("yankcord_username");
+  localStorage.removeItem("yankcord_role");
   setToken(null);
+  setUserId(null);
   setUsername(null);
+  setRole(null);
 }
 
 export function clearAuth() {

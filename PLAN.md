@@ -37,19 +37,24 @@ Yankcord is a self-hosted, minimal chat app. One server instance = one community
 - Define role capability matrix for channel management, moderation, and future media/admin controls.
 - Surface permission failures with stable error codes/messages for client handling.
 
-### 4.2 Rate limiting and abuse controls
+### 4.2 Server management
+
+- Add admin-only server settings.
+- Add a UI page for management, overlaid on top of the chat and members list as a layout.
+
+### 4.3 Rate limiting and abuse controls
 
 - Add request limits for auth/connect, message send, and high-cost media endpoints.
 - Add WS event throttling for spam-prone actions (message send, typing, reaction bursts).
 - Add temporary penalties/backoff behavior with clear client-safe errors.
 
-### 4.3 Stronger validation and payload safety
+### 4.4 Stronger validation and payload safety
 
 - Enforce stricter length/charset/shape validation at server boundaries.
 - Cap payload sizes for text/JSON/media metadata and reject malformed payloads early.
 - Keep schema/model validation and transport-layer validation aligned.
 
-### 4.4 Moderation controls (kick/ban)
+### 4.5 Moderation controls (kick/ban)
 
 - Add operator/admin moderation actions with audit-friendly event trails.
 - Enforce kick/ban checks on REST and WS auth/session paths.
@@ -251,6 +256,9 @@ Yankcord is a self-hosted, minimal chat app. One server instance = one community
 ### Merge message together
 - If a user sends multiple message back to back without someone else sending a message, merge all of them into one message (like discord)
 
+## Better image handling in chat
+- If a user copy an image from a website and copies it in the chat, it should upload automatically.
+- If a user sends a link to an image in the chat, it should display the image under the link
 
 ### Auto-updater
 - Add an auto updater for the tauri build to allow distribution of new version easily.

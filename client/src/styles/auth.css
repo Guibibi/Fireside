@@ -54,3 +54,25 @@
   padding: var(--space-md) var(--space-2xl);
   margin-top: var(--space-sm);
 }
+
+.auth-subtitle {
+  text-align: center;
+  color: var(--soft);
+  font-size: 0.85rem;
+  margin-top: calc(-1 * var(--space-sm));
+}
+
+.auth-link {
+  text-align: center;
+  color: var(--soft);
+  font-size: 0.85rem;
+}
+
+.auth-link a {
+  color: var(--lavender);
+  text-decoration: none;
+}
+
+.auth-link a:hover {
+  text-decoration: underline;
+}

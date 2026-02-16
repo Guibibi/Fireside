@@ -4,6 +4,38 @@ use uuid::Uuid;
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, sqlx::Type)]
 #[serde(rename_all = "lowercase")]
+#[sqlx(type_name = "user_role", rename_all = "lowercase")]
+pub enum UserRole {
+    Operator,
+    Admin,
+    Member,
+}
+
+impl UserRole {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            UserRole::Operator => "operator",
+            UserRole::Admin => "admin",
+            UserRole::Member => "member",
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, sqlx::FromRow)]
+pub struct Invite {
+    pub id: Uuid,
+    pub code: String,
+    pub created_by: Uuid,
+    pub single_use: bool,
+    pub used_count: i32,
+    pub max_uses: Option<i32>,
+    pub created_at: DateTime<Utc>,
+    pub expires_at: Option<DateTime<Utc>>,
+    pub revoked: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, sqlx::Type)]
+#[serde(rename_all = "lowercase")]
 #[sqlx(type_name = "channel_kind", rename_all = "lowercase")]
 pub enum ChannelKind {
     Text,

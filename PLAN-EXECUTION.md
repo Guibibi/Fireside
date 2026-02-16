@@ -10,6 +10,7 @@ Long-term roadmap and completed milestone tracking live in `PLAN.md`.
 ## Phase Goal
 
 - Add custom emoji management and `:shortcode:` usage in messages without breaking existing message transport behavior.
+- These emojis should be available server wide.
 
 ## Scope
 
@@ -17,6 +18,7 @@ Long-term roadmap and completed milestone tracking live in `PLAN.md`.
   - Add emoji asset CRUD endpoints with shortcode uniqueness checks.
   - Enforce emoji upload constraints (`png|webp|gif`, max `512 KB`, bounded dimensions).
   - Persist emoji metadata and ownership for instance-scoped emoji sets.
+  - Resize emoji when uploaded to an appropriate size for display.
 - Client
   - Add emoji picker UI and insert selected shortcode into composer.
   - Parse/render `:shortcode:` tokens in message timeline with fallback to plain text for unknown codes.

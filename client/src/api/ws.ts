@@ -21,10 +21,9 @@ export interface PresenceUser {
 }
 
 export type ServerMessage =
-  | { type: "authenticated"; user_id: string; username: string }
+  | { type: "authenticated"; user_id: string; username: string; role: string }
   | { type: "error"; message: string }
   | { type: "presence_snapshot"; users: PresenceUser[] }
-  | { type: "presence_snapshot"; usernames: string[] }
   | { type: "user_connected"; username: string; status?: PresenceStatus }
   | { type: "user_status_changed"; username: string; status: PresenceStatus }
   | { type: "user_disconnected"; username: string }
@@ -246,7 +245,7 @@ export function connect(url = getWsUrl(), reconnectAttempt = false) {
         }
         disconnect();
         clearAuthSession();
-        window.location.assign("/connect");
+        window.location.assign("/login");
         return;
       }
 

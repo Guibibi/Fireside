@@ -37,7 +37,6 @@ Edit `server/.env.docker` and set at minimum:
 - `POSTGRES_PASSWORD`
 - `DATABASE_URL`
 - `JWT_SECRET`
-- `SERVER_PASSWORD`
 - `SITE_ADDRESS`
   - `:80` for plain HTTP
   - `chat.example.com` (or your domain) for automatic HTTPS in Caddy

@@ -1,6 +1,6 @@
-import { Show, createSignal, onMount } from "solid-js";
+import { For, Show, createSignal, onMount } from "solid-js";
 import { useNavigate } from "@solidjs/router";
-import { patch } from "../api/http";
+import { del, get, patch, post } from "../api/http";
 import { errorMessage } from "../utils/error";
 import {
   isSpeakerSelectionSupported,
@@ -23,6 +23,7 @@ import { updateOutgoingMicrophoneGain } from "../api/media/microphoneProcessing"
 import {
   clearAuth,
   getApiBaseUrl,
+  role,
   token,
   serverUrl,
   updateAuthIdentity,
@@ -64,8 +65,23 @@ import VoiceAudioPreferences from "./settings/VoiceAudioPreferences";
 
 interface UpdateCurrentUserResponse {
   token: string;
+  user_id: string;
   username: string;
+  role: string;
   avatar_url: string | null;
+}
+
+interface InviteResponse {
+  id: string;
+  code: string;
+  created_by: string;
+  creator_username: string;
+  single_use: boolean;
+  used_count: number;
+  max_uses: number | null;
+  created_at: string;
+  expires_at: string | null;
+  revoked: boolean;
 }
 
 interface CurrentUserResponse {
@@ -89,6 +105,10 @@ export default function UserSettingsDock() {
   const [audioOutputs, setAudioOutputs] = createSignal<AudioDeviceOption[]>([]);
   const [cameraInputs, setCameraInputs] = createSignal<CameraDeviceOption[]>([]);
   const [isUploadingAvatar, setIsUploadingAvatar] = createSignal(false);
+  const [invites, setInvites] = createSignal<InviteResponse[]>([]);
+  const [inviteError, setInviteError] = createSignal("");
+  const [isCreatingInvite, setIsCreatingInvite] = createSignal(false);
+  const [copiedInviteId, setCopiedInviteId] = createSignal<string | null>(null);
 
   const supportsSpeakerSelection = isSpeakerSelectionSupported();
 
@@ -96,9 +116,11 @@ export default function UserSettingsDock() {
     setDraftUsername(currentUsername() ?? "");
     setProfileError("");
     setAudioError("");
+    setInviteError("");
     setIsOpen(true);
     void refreshMediaDevices();
     void refreshCurrentUserProfile();
+    void refreshInvites();
   }
 
   function closeSettings() {
@@ -171,7 +193,7 @@ export default function UserSettingsDock() {
       });
 
       const previousUsername = currentUsername();
-      updateAuthIdentity(response.token, response.username);
+      updateAuthIdentity(response.token, response.user_id, response.username, response.role);
       if (previousUsername && previousUsername !== response.username) {
         renameUserProfile(previousUsername, response.username);
       }
@@ -321,6 +343,46 @@ export default function UserSettingsDock() {
     updateOutgoingMicrophoneGain(value);
   }
 
+  async function refreshInvites() {
+    try {
+      const data = await get<InviteResponse[]>("/invites");
+      setInvites(data);
+    } catch {
+      // non-blocking
+    }
+  }
+
+  async function handleCreateInvite() {
+    setInviteError("");
+    setIsCreatingInvite(true);
+    try {
+      const invite = await post<InviteResponse>("/invites", { single_use: true });
+      setInvites((prev) => [invite, ...prev]);
+    } catch (err) {
+      setInviteError(errorMessage(err, "Failed to create invite"));
+    } finally {
+      setIsCreatingInvite(false);
+    }
+  }
+
+  async function handleRevokeInvite(id: string) {
+    setInviteError("");
+    try {
+      await del<unknown>(`/invites/${id}`);
+      setInvites((prev) => prev.map((inv) => inv.id === id ? { ...inv, revoked: true } : inv));
+    } catch (err) {
+      setInviteError(errorMessage(err, "Failed to revoke invite"));
+    }
+  }
+
+  function handleCopyInviteLink(code: string, id: string) {
+    const link = `${window.location.origin}/invite/${code}`;
+    void navigator.clipboard.writeText(link).then(() => {
+      setCopiedInviteId(id);
+      setTimeout(() => setCopiedInviteId(null), 2000);
+    });
+  }
+
   function handleLogout() {
     cleanupMediaTransports();
     disconnect();
@@ -328,7 +390,7 @@ export default function UserSettingsDock() {
     resetVoiceState();
     clearAuth();
     closeSettings();
-    navigate("/connect");
+    navigate("/login");
   }
 
   onMount(() => {
@@ -474,6 +536,59 @@ export default function UserSettingsDock() {
                 <p class="error">{audioError()}</p>
               </Show>
             </section>
+
+            <Show when={role() === "operator" || role() === "admin"}>
+            <section class="settings-section">
+              <h5>Invites</h5>
+              <div class="settings-actions">
+                <button type="button" onClick={() => void handleCreateInvite()} disabled={isCreatingInvite()}>
+                  {isCreatingInvite() ? "Creating..." : "Create invite"}
+                </button>
+              </div>
+              <Show when={inviteError()}>
+                <p class="error">{inviteError()}</p>
+              </Show>
+              <div class="invite-list">
+                <For each={invites()}>
+                  {(invite) => (
+                    <div class={`invite-card ${invite.revoked ? "invite-revoked" : ""}`}>
+                      <div class="invite-card-header">
+                        <code class="invite-code">{invite.code}</code>
+                        <Show when={!invite.revoked}>
+                          <button
+                            type="button"
+                            class="invite-copy-btn"
+                            onClick={() => handleCopyInviteLink(invite.code, invite.id)}
+                          >
+                            {copiedInviteId() === invite.id ? "Copied" : "Copy link"}
+                          </button>
+                        </Show>
+                      </div>
+                      <div class="invite-card-meta">
+                        <span>
+                          {invite.single_use ? "Single-use" : "Multi-use"}
+                          {invite.max_uses != null ? ` (${invite.used_count}/${invite.max_uses})` : ` (${invite.used_count} used)`}
+                        </span>
+                        {invite.revoked && <span class="invite-badge-revoked">Revoked</span>}
+                      </div>
+                      <Show when={!invite.revoked}>
+                        <button
+                          type="button"
+                          class="invite-revoke-btn"
+                          onClick={() => void handleRevokeInvite(invite.id)}
+                        >
+                          Revoke
+                        </button>
+                      </Show>
+                    </div>
+                  )}
+                </For>
+                <Show when={invites().length === 0}>
+                  <p class="settings-help">No invites yet.</p>
+                </Show>
+              </div>
+            </section>
+            </Show>
 
             <NotificationSessionSettings
               voiceJoinSoundEnabled={voiceJoinSoundEnabled()}

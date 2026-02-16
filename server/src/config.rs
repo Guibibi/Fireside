@@ -15,7 +15,6 @@ pub struct AppConfig {
 pub struct ServerConfig {
     pub host: String,
     pub port: u16,
-    pub password: String,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -121,8 +120,6 @@ impl AppConfig {
                         .unwrap_or_else(|_| "3000".into())
                         .parse()
                         .expect("PORT must be a number"),
-                    password: std::env::var("SERVER_PASSWORD")
-                        .expect("SERVER_PASSWORD must be set"),
                 },
                 database: DatabaseConfig {
                     url: std::env::var("DATABASE_URL").expect("DATABASE_URL must be set"),

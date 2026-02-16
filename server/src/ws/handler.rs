@@ -20,7 +20,7 @@ use super::media_signal::{
 };
 use super::messages::{ClientMessage, PresenceUser, ServerMessage, VoicePresenceChannel};
 use super::voice::{broadcast_closed_producers, broadcast_voice_activity_to_channel};
-use crate::auth::validate_token;
+use crate::auth::{validate_token, Claims};
 use crate::message_attachments::{
     load_message_attachments_by_message, persist_message_attachments_in_tx,
     resolve_uploads_for_message,
@@ -41,7 +41,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
         match stream.next().await {
             Some(Ok(Message::Text(text))) => match serde_json::from_str::<ClientMessage>(&text) {
                 Ok(ClientMessage::Authenticate { token }) => {
-                    let claims = match validate_token(&token, &state.config.jwt.secret) {
+                    let claims: Claims = match validate_token(&token, &state.config.jwt.secret) {
                         Ok(claims) => claims,
                         Err(_) => {
                             if let Ok(json) = serde_json::to_string(&ServerMessage::Error {
@@ -53,22 +53,23 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                         }
                     };
 
-                    let user_id_row: Option<(Uuid,)> =
-                        sqlx::query_as("SELECT id FROM users WHERE username = $1")
-                            .bind(&claims.username)
-                            .fetch_optional(&state.db)
-                            .await
-                            .ok()
-                            .flatten();
+                    let user_id = claims.user_id;
 
-                    let Some((user_id,)) = user_id_row else {
+                    let user_exists: bool =
+                        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM users WHERE id = $1)")
+                            .bind(user_id)
+                            .fetch_one(&state.db)
+                            .await
+                            .unwrap_or(false);
+
+                    if !user_exists {
                         if let Ok(json) = serde_json::to_string(&ServerMessage::Error {
                             message: "User not found".into(),
                         }) {
                             let _ = sink.send(Message::Text(json.into())).await;
                         }
                         return;
-                    };
+                    }
 
                     replace_existing_connection_for_username(&state, &claims.username).await;
 
@@ -126,6 +127,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
         ServerMessage::Authenticated {
             user_id,
             username: claims.username.clone(),
+            role: claims.role.clone(),
         },
     );
 
@@ -565,22 +567,7 @@ async fn handle_send_message(
         return;
     }
 
-    let user_id_row: Option<(Uuid,)> = sqlx::query_as("SELECT id FROM users WHERE username = $1")
-        .bind(&claims.username)
-        .fetch_optional(&state.db)
-        .await
-        .ok()
-        .flatten();
-
-    let Some((user_id,)) = user_id_row else {
-        send_server_message(
-            out_tx,
-            ServerMessage::Error {
-                message: "User not found".into(),
-            },
-        );
-        return;
-    };
+    let user_id = claims.user_id;
 
     let resolved_attachments =
         match resolve_uploads_for_message(state, user_id, &attachment_media_ids).await {
@@ -749,22 +736,7 @@ async fn handle_join_voice(
         return;
     }
 
-    let user_id_row: Option<(Uuid,)> = sqlx::query_as("SELECT id FROM users WHERE username = $1")
-        .bind(&claims.username)
-        .fetch_optional(&state.db)
-        .await
-        .ok()
-        .flatten();
-
-    let Some((user_id,)) = user_id_row else {
-        send_server_message(
-            out_tx,
-            ServerMessage::Error {
-                message: "User not found".into(),
-            },
-        );
-        return;
-    };
+    let user_id = claims.user_id;
 
     let previous_channel_id = {
         let mut voice_members_by_connection = state.voice_members_by_connection.write().await;
@@ -878,28 +850,11 @@ async fn handle_leave_voice(
     let closed_producers = state.media.cleanup_connection_media(connection_id).await;
     broadcast_closed_producers(state, &closed_producers, Some(connection_id)).await;
 
-    let user_id_row: Option<(Uuid,)> = sqlx::query_as("SELECT id FROM users WHERE username = $1")
-        .bind(&claims.username)
-        .fetch_optional(&state.db)
-        .await
-        .ok()
-        .flatten();
-
-    let Some((user_id,)) = user_id_row else {
-        send_server_message(
-            out_tx,
-            ServerMessage::Error {
-                message: "User not found".into(),
-            },
-        );
-        return;
-    };
-
     send_server_message(
         out_tx,
         ServerMessage::VoiceLeft {
             channel_id: left_channel_id.unwrap_or(channel_id),
-            user_id,
+            user_id: claims.user_id,
         },
     );
 }

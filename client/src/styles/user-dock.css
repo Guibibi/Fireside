@@ -93,3 +93,82 @@
   transform: rotate(30deg);
   box-shadow: none;
 }
+
+/* ==========================================================================
+   Invite Management Styles
+   ========================================================================== */
+
+.invite-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  margin-top: var(--space-md);
+}
+
+.invite-card {
+  padding: var(--space-md);
+  border-radius: var(--radius-md);
+  background: var(--nebula-light);
+  border: 1px solid var(--cloud-dark);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.invite-card.invite-revoked {
+  opacity: 0.5;
+}
+
+.invite-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+}
+
+.invite-code {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  color: var(--lavender);
+  letter-spacing: 0.05em;
+}
+
+.invite-card-meta {
+  font-size: 0.75rem;
+  color: var(--soft);
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.invite-badge-revoked {
+  color: var(--rose);
+  font-weight: 600;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.invite-copy-btn,
+.invite-revoke-btn {
+  padding: 2px var(--space-sm);
+  font-size: 0.75rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--cloud-dark);
+  background: var(--cloud-dark);
+  color: var(--soft);
+  cursor: pointer;
+  box-shadow: none;
+}
+
+.invite-copy-btn:hover,
+.invite-revoke-btn:hover {
+  background: var(--cloud);
+  color: var(--snow);
+  box-shadow: none;
+}
+
+.invite-revoke-btn {
+  color: var(--rose);
+  align-self: flex-start;
+}

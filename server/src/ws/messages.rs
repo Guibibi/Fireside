@@ -65,7 +65,11 @@ pub enum ClientMessage {
 #[serde(tag = "type")]
 pub enum ServerMessage {
     #[serde(rename = "authenticated")]
-    Authenticated { user_id: Uuid, username: String },
+    Authenticated {
+        user_id: Uuid,
+        username: String,
+        role: String,
+    },
 
     #[serde(rename = "error")]
     Error { message: String },

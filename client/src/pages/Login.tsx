@@ -1,20 +1,16 @@
 import { createSignal, onMount } from "solid-js";
 import { useNavigate } from "@solidjs/router";
+import type { AuthResponse } from "../api/http";
 import { normalizeServerUrl, saveAuth, serverUrl } from "../stores/auth";
 import { errorMessage } from "../utils/error";
 
-interface ConnectResponse {
-  token: string;
-  username: string;
-}
-
 const AUTH_NOTICE_STORAGE_KEY = "yankcord_auth_notice";
 
-export default function Connect() {
+export default function Login() {
   const navigate = useNavigate();
   const [url, setUrl] = createSignal(serverUrl());
-  const [password, setPassword] = createSignal("");
   const [username, setUsername] = createSignal("");
+  const [password, setPassword] = createSignal("");
   const [notice, setNotice] = createSignal("");
   const [error, setError] = createSignal("");
 
@@ -32,20 +28,18 @@ export default function Connect() {
     e.preventDefault();
     setError("");
 
-    if (!url().trim() || !password().trim() || !username().trim()) {
-      setError("Server URL, password, and username are required");
+    if (!url().trim() || !username().trim() || !password().trim()) {
+      setError("Server URL, username, and password are required");
       return;
     }
 
     try {
-      const response = await fetch(`${normalizeServerUrl(url())}/api/connect`, {
+      const response = await fetch(`${normalizeServerUrl(url())}/api/login`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          password: password(),
           username: username().trim(),
+          password: password(),
         }),
       });
 
@@ -56,18 +50,18 @@ export default function Connect() {
         throw new Error(body.error || response.statusText);
       }
 
-      const res = (await response.json()) as ConnectResponse;
-      saveAuth(res.token, res.username, url());
+      const res = (await response.json()) as AuthResponse;
+      saveAuth(res.token, res.user_id, res.username, res.role, url());
       navigate("/chat");
     } catch (err) {
-      setError(errorMessage(err, "Failed to connect"));
+      setError(errorMessage(err, "Failed to log in"));
     }
   }
 
   return (
     <div class="auth-page">
       <form class="auth-form" onSubmit={handleSubmit}>
-        <h1>Connect</h1>
+        <h1>Log in</h1>
         {notice() && <p class="info">{notice()}</p>}
         {error() && <p class="error">{error()}</p>}
         <input
@@ -77,18 +71,24 @@ export default function Connect() {
           onInput={(e) => setUrl(e.currentTarget.value)}
         />
         <input
-          type="password"
-          placeholder="Server password"
-          value={password()}
-          onInput={(e) => setPassword(e.currentTarget.value)}
-        />
-        <input
           type="text"
           placeholder="Username"
           value={username()}
           onInput={(e) => setUsername(e.currentTarget.value)}
         />
-        <button type="submit">Connect</button>
+        <input
+          type="password"
+          placeholder="Password"
+          value={password()}
+          onInput={(e) => setPassword(e.currentTarget.value)}
+        />
+        <button type="submit">Log in</button>
+        <p class="auth-link">
+          Have an invite?{" "}
+          <a href="/invite/" onClick={(e) => { e.preventDefault(); navigate("/invite/"); }}>
+            Create an account
+          </a>
+        </p>
       </form>
     </div>
   );

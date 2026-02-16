@@ -10,7 +10,7 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::time::Duration;
 use url::Url;
 
-use crate::auth::validate_token;
+use crate::auth::extract_claims;
 use crate::errors::AppError;
 use crate::AppState;
 
@@ -60,7 +60,7 @@ async fn fetch_embed(
     headers: axum::http::HeaderMap,
     Query(query): Query<EmbedQuery>,
 ) -> Result<Json<EmbedResponse>, AppError> {
-    let _username = extract_username(&headers, &state.config.jwt.secret)?;
+    let _claims = extract_claims(&headers, &state.config.jwt.secret)?;
     let target = validate_target_url(&query.url).await?;
     let target_url = target.url;
 
@@ -525,20 +525,4 @@ fn is_forbidden_ipv6(ip: Ipv6Addr) -> bool {
         || ip.is_unique_local()
         || ip.is_unicast_link_local()
         || is_documentation
-}
-
-fn extract_username(headers: &axum::http::HeaderMap, secret: &str) -> Result<String, AppError> {
-    let header = headers
-        .get("authorization")
-        .and_then(|v| v.to_str().ok())
-        .ok_or_else(|| AppError::Unauthorized("Missing authorization header".into()))?;
-
-    let token = header
-        .strip_prefix("Bearer ")
-        .ok_or_else(|| AppError::Unauthorized("Invalid authorization format".into()))?;
-
-    let claims = validate_token(token, secret)
-        .map_err(|_| AppError::Unauthorized("Invalid token".into()))?;
-
-    Ok(claims.username)
 }

@@ -144,7 +144,6 @@ fi
 echo "==> Validating deployment env"
 require_secret_value "POSTGRES_PASSWORD" "${ENV_FILE}"
 require_secret_value "JWT_SECRET" "${ENV_FILE}"
-require_secret_value "SERVER_PASSWORD" "${ENV_FILE}"
 warn_if_unset_or_localhost "WEBRTC_ANNOUNCED_IP" "${ENV_FILE}"
 
 echo "==> Validating compose configuration"

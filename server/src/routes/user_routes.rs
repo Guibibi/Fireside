@@ -7,7 +7,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::auth::{create_token, validate_token};
+use crate::auth::{create_token, extract_claims};
 use crate::errors::AppError;
 use crate::AppState;
 
@@ -19,7 +19,9 @@ pub struct UpdateCurrentUserRequest {
 #[derive(Serialize)]
 pub struct UpdateCurrentUserResponse {
     pub token: String,
+    pub user_id: Uuid,
     pub username: String,
+    pub role: String,
     pub avatar_url: Option<String>,
 }
 
@@ -58,32 +60,18 @@ pub fn router() -> Router<AppState> {
         .route("/users/me/avatar", post(upload_current_user_avatar))
 }
 
-fn extract_username(headers: &axum::http::HeaderMap, secret: &str) -> Result<String, AppError> {
-    let header = headers
-        .get("authorization")
-        .and_then(|v| v.to_str().ok())
-        .ok_or_else(|| AppError::Unauthorized("Missing authorization header".into()))?;
-
-    let token = header
-        .strip_prefix("Bearer ")
-        .ok_or_else(|| AppError::Unauthorized("Invalid authorization format".into()))?;
-
-    let claims = validate_token(token, secret)
-        .map_err(|_| AppError::Unauthorized("Invalid token".into()))?;
-
-    Ok(claims.username)
-}
-
 async fn update_current_user(
     State(state): State<AppState>,
     headers: axum::http::HeaderMap,
     Json(body): Json<UpdateCurrentUserRequest>,
 ) -> Result<Json<UpdateCurrentUserResponse>, AppError> {
-    let current_username = extract_username(&headers, &state.config.jwt.secret)?;
+    let claims = extract_claims(&headers, &state.config.jwt.secret)?;
+    let current_username = &claims.username;
+    let user_id = claims.user_id;
     let next_username = body.username.trim();
     let current_avatar_url: Option<String> =
         sqlx::query_scalar("SELECT avatar_url FROM users WHERE username = $1")
-            .bind(&current_username)
+            .bind(current_username)
             .fetch_optional(&state.db)
             .await?
             .flatten();
@@ -107,7 +95,7 @@ async fn update_current_user(
 
         let updated = sqlx::query("UPDATE users SET username = $1 WHERE username = $2")
             .bind(next_username)
-            .bind(&current_username)
+            .bind(current_username)
             .execute(&state.db)
             .await?;
 
@@ -117,14 +105,18 @@ async fn update_current_user(
     }
 
     let token = create_token(
+        user_id,
         next_username,
+        &claims.role,
         &state.config.jwt.secret,
         state.config.jwt.expiration_hours,
     )?;
 
     Ok(Json(UpdateCurrentUserResponse {
         token,
+        user_id,
         username: next_username.to_string(),
+        role: claims.role,
         avatar_url: current_avatar_url,
     }))
 }
@@ -133,11 +125,11 @@ async fn get_current_user(
     State(state): State<AppState>,
     headers: axum::http::HeaderMap,
 ) -> Result<Json<CurrentUserResponse>, AppError> {
-    let current_username = extract_username(&headers, &state.config.jwt.secret)?;
+    let claims = extract_claims(&headers, &state.config.jwt.secret)?;
 
     let row: Option<(String, Option<String>)> =
         sqlx::query_as("SELECT username, avatar_url FROM users WHERE username = $1")
-            .bind(&current_username)
+            .bind(&claims.username)
             .fetch_optional(&state.db)
             .await?;
 
@@ -154,7 +146,7 @@ async fn get_users(
     State(state): State<AppState>,
     headers: axum::http::HeaderMap,
 ) -> Result<Json<UsersResponse>, AppError> {
-    let _username = extract_username(&headers, &state.config.jwt.secret)?;
+    let _claims = extract_claims(&headers, &state.config.jwt.secret)?;
 
     let users: Vec<UserSummary> =
         sqlx::query_as("SELECT username, avatar_url FROM users ORDER BY username ASC")
@@ -170,12 +162,8 @@ async fn upload_current_user_avatar(
     headers: axum::http::HeaderMap,
     mut multipart: Multipart,
 ) -> Result<Json<UploadAvatarResponse>, AppError> {
-    let current_username = extract_username(&headers, &state.config.jwt.secret)?;
-    let user_id: Uuid = sqlx::query_scalar("SELECT id FROM users WHERE username = $1")
-        .bind(&current_username)
-        .fetch_optional(&state.db)
-        .await?
-        .ok_or_else(|| AppError::Unauthorized("User not found".into()))?;
+    let claims = extract_claims(&headers, &state.config.jwt.secret)?;
+    let user_id = claims.user_id;
 
     let mut uploaded = None;
 
