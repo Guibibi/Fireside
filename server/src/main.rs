@@ -112,6 +112,12 @@ async fn main() {
     start_derivative_cleanup_job(state.clone());
 
     let cors = build_cors_layer(&config);
+    tracing::info!(
+        cors_allowed_origins = ?config.server.cors_allowed_origins,
+        cors_allowed_methods = ?config.server.cors_allowed_methods,
+        cors_allowed_headers = ?config.server.cors_allowed_headers,
+        "Configured CORS allowlists"
+    );
 
     let app = Router::new()
         .nest("/api", routes::auth_routes::router())

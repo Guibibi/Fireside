@@ -93,6 +93,10 @@ fn default_cors_allowed_origins() -> Vec<String> {
         "http://127.0.0.1:5173".to_string(),
         "http://localhost:4173".to_string(),
         "http://127.0.0.1:4173".to_string(),
+        "http://localhost:1420".to_string(),
+        "http://127.0.0.1:1420".to_string(),
+        "http://localhost:1421".to_string(),
+        "http://127.0.0.1:1421".to_string(),
     ]
 }
 
