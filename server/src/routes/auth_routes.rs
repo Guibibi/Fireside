@@ -92,6 +92,7 @@ async fn setup(
     let client_ip = client_ip_from_headers(&headers);
     let rate_limit_key = format!("setup:{client_ip}");
     if !allow_auth_attempt(rate_limit_key, SETUP_MAX_ATTEMPTS_PER_WINDOW).await {
+        state.telemetry.inc_auth_rate_limit_hit();
         tracing::warn!(
             event = "auth_setup_rate_limited",
             client_ip = %client_ip,
@@ -155,6 +156,7 @@ async fn register(
         body.username.to_ascii_lowercase()
     );
     if !allow_auth_attempt(rate_limit_key, REGISTER_MAX_ATTEMPTS_PER_WINDOW).await {
+        state.telemetry.inc_auth_rate_limit_hit();
         tracing::warn!(
             event = "auth_register_rate_limited",
             client_ip = %client_ip,
@@ -260,6 +262,7 @@ async fn login(
     let client_ip = client_ip_from_headers(&headers);
     let rate_limit_key = format!("login:{client_ip}:{}", body.username.to_ascii_lowercase());
     if !allow_auth_attempt(rate_limit_key, LOGIN_MAX_ATTEMPTS_PER_WINDOW).await {
+        state.telemetry.inc_auth_rate_limit_hit();
         tracing::warn!(
             event = "auth_login_rate_limited",
             client_ip = %client_ip,
@@ -278,6 +281,7 @@ async fn login(
             .await?;
 
     let (user_id, username, password_hash, role) = row.ok_or_else(|| {
+        state.telemetry.inc_auth_failure();
         tracing::warn!(
             event = "auth_login_failed",
             client_ip = %client_ip,
@@ -290,6 +294,7 @@ async fn login(
 
     let valid = verify_password(&body.password, &password_hash)?;
     if !valid {
+        state.telemetry.inc_auth_failure();
         tracing::warn!(
             event = "auth_login_failed",
             client_ip = %client_ip,
@@ -393,11 +398,7 @@ mod tests {
 
     #[tokio::test]
     async fn rate_limiter_blocks_after_limit() {
-        let key = "test:login:block".to_string();
-        {
-            let mut limits = AUTH_RATE_LIMITS.lock().await;
-            limits.clear();
-        }
+        let key = format!("test:login:block:{}", Uuid::new_v4());
 
         for _ in 0..LOGIN_MAX_ATTEMPTS_PER_WINDOW {
             assert!(allow_auth_attempt(key.clone(), LOGIN_MAX_ATTEMPTS_PER_WINDOW).await);
@@ -408,10 +409,9 @@ mod tests {
 
     #[tokio::test]
     async fn rate_limiter_resets_after_window() {
-        let key = "test:login:reset".to_string();
+        let key = format!("test:login:reset:{}", Uuid::new_v4());
         {
             let mut limits = AUTH_RATE_LIMITS.lock().await;
-            limits.clear();
             limits.insert(
                 key.clone(),
                 AuthRateLimitEntry {

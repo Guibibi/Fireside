@@ -6,6 +6,7 @@ mod message_attachments;
 mod models;
 mod routes;
 mod storage;
+mod telemetry;
 mod uploads;
 mod ws;
 
@@ -35,8 +36,9 @@ pub struct AppState {
     pub media: Arc<media::MediaService>,
     pub storage: Arc<dyn storage::StorageBackend>,
     pub uploads: Arc<uploads::UploadService>,
+    pub telemetry: Arc<telemetry::Telemetry>,
     pub active_usernames: Arc<RwLock<HashSet<String>>>,
-    pub ws_connections: Arc<RwLock<HashMap<Uuid, mpsc::UnboundedSender<String>>>>,
+    pub ws_connections: Arc<RwLock<HashMap<Uuid, mpsc::Sender<String>>>>,
     pub connection_usernames: Arc<RwLock<HashMap<Uuid, String>>>,
     pub user_presence_by_username: Arc<RwLock<HashMap<String, String>>>,
     pub channel_subscriptions: Arc<RwLock<HashMap<Uuid, Uuid>>>,
@@ -99,6 +101,7 @@ async fn main() {
         media: Arc::new(media_service),
         storage: storage_backend,
         uploads: Arc::new(upload_service),
+        telemetry: Arc::new(telemetry::Telemetry::default()),
         active_usernames: Arc::new(RwLock::new(HashSet::new())),
         ws_connections: Arc::new(RwLock::new(HashMap::new())),
         connection_usernames: Arc::new(RwLock::new(HashMap::new())),

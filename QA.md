@@ -12,6 +12,8 @@ Manual, human-run verification tasks go here.
 - **Auth: Invalid invite**: Visit `/invite/INVALID` -> try to register -> "Invalid invite code"
 - **Auth: WebSocket auth**: Verify WS connects and shows presence after login
 - **Auth: Profile update**: Change username in settings -> verify new token works
+- **WS Load: Fan-out burst**: Start 100+ authenticated WS clients in one channel -> publish sustained typing/message events for 60s -> verify no server crash and acceptable delivery lag
+- **WS Load: Slow consumer pressure**: Keep one client intentionally slow (throttled read loop) while broadcasting in channel -> verify server logs queue-pressure drops and other clients keep receiving events
 
 ## Completed
 

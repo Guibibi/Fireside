@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
-use super::broadcast::send_server_message;
+use super::broadcast::{send_server_message, WsEnqueueResult};
 use super::messages::ServerMessage;
 use super::voice::{broadcast_closed_producers, broadcast_media_signal_to_voice_channel};
 use crate::media::router::OpusConfig;
@@ -267,23 +267,87 @@ pub fn resolve_routing_mode(requested: Option<&str>) -> Result<RoutingMode, Stri
     }
 }
 
-pub fn send_media_signal_error(
-    out_tx: &mpsc::UnboundedSender<String>,
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MediaSignalSendOutcome {
+    Delivered,
+    Dropped,
+    Disconnect,
+}
+
+impl MediaSignalSendOutcome {
+    fn is_delivered(self) -> bool {
+        matches!(self, Self::Delivered)
+    }
+
+    fn should_stop_processing(self) -> bool {
+        !self.is_delivered()
+    }
+
+    pub fn should_disconnect(self) -> bool {
+        matches!(self, Self::Disconnect)
+    }
+}
+
+fn send_media_signal_payload(
+    state: &AppState,
+    connection_id: Uuid,
+    username: &str,
+    out_tx: &mpsc::Sender<String>,
     channel_id: Uuid,
-    request_id: Option<String>,
-    message: &str,
-) {
-    send_server_message(
+    payload: serde_json::Value,
+) -> MediaSignalSendOutcome {
+    match send_server_message(
         out_tx,
         ServerMessage::MediaSignal {
             channel_id,
-            payload: serde_json::json!({
-                "action": "signal_error",
-                "request_id": request_id,
-                "message": message,
-            }),
+            payload,
         },
-    );
+    ) {
+        WsEnqueueResult::Enqueued => MediaSignalSendOutcome::Delivered,
+        WsEnqueueResult::QueueFull => {
+            state.telemetry.inc_ws_queue_pressure();
+            tracing::warn!(
+                connection_id = %connection_id,
+                username = %username,
+                channel_id = %channel_id,
+                "Closing websocket connection because media response queue is full"
+            );
+            MediaSignalSendOutcome::Disconnect
+        }
+        WsEnqueueResult::Closed => MediaSignalSendOutcome::Disconnect,
+        WsEnqueueResult::SerializeFailed => {
+            tracing::error!(
+                connection_id = %connection_id,
+                username = %username,
+                channel_id = %channel_id,
+                "Failed to serialize media signaling response"
+            );
+            MediaSignalSendOutcome::Dropped
+        }
+    }
+}
+
+pub fn send_media_signal_error(
+    state: &AppState,
+    connection_id: Uuid,
+    username: &str,
+    out_tx: &mpsc::Sender<String>,
+    channel_id: Uuid,
+    request_id: Option<String>,
+    message: &str,
+) -> MediaSignalSendOutcome {
+    send_media_signal_payload(
+        state,
+        connection_id,
+        username,
+        out_tx,
+        channel_id,
+        serde_json::json!({
+            "action": "signal_error",
+            "request_id": request_id,
+            "message": message,
+        }),
+    )
 }
 
 pub async fn handle_media_signal_message(
@@ -292,22 +356,27 @@ pub async fn handle_media_signal_message(
     username: &str,
     channel_id: Uuid,
     payload: serde_json::Value,
-    out_tx: &mpsc::UnboundedSender<String>,
-) {
+    out_tx: &mpsc::Sender<String>,
+) -> bool {
     let request = match serde_json::from_value::<MediaSignalRequest>(payload) {
         Ok(request) => request,
         Err(error) => {
-            send_server_message(
+            if send_media_signal_payload(
+                state,
+                connection_id,
+                username,
                 out_tx,
-                ServerMessage::MediaSignal {
-                    channel_id,
-                    payload: serde_json::json!({
-                        "action": "signal_error",
-                        "message": format!("Invalid media signal payload: {error}")
-                    }),
-                },
-            );
-            return;
+                channel_id,
+                serde_json::json!({
+                    "action": "signal_error",
+                    "message": format!("Invalid media signal payload: {error}")
+                }),
+            )
+            .should_disconnect()
+            {
+                return true;
+            }
+            return false;
         }
     };
 
@@ -320,8 +389,20 @@ pub async fn handle_media_signal_message(
             request_id = ?request_id,
             "Rejected media signaling request due to invalid request_id"
         );
-        send_media_signal_error(out_tx, channel_id, request_id, message);
-        return;
+        if send_media_signal_error(
+            state,
+            connection_id,
+            username,
+            out_tx,
+            channel_id,
+            request_id,
+            message,
+        )
+        .should_disconnect()
+        {
+            return true;
+        }
+        return false;
     }
 
     if let Err(message) = validate_media_signal_request_fields(&request) {
@@ -332,8 +413,20 @@ pub async fn handle_media_signal_message(
             request_id = ?request_id,
             "Rejected media signaling request due to invalid field constraints"
         );
-        send_media_signal_error(out_tx, channel_id, request_id, message);
-        return;
+        if send_media_signal_error(
+            state,
+            connection_id,
+            username,
+            out_tx,
+            channel_id,
+            request_id,
+            message,
+        )
+        .should_disconnect()
+        {
+            return true;
+        }
+        return false;
     }
 
     let joined_channel = {
@@ -343,13 +436,20 @@ pub async fn handle_media_signal_message(
 
     if joined_channel != Some(channel_id) {
         let request_id = request_id_for(&request);
-        send_media_signal_error(
+        if send_media_signal_error(
+            state,
+            connection_id,
+            username,
             out_tx,
             channel_id,
             request_id,
             "Media signaling requires joining the voice channel first",
-        );
-        return;
+        )
+        .should_disconnect()
+        {
+            return true;
+        }
+        return false;
     }
 
     match request {
@@ -361,20 +461,37 @@ pub async fn handle_media_signal_message(
                 .await
             {
                 Ok(rtp_capabilities) => {
-                    send_server_message(
+                    if send_media_signal_payload(
+                        state,
+                        connection_id,
+                        username,
                         out_tx,
-                        ServerMessage::MediaSignal {
-                            channel_id,
-                            payload: serde_json::json!({
-                                "action": "router_rtp_capabilities",
-                                "request_id": request_id,
-                                "rtp_capabilities": rtp_capabilities,
-                            }),
-                        },
-                    );
+                        channel_id,
+                        serde_json::json!({
+                            "action": "router_rtp_capabilities",
+                            "request_id": request_id,
+                            "rtp_capabilities": rtp_capabilities,
+                        }),
+                    )
+                    .should_disconnect()
+                    {
+                        return true;
+                    }
                 }
                 Err(error_message) => {
-                    send_media_signal_error(out_tx, channel_id, request_id, &error_message);
+                    if send_media_signal_error(
+                        state,
+                        connection_id,
+                        username,
+                        out_tx,
+                        channel_id,
+                        request_id,
+                        &error_message,
+                    )
+                    .should_disconnect()
+                    {
+                        return true;
+                    }
                 }
             }
         }
@@ -386,13 +503,20 @@ pub async fn handle_media_signal_message(
                 "send" => TransportDirection::Send,
                 "recv" => TransportDirection::Recv,
                 _ => {
-                    send_media_signal_error(
+                    if send_media_signal_error(
+                        state,
+                        connection_id,
+                        username,
                         out_tx,
                         channel_id,
                         request_id,
                         "direction must be 'send' or 'recv'",
-                    );
-                    return;
+                    )
+                    .should_disconnect()
+                    {
+                        return true;
+                    }
+                    return false;
                 }
             };
 
@@ -408,18 +532,25 @@ pub async fn handle_media_signal_message(
                 .await
             {
                 Ok(transport) => {
-                    send_server_message(
+                    let send_outcome = send_media_signal_payload(
+                        state,
+                        connection_id,
+                        username,
                         out_tx,
-                        ServerMessage::MediaSignal {
-                            channel_id,
-                            payload: serde_json::json!({
-                                "action": "webrtc_transport_created",
-                                "request_id": request_id,
-                                "direction": direction.as_str(),
-                                "transport": transport,
-                            }),
-                        },
+                        channel_id,
+                        serde_json::json!({
+                            "action": "webrtc_transport_created",
+                            "request_id": request_id,
+                            "direction": direction.as_str(),
+                            "transport": transport,
+                        }),
                     );
+                    if send_outcome.should_disconnect() {
+                        return true;
+                    }
+                    if send_outcome.should_stop_processing() {
+                        return false;
+                    }
 
                     if direction == TransportDirection::Recv {
                         let existing_producers = state
@@ -428,14 +559,14 @@ pub async fn handle_media_signal_message(
                             .await;
 
                         for producer in existing_producers {
-                            let username = {
+                            let producer_owner_username = {
                                 let connection_usernames = state.connection_usernames.read().await;
                                 connection_usernames
                                     .get(&producer.owner_connection_id)
                                     .cloned()
                             };
 
-                            let Some(username) = username else {
+                            let Some(producer_owner_username) = producer_owner_username else {
                                 tracing::warn!(
                                     producer_id = %producer.producer_id,
                                     owner_connection_id = %producer.owner_connection_id,
@@ -444,25 +575,44 @@ pub async fn handle_media_signal_message(
                                 continue;
                             };
 
-                            send_server_message(
+                            let send_outcome = send_media_signal_payload(
+                                state,
+                                connection_id,
+                                username,
                                 out_tx,
-                                ServerMessage::MediaSignal {
-                                    channel_id,
-                                    payload: serde_json::json!({
-                                        "action": "new_producer",
-                                        "producer_id": producer.producer_id,
-                                        "kind": producer.kind,
-                                        "source": producer.source,
-                                        "routing_mode": producer.routing_mode,
-                                        "username": username,
-                                    }),
-                                },
+                                channel_id,
+                                serde_json::json!({
+                                    "action": "new_producer",
+                                    "producer_id": producer.producer_id,
+                                    "kind": producer.kind,
+                                    "source": producer.source,
+                                    "routing_mode": producer.routing_mode,
+                                    "username": producer_owner_username,
+                                }),
                             );
+                            if send_outcome.should_disconnect() {
+                                return true;
+                            }
+                            if send_outcome.should_stop_processing() {
+                                return false;
+                            }
                         }
                     }
                 }
                 Err(error_message) => {
-                    send_media_signal_error(out_tx, channel_id, request_id, &error_message);
+                    if send_media_signal_error(
+                        state,
+                        connection_id,
+                        username,
+                        out_tx,
+                        channel_id,
+                        request_id,
+                        &error_message,
+                    )
+                    .should_disconnect()
+                    {
+                        return true;
+                    }
                 }
             }
         }
@@ -482,20 +632,37 @@ pub async fn handle_media_signal_message(
                 .await
             {
                 Ok(()) => {
-                    send_server_message(
+                    if send_media_signal_payload(
+                        state,
+                        connection_id,
+                        username,
                         out_tx,
-                        ServerMessage::MediaSignal {
-                            channel_id,
-                            payload: serde_json::json!({
-                                "action": "webrtc_transport_connected",
-                                "request_id": request_id,
-                                "transport_id": transport_id,
-                            }),
-                        },
-                    );
+                        channel_id,
+                        serde_json::json!({
+                            "action": "webrtc_transport_connected",
+                            "request_id": request_id,
+                            "transport_id": transport_id,
+                        }),
+                    )
+                    .should_disconnect()
+                    {
+                        return true;
+                    }
                 }
                 Err(error_message) => {
-                    send_media_signal_error(out_tx, channel_id, request_id, &error_message);
+                    if send_media_signal_error(
+                        state,
+                        connection_id,
+                        username,
+                        out_tx,
+                        channel_id,
+                        request_id,
+                        &error_message,
+                    )
+                    .should_disconnect()
+                    {
+                        return true;
+                    }
                 }
             }
         }
@@ -510,29 +677,60 @@ pub async fn handle_media_signal_message(
                 "audio" => MediaKind::Audio,
                 "video" => MediaKind::Video,
                 _ => {
-                    send_media_signal_error(
+                    if send_media_signal_error(
+                        state,
+                        connection_id,
+                        username,
                         out_tx,
                         channel_id,
                         request_id,
                         "kind must be 'audio' or 'video'",
-                    );
-                    return;
+                    )
+                    .should_disconnect()
+                    {
+                        return true;
+                    }
+                    return false;
                 }
             };
 
             let source = match resolve_producer_source(kind, source.as_deref()) {
                 Ok(source) => source,
                 Err(message) => {
-                    send_media_signal_error(out_tx, channel_id, request_id, &message);
-                    return;
+                    if send_media_signal_error(
+                        state,
+                        connection_id,
+                        username,
+                        out_tx,
+                        channel_id,
+                        request_id,
+                        &message,
+                    )
+                    .should_disconnect()
+                    {
+                        return true;
+                    }
+                    return false;
                 }
             };
 
             let routing_mode = match resolve_routing_mode(routing_mode.as_deref()) {
                 Ok(mode) => mode,
                 Err(message) => {
-                    send_media_signal_error(out_tx, channel_id, request_id, &message);
-                    return;
+                    if send_media_signal_error(
+                        state,
+                        connection_id,
+                        username,
+                        out_tx,
+                        channel_id,
+                        request_id,
+                        &message,
+                    )
+                    .should_disconnect()
+                    {
+                        return true;
+                    }
+                    return false;
                 }
             };
 
@@ -549,20 +747,27 @@ pub async fn handle_media_signal_message(
                 .await
             {
                 Ok(producer) => {
-                    send_server_message(
+                    let send_outcome = send_media_signal_payload(
+                        state,
+                        connection_id,
+                        username,
                         out_tx,
-                        ServerMessage::MediaSignal {
-                            channel_id,
-                            payload: serde_json::json!({
-                                "action": "media_produced",
-                                "request_id": request_id,
-                                "producer_id": producer.producer_id,
-                                "kind": producer.kind,
-                                "source": producer.source,
-                                "routing_mode": producer.routing_mode,
-                            }),
-                        },
+                        channel_id,
+                        serde_json::json!({
+                            "action": "media_produced",
+                            "request_id": request_id,
+                            "producer_id": producer.producer_id,
+                            "kind": producer.kind,
+                            "source": producer.source,
+                            "routing_mode": producer.routing_mode,
+                        }),
                     );
+                    if send_outcome.should_disconnect() {
+                        return true;
+                    }
+                    if send_outcome.should_stop_processing() {
+                        return false;
+                    }
 
                     broadcast_media_signal_to_voice_channel(
                         state,
@@ -580,7 +785,19 @@ pub async fn handle_media_signal_message(
                     .await;
                 }
                 Err(error_message) => {
-                    send_media_signal_error(out_tx, channel_id, request_id, &error_message);
+                    if send_media_signal_error(
+                        state,
+                        connection_id,
+                        username,
+                        out_tx,
+                        channel_id,
+                        request_id,
+                        &error_message,
+                    )
+                    .should_disconnect()
+                    {
+                        return true;
+                    }
                 }
             }
         }
@@ -600,20 +817,37 @@ pub async fn handle_media_signal_message(
                 .await
             {
                 Ok(consumer) => {
-                    send_server_message(
+                    if send_media_signal_payload(
+                        state,
+                        connection_id,
+                        username,
                         out_tx,
-                        ServerMessage::MediaSignal {
-                            channel_id,
-                            payload: serde_json::json!({
-                                "action": "media_consumer_created",
-                                "request_id": request_id,
-                                "consumer": consumer,
-                            }),
-                        },
-                    );
+                        channel_id,
+                        serde_json::json!({
+                            "action": "media_consumer_created",
+                            "request_id": request_id,
+                            "consumer": consumer,
+                        }),
+                    )
+                    .should_disconnect()
+                    {
+                        return true;
+                    }
                 }
                 Err(error_message) => {
-                    send_media_signal_error(out_tx, channel_id, request_id, &error_message);
+                    if send_media_signal_error(
+                        state,
+                        connection_id,
+                        username,
+                        out_tx,
+                        channel_id,
+                        request_id,
+                        &error_message,
+                    )
+                    .should_disconnect()
+                    {
+                        return true;
+                    }
                 }
             }
         }
@@ -627,20 +861,37 @@ pub async fn handle_media_signal_message(
                 .await
             {
                 Ok(()) => {
-                    send_server_message(
+                    if send_media_signal_payload(
+                        state,
+                        connection_id,
+                        username,
                         out_tx,
-                        ServerMessage::MediaSignal {
-                            channel_id,
-                            payload: serde_json::json!({
-                                "action": "media_consumer_resumed",
-                                "request_id": request_id,
-                                "consumer_id": consumer_id,
-                            }),
-                        },
-                    );
+                        channel_id,
+                        serde_json::json!({
+                            "action": "media_consumer_resumed",
+                            "request_id": request_id,
+                            "consumer_id": consumer_id,
+                        }),
+                    )
+                    .should_disconnect()
+                    {
+                        return true;
+                    }
                 }
                 Err(error_message) => {
-                    send_media_signal_error(out_tx, channel_id, request_id, &error_message);
+                    if send_media_signal_error(
+                        state,
+                        connection_id,
+                        username,
+                        out_tx,
+                        channel_id,
+                        request_id,
+                        &error_message,
+                    )
+                    .should_disconnect()
+                    {
+                        return true;
+                    }
                 }
             }
         }
@@ -654,25 +905,44 @@ pub async fn handle_media_signal_message(
                 .await
             {
                 Ok(closed_producer) => {
-                    send_server_message(
+                    let send_outcome = send_media_signal_payload(
+                        state,
+                        connection_id,
+                        username,
                         out_tx,
-                        ServerMessage::MediaSignal {
-                            channel_id,
-                            payload: serde_json::json!({
-                                "action": "media_producer_closed",
-                                "request_id": request_id,
-                                "producer_id": producer_id,
-                                "source": closed_producer.source,
-                                "routing_mode": closed_producer.routing_mode,
-                            }),
-                        },
+                        channel_id,
+                        serde_json::json!({
+                            "action": "media_producer_closed",
+                            "request_id": request_id,
+                            "producer_id": producer_id,
+                            "source": closed_producer.source,
+                            "routing_mode": closed_producer.routing_mode,
+                        }),
                     );
+                    if send_outcome.should_disconnect() {
+                        return true;
+                    }
+                    if send_outcome.should_stop_processing() {
+                        return false;
+                    }
 
                     broadcast_closed_producers(state, &[closed_producer], Some(connection_id))
                         .await;
                 }
                 Err(error_message) => {
-                    send_media_signal_error(out_tx, channel_id, request_id, &error_message);
+                    if send_media_signal_error(
+                        state,
+                        connection_id,
+                        username,
+                        out_tx,
+                        channel_id,
+                        request_id,
+                        &error_message,
+                    )
+                    .should_disconnect()
+                    {
+                        return true;
+                    }
                 }
             }
         }
@@ -692,29 +962,36 @@ pub async fn handle_media_signal_message(
                 .await
             {
                 Ok(session) => {
-                    send_server_message(
+                    let send_outcome = send_media_signal_payload(
+                        state,
+                        connection_id,
+                        username,
                         out_tx,
-                        ServerMessage::MediaSignal {
-                            channel_id,
-                            payload: serde_json::json!({
-                                "action": "native_sender_session_created",
-                                "request_id": request_id,
-                                "producer_id": session.producer_id,
-                                "kind": session.kind,
-                                "source": session.source,
-                                "routing_mode": session.routing_mode,
-                                "rtp_target": session.rtp_target,
-                                "payload_type": session.payload_type,
-                                "ssrc": session.ssrc,
-                                "mime_type": session.mime_type,
-                                "clock_rate": session.clock_rate,
-                                "packetization_mode": session.packetization_mode,
-                                "profile_level_id": session.profile_level_id,
-                                "codec": session.codec,
-                                "available_codecs": session.available_codecs,
-                            }),
-                        },
+                        channel_id,
+                        serde_json::json!({
+                            "action": "native_sender_session_created",
+                            "request_id": request_id,
+                            "producer_id": session.producer_id,
+                            "kind": session.kind,
+                            "source": session.source,
+                            "routing_mode": session.routing_mode,
+                            "rtp_target": session.rtp_target,
+                            "payload_type": session.payload_type,
+                            "ssrc": session.ssrc,
+                            "mime_type": session.mime_type,
+                            "clock_rate": session.clock_rate,
+                            "packetization_mode": session.packetization_mode,
+                            "profile_level_id": session.profile_level_id,
+                            "codec": session.codec,
+                            "available_codecs": session.available_codecs,
+                        }),
                     );
+                    if send_outcome.should_disconnect() {
+                        return true;
+                    }
+                    if send_outcome.should_stop_processing() {
+                        return false;
+                    }
 
                     broadcast_media_signal_to_voice_channel(
                         state,
@@ -732,7 +1009,19 @@ pub async fn handle_media_signal_message(
                     .await;
                 }
                 Err(error_message) => {
-                    send_media_signal_error(out_tx, channel_id, request_id, &error_message);
+                    if send_media_signal_error(
+                        state,
+                        connection_id,
+                        username,
+                        out_tx,
+                        channel_id,
+                        request_id,
+                        &error_message,
+                    )
+                    .should_disconnect()
+                    {
+                        return true;
+                    }
                 }
             }
         }
@@ -751,18 +1040,25 @@ pub async fn handle_media_signal_message(
             );
 
             if request_id.is_some() {
-                send_server_message(
+                if send_media_signal_payload(
+                    state,
+                    connection_id,
+                    username,
                     out_tx,
-                    ServerMessage::MediaSignal {
-                        channel_id,
-                        payload: serde_json::json!({
-                            "action": "client_diagnostic_logged",
-                            "request_id": request_id,
-                            "event": event,
-                        }),
-                    },
-                );
+                    channel_id,
+                    serde_json::json!({
+                        "action": "client_diagnostic_logged",
+                        "request_id": request_id,
+                        "event": event,
+                    }),
+                )
+                .should_disconnect()
+                {
+                    return true;
+                }
             }
         }
     }
+
+    false
 }

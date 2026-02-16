@@ -4,6 +4,7 @@ use axum::{
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
+use std::time::Instant;
 use uuid::Uuid;
 
 use crate::auth::extract_claims;
@@ -322,6 +323,7 @@ async fn cleanup_deleted_voice_channel(state: &AppState, channel_id: Uuid) {
     }
 }
 
+#[tracing::instrument(skip(state, headers, query), fields(channel_id = %channel_id, before = ?query.before, limit = ?query.limit))]
 async fn get_messages(
     State(state): State<AppState>,
     headers: axum::http::HeaderMap,
@@ -332,6 +334,7 @@ async fn get_messages(
     let current_user_id = lookup_user_id(&state, &claims.username).await?;
     let limit = query.limit.unwrap_or(50).min(100);
 
+    let messages_query_started = Instant::now();
     let messages: Vec<MessageWithAuthorRow> = if let Some(before) = query.before {
         sqlx::query_as(
             "SELECT m.id, m.channel_id, m.author_id, u.username AS author_username, m.content, m.created_at, m.edited_at
@@ -358,12 +361,27 @@ async fn get_messages(
         .fetch_all(&state.db)
         .await?
     };
+    state.telemetry.observe_db_query(
+        "channel.get_messages.messages",
+        messages_query_started.elapsed(),
+    );
 
     let message_ids: Vec<Uuid> = messages.iter().map(|message| message.id).collect();
+    let attachments_started = Instant::now();
     let attachments_by_message =
         load_message_attachments_by_message(&state.db, &message_ids).await?;
+    state.telemetry.observe_db_query(
+        "channel.get_messages.attachments",
+        attachments_started.elapsed(),
+    );
+
+    let reactions_started = Instant::now();
     let mut reactions_by_message =
         get_reactions_for_messages(&state, &message_ids, Some(current_user_id)).await?;
+    state.telemetry.observe_db_query(
+        "channel.get_messages.reactions",
+        reactions_started.elapsed(),
+    );
 
     let mut with_attachments = Vec::with_capacity(messages.len());
     for message in messages {
@@ -386,6 +404,7 @@ async fn get_messages(
     Ok(Json(with_attachments))
 }
 
+#[tracing::instrument(skip(state, headers, body), fields(channel_id = %channel_id))]
 async fn send_message(
     State(state): State<AppState>,
     headers: axum::http::HeaderMap,
@@ -412,6 +431,7 @@ async fn send_message(
 
     let mut tx = state.db.begin().await?;
 
+    let insert_started = Instant::now();
     let message: Message = sqlx::query_as(
         "INSERT INTO messages (id, channel_id, author_id, content) VALUES ($1, $2, $3, $4) RETURNING *",
     )
@@ -421,6 +441,9 @@ async fn send_message(
     .bind(trimmed_content)
     .fetch_one(&mut *tx)
     .await?;
+    state
+        .telemetry
+        .observe_db_query("channel.send_message.insert", insert_started.elapsed());
 
     persist_message_attachments_in_tx(&mut tx, message.id, &resolved_attachments).await?;
     tx.commit().await?;

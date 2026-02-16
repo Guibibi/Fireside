@@ -28,12 +28,20 @@ export function toAbsoluteMediaUrl(apiBaseUrl: string, path: string): string {
   return `${normalizedApiBaseUrl}/${path}`;
 }
 
-export async function waitForMediaDerivative(apiBaseUrl: string, mediaId: string): Promise<void> {
+export async function waitForMediaDerivative(
+  apiBaseUrl: string,
+  authToken: string,
+  mediaId: string,
+): Promise<void> {
   const maxAttempts = 24;
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     try {
       const probeUrl = `${toAbsoluteMediaUrl(apiBaseUrl, `/media/${mediaId}/thumbnail`)}?v=${Date.now()}-${attempt}`;
-      const response = await fetch(probeUrl);
+      const response = await fetch(probeUrl, {
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+        },
+      });
       if (response.ok) {
         return;
       }
@@ -50,7 +58,13 @@ export async function waitForMediaDerivative(apiBaseUrl: string, mediaId: string
 }
 
 export function validateImageAttachment(file: File): string | null {
-  if (!["image/jpeg", "image/png", "image/webp", "image/gif"].includes(file.type)) {
+  const mimeType = file.type.toLowerCase();
+  const name = file.name.toLowerCase();
+
+  const hasAllowedMimeType = ["image/jpeg", "image/jpg", "image/pjpeg", "image/png", "image/webp", "image/gif"].includes(mimeType);
+  const hasAllowedExtension = [".jpg", ".jpeg", ".png", ".webp", ".gif"].some((extension) => name.endsWith(extension));
+
+  if (!hasAllowedMimeType && !hasAllowedExtension) {
     return "Only JPEG, PNG, WEBP, and GIF files are supported";
   }
 

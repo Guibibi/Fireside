@@ -30,6 +30,7 @@ use crate::AppState;
 const WS_IDLE_TIMEOUT: Duration = Duration::from_secs(45);
 const WS_AUTH_TIMEOUT: Duration = Duration::from_secs(15);
 const PRESENCE_IDLE_TIMEOUT: Duration = Duration::from_secs(5 * 60);
+const WS_OUTBOUND_QUEUE_CAPACITY: usize = 256;
 
 pub async fn ws_upgrade(ws: WebSocketUpgrade, State(state): State<AppState>) -> impl IntoResponse {
     ws.on_upgrade(move |socket| handle_socket(socket, state))
@@ -122,7 +123,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
         }
     };
 
-    let (out_tx, mut out_rx) = mpsc::unbounded_channel::<String>();
+    let (out_tx, mut out_rx) = mpsc::channel::<String>(WS_OUTBOUND_QUEUE_CAPACITY);
     let writer = tokio::spawn(async move {
         while let Some(payload) = out_rx.recv().await {
             if sink.send(Message::Text(payload.into())).await.is_err() {
@@ -260,8 +261,17 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                             }
                         }
 
-                        handle_client_message(&state, &claims, connection_id, client_msg, &out_tx)
-                            .await;
+                        if handle_client_message(
+                            &state,
+                            &claims,
+                            connection_id,
+                            client_msg,
+                            &out_tx,
+                        )
+                        .await
+                        {
+                            break;
+                        }
                     }
                     Err(e) => {
                         tracing::warn!(
@@ -466,8 +476,8 @@ async fn handle_client_message(
     claims: &crate::auth::Claims,
     connection_id: Uuid,
     msg: ClientMessage,
-    out_tx: &mpsc::UnboundedSender<String>,
-) {
+    out_tx: &mpsc::Sender<String>,
+) -> bool {
     match msg {
         ClientMessage::SubscribeChannel { channel_id } => {
             let mut subscriptions = state.channel_subscriptions.write().await;
@@ -520,7 +530,7 @@ async fn handle_client_message(
             };
 
             if joined_channel != Some(channel_id) {
-                return;
+                return false;
             }
 
             broadcast_voice_activity_to_channel(
@@ -547,13 +557,20 @@ async fn handle_client_message(
                     max_payload_size = MAX_MEDIA_SIGNAL_PAYLOAD_BYTES,
                     "Rejected oversized media signaling payload"
                 );
-                send_media_signal_error(
+                if send_media_signal_error(
+                    state,
+                    connection_id,
+                    &claims.username,
                     out_tx,
                     channel_id,
                     request_id.clone(),
                     "Media signaling payload is too large",
-                );
-                return;
+                )
+                .should_disconnect()
+                {
+                    return true;
+                }
+                return false;
             }
 
             if !allow_media_signal_event(state, connection_id).await {
@@ -563,16 +580,23 @@ async fn handle_client_message(
                     channel_id = %channel_id,
                     "Rate-limited media signaling request"
                 );
-                send_media_signal_error(
+                if send_media_signal_error(
+                    state,
+                    connection_id,
+                    &claims.username,
                     out_tx,
                     channel_id,
                     request_id,
                     "Too many media signaling requests, please retry shortly",
-                );
-                return;
+                )
+                .should_disconnect()
+                {
+                    return true;
+                }
+                return false;
             }
 
-            handle_media_signal_message(
+            if handle_media_signal_message(
                 state,
                 connection_id,
                 &claims.username,
@@ -580,7 +604,10 @@ async fn handle_client_message(
                 payload,
                 out_tx,
             )
-            .await;
+            .await
+            {
+                return true;
+            }
         }
         ClientMessage::Heartbeat => {}
         ClientMessage::PresenceActivity => {}
@@ -593,15 +620,18 @@ async fn handle_client_message(
             );
         }
     }
+
+    false
 }
 
+#[tracing::instrument(skip(state, claims, out_tx, content, attachment_media_ids), fields(channel_id = %channel_id, user_id = %claims.user_id))]
 async fn handle_send_message(
     state: &AppState,
     claims: &crate::auth::Claims,
     channel_id: Uuid,
     content: String,
     attachment_media_ids: Vec<Uuid>,
-    out_tx: &mpsc::UnboundedSender<String>,
+    out_tx: &mpsc::Sender<String>,
 ) {
     let trimmed = content.trim();
     if trimmed.len() > 4000 {
@@ -662,6 +692,7 @@ async fn handle_send_message(
         }
     };
 
+    let message_insert_started = Instant::now();
     let message_row: Result<(Uuid, chrono::DateTime<chrono::Utc>), sqlx::Error> = sqlx::query_as(
         "INSERT INTO messages (id, channel_id, author_id, content) VALUES ($1, $2, $3, $4) RETURNING id, created_at",
     )
@@ -671,6 +702,10 @@ async fn handle_send_message(
     .bind(trimmed)
     .fetch_one(&mut *tx)
     .await;
+    state.telemetry.observe_db_query(
+        "ws.handle_send_message.insert",
+        message_insert_started.elapsed(),
+    );
 
     let (message_id, created_at) = match message_row {
         Ok(row) => row,
@@ -727,6 +762,7 @@ async fn handle_send_message(
         return;
     }
 
+    let attachments_load_started = Instant::now();
     let attachments = match load_message_attachments_by_message(&state.db, &[message_id]).await {
         Ok(by_message) => by_message.get(&message_id).cloned().unwrap_or_default(),
         Err(error) => {
@@ -734,6 +770,10 @@ async fn handle_send_message(
             Vec::new()
         }
     };
+    state.telemetry.observe_db_query(
+        "ws.handle_send_message.load_attachments",
+        attachments_load_started.elapsed(),
+    );
 
     let response = ServerMessage::NewMessage {
         id: message_id,
@@ -754,7 +794,7 @@ async fn handle_join_voice(
     claims: &crate::auth::Claims,
     connection_id: Uuid,
     channel_id: Uuid,
-    out_tx: &mpsc::UnboundedSender<String>,
+    out_tx: &mpsc::Sender<String>,
 ) {
     let channel_kind_row: Option<(String,)> =
         sqlx::query_as("SELECT kind::text FROM channels WHERE id = $1")
@@ -859,7 +899,7 @@ async fn handle_leave_voice(
     claims: &crate::auth::Claims,
     connection_id: Uuid,
     channel_id: Uuid,
-    out_tx: &mpsc::UnboundedSender<String>,
+    out_tx: &mpsc::Sender<String>,
 ) {
     let left_channel_id = {
         let mut voice_members_by_connection = state.voice_members_by_connection.write().await;

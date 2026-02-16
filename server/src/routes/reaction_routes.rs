@@ -7,6 +7,7 @@ use axum::{
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
+use std::time::Instant;
 use uuid::Uuid;
 
 use crate::auth::extract_claims;
@@ -53,6 +54,7 @@ pub fn router() -> Router<AppState> {
         )
 }
 
+#[tracing::instrument(skip(state, headers, body), fields(message_id = %message_id))]
 async fn add_reaction(
     State(state): State<AppState>,
     headers: axum::http::HeaderMap,
@@ -141,11 +143,12 @@ async fn add_reaction(
         None
     };
 
+    let count_query_started = Instant::now();
     let count: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM reactions 
          WHERE message_id = $1 
-         AND (emoji_id = $2 OR ($2 IS NULL AND emoji_id IS NULL))
-         AND (unicode_emoji = $3 OR ($3 IS NULL AND unicode_emoji IS NULL))",
+         AND emoji_id IS NOT DISTINCT FROM $2
+         AND unicode_emoji IS NOT DISTINCT FROM $3",
     )
     .bind(message_id)
     .bind(body.emoji_id)
@@ -153,6 +156,10 @@ async fn add_reaction(
     .fetch_one(&state.db)
     .await
     .unwrap_or(1);
+    state.telemetry.observe_db_query(
+        "reactions.add_reaction.count",
+        count_query_started.elapsed(),
+    );
 
     broadcast_channel_message(
         &state,
@@ -325,6 +332,7 @@ pub async fn get_reactions_for_messages(
         return Ok(HashMap::new());
     }
 
+    let query_started = Instant::now();
     let rows: Vec<BatchedReactionRow> = sqlx::query_as(
         "SELECT
             r.message_id,
@@ -343,6 +351,10 @@ pub async fn get_reactions_for_messages(
     .bind(current_user_id)
     .fetch_all(&state.db)
     .await?;
+    state.telemetry.observe_db_query(
+        "reactions.get_reactions_for_messages",
+        query_started.elapsed(),
+    );
 
     let mut map: HashMap<Uuid, Vec<ReactionSummaryResponse>> = HashMap::new();
     for (message_id, emoji_id, unicode_emoji, shortcode, count, user_reacted) in rows {

@@ -1,6 +1,5 @@
 use std::collections::{HashMap, HashSet};
 
-use image::GenericImageView;
 use serde::Serialize;
 use sqlx::PgPool;
 use sqlx::{Postgres, Transaction};
@@ -38,6 +37,8 @@ struct CandidateMediaAsset {
     id: Uuid,
     mime_type: String,
     bytes: i64,
+    width: Option<i32>,
+    height: Option<i32>,
 }
 
 #[derive(sqlx::FromRow)]
@@ -75,7 +76,7 @@ pub async fn resolve_uploads_for_message(
     }
 
     let records: Vec<CandidateMediaAsset> = sqlx::query_as(
-        "SELECT id, mime_type, bytes
+        "SELECT id, mime_type, bytes, width, height
          FROM media_assets
          WHERE id = ANY($1)
            AND owner_id = $2
@@ -104,13 +105,12 @@ pub async fn resolve_uploads_for_message(
             ));
         }
 
-        let (width, height) = read_image_dimensions(state, media_id).await?;
         resolved.push(ResolvedMessageAttachment {
             media_id,
             mime_type: record.mime_type.clone(),
             bytes: record.bytes,
-            width,
-            height,
+            width: record.width,
+            height: record.height,
         });
     }
 
@@ -169,10 +169,7 @@ pub async fn load_message_attachments_by_message(
     let mut by_message = HashMap::<Uuid, Vec<MessageAttachmentPayload>>::new();
     for row in rows {
         let (thumbnail_url, display_url) = if row.status == "ready" {
-            (
-                Some(format!("/api/media/{}/thumbnail", row.media_id)),
-                Some(format!("/api/media/{}/display", row.media_id)),
-            )
+            (Some(format!("/api/media/{}/thumbnail", row.media_id)), None)
         } else {
             (None, None)
         };
@@ -194,31 +191,4 @@ pub async fn load_message_attachments_by_message(
     }
 
     Ok(by_message)
-}
-
-async fn read_image_dimensions(
-    state: &AppState,
-    media_id: Uuid,
-) -> Result<(Option<i32>, Option<i32>), AppError> {
-    let storage_key: Option<String> = sqlx::query_scalar(
-        "SELECT storage_key
-         FROM media_assets
-         WHERE id = $1
-           AND derivative_kind IS NULL",
-    )
-    .bind(media_id)
-    .fetch_optional(&state.db)
-    .await?;
-
-    let Some(storage_key) = storage_key else {
-        return Ok((None, None));
-    };
-
-    let bytes = state.storage.read(&storage_key).await?;
-    let image = image::load_from_memory(&bytes).map_err(|error| {
-        AppError::BadRequest(format!("Attachment is not a valid image payload: {error}"))
-    })?;
-    let (width, height) = image.dimensions();
-
-    Ok((Some(width as i32), Some(height as i32)))
 }

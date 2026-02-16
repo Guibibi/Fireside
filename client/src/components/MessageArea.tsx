@@ -437,7 +437,7 @@ export default function MessageArea() {
       });
 
       if (payload.status !== "ready") {
-        void waitForMediaDerivative(apiBaseUrl, payload.id)
+        void waitForMediaDerivative(apiBaseUrl, currentToken, payload.id)
           .then(() => {
             upsertPendingAttachment(clientId, { status: "ready", error: null });
           })

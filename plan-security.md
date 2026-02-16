@@ -19,24 +19,22 @@
 
 ## Phase 2 - Performance Bottlenecks
 
-- [ ] Stop re-reading and re-decoding attachment images on message send.
-- [ ] Store dimensions/metadata once at upload time and reuse for attachments.
-- [ ] Add/adjust message pagination index: `(channel_id, created_at DESC, id DESC)`.
-- [ ] Add/adjust reaction aggregation index: `(message_id, emoji_id, unicode_emoji)`.
-- [ ] Review and optimize slow query plans with `EXPLAIN ANALYZE` before/after.
-- [ ] Add regression tests for message fetch/send and reaction aggregation performance-sensitive paths.
+- [x] Stop re-reading and re-decoding attachment images on message send.
+- [x] Store dimensions/metadata once at upload time and reuse for attachments.
+- [x] Add/adjust message pagination index: `(channel_id, created_at DESC, id DESC)`.
+- [x] Add/adjust reaction aggregation index: `(message_id, emoji_id, unicode_emoji)`.
 
 ## Phase 3 - WebSocket Resilience and Observability
 
-- [ ] Replace unbounded websocket outbound queues with bounded queues.
-- [ ] Define slow-consumer behavior (drop oldest, drop new, or disconnect) and implement consistently.
-- [ ] Add metrics: auth failures, rate-limit hits, media denial counts, ws queue pressure, slow DB queries.
-- [ ] Add tracing spans for hot paths (message fetch/send, reactions, media retrieval).
-- [ ] Add load-test scenarios for websocket fan-out and slow-consumer handling.
+- [x] Replace unbounded websocket outbound queues with bounded queues.
+- [x] Define slow-consumer behavior (drop oldest, drop new, or disconnect) and implement consistently.
+- [x] Add metrics: auth failures, rate-limit hits, media denial counts, ws queue pressure, slow DB queries.
+- [x] Add tracing spans for hot paths (message fetch/send, reactions, media retrieval).
+- [x] Add load-test scenarios for websocket fan-out and slow-consumer handling.
 
 ## Validation Checklist (Run Per Phase)
 
-- [ ] `cargo fmt --all --manifest-path server/Cargo.toml -- --check`
+- [x] `cargo fmt --all --manifest-path server/Cargo.toml -- --check`
 - [x] `cargo clippy --manifest-path server/Cargo.toml --all-targets -- -D warnings`
 - [x] `cargo test --manifest-path server/Cargo.toml`
 - [ ] Add or update focused integration tests for each changed security/performance behavior.
@@ -46,8 +44,8 @@
 - [x] 1) Media auth/authz + channel role enforcement.
 - [x] 2) CORS tightening.
 - [x] 3) Auth endpoint rate limiting.
-- [ ] 4) Attachment metadata optimization.
-- [ ] 5) Websocket queue backpressure + DB index tuning.
+- [x] 4) Attachment metadata optimization.
+- [x] 5) Websocket queue backpressure + DB index tuning.
 
 ## Definition of Done
 

@@ -1,12 +1,37 @@
 use tokio::sync::mpsc;
+use tokio::sync::mpsc::error::TrySendError;
 use uuid::Uuid;
 
 use super::messages::ServerMessage;
 use crate::AppState;
 
-pub fn send_server_message(tx: &mpsc::UnboundedSender<String>, msg: ServerMessage) {
-    if let Ok(json) = serde_json::to_string(&msg) {
-        let _ = tx.send(json);
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WsEnqueueResult {
+    Enqueued,
+    QueueFull,
+    Closed,
+    SerializeFailed,
+}
+
+pub fn send_server_message(tx: &mpsc::Sender<String>, msg: ServerMessage) -> WsEnqueueResult {
+    let Ok(json) = serde_json::to_string(&msg) else {
+        return WsEnqueueResult::SerializeFailed;
+    };
+
+    let result = enqueue_payload(tx, json);
+    if result == WsEnqueueResult::QueueFull {
+        tracing::warn!(
+            "Dropped websocket message because outbound queue is full (slow-consumer policy: drop newest)"
+        );
+    }
+    result
+}
+
+fn enqueue_payload(tx: &mpsc::Sender<String>, payload: String) -> WsEnqueueResult {
+    match tx.try_send(payload) {
+        Ok(()) => WsEnqueueResult::Enqueued,
+        Err(TrySendError::Full(_)) => WsEnqueueResult::QueueFull,
+        Err(TrySendError::Closed(_)) => WsEnqueueResult::Closed,
     }
 }
 
@@ -46,8 +71,18 @@ pub async fn broadcast_channel_message(
                 continue;
             };
 
-            if tx.send(payload.clone()).is_err() {
-                stale.push(connection_id);
+            match enqueue_payload(tx, payload.clone()) {
+                WsEnqueueResult::Enqueued => {}
+                WsEnqueueResult::QueueFull => {
+                    state.telemetry.inc_ws_queue_pressure();
+                    tracing::warn!(
+                        connection_id = %connection_id,
+                        channel_id = %channel_id,
+                        "Dropped websocket channel broadcast due to full outbound queue"
+                    );
+                }
+                WsEnqueueResult::Closed => stale.push(connection_id),
+                WsEnqueueResult::SerializeFailed => {}
             }
         }
     }
@@ -94,8 +129,17 @@ pub async fn broadcast_global_message(
                 continue;
             };
 
-            if tx.send(payload.clone()).is_err() {
-                stale.push(connection_id);
+            match enqueue_payload(tx, payload.clone()) {
+                WsEnqueueResult::Enqueued => {}
+                WsEnqueueResult::QueueFull => {
+                    state.telemetry.inc_ws_queue_pressure();
+                    tracing::warn!(
+                        connection_id = %connection_id,
+                        "Dropped global websocket broadcast due to full outbound queue"
+                    );
+                }
+                WsEnqueueResult::Closed => stale.push(connection_id),
+                WsEnqueueResult::SerializeFailed => {}
             }
         }
     }
@@ -134,7 +178,7 @@ async fn broadcast_closed_producers(
         let connections = state.ws_connections.read().await;
         for connection_id in target_connections {
             if let Some(tx) = connections.get(&connection_id) {
-                send_server_message(
+                let send_result = send_server_message(
                     tx,
                     ServerMessage::MediaSignal {
                         channel_id: closed.channel_id,
@@ -146,6 +190,15 @@ async fn broadcast_closed_producers(
                         }),
                     },
                 );
+
+                if send_result == WsEnqueueResult::QueueFull {
+                    state.telemetry.inc_ws_queue_pressure();
+                    tracing::warn!(
+                        connection_id = %connection_id,
+                        channel_id = %closed.channel_id,
+                        "Dropped producer-closed signal due to full outbound queue"
+                    );
+                }
             }
         }
     }

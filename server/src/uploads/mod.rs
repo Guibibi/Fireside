@@ -51,15 +51,16 @@ impl UploadService {
             )));
         }
 
-        validate_image_dimensions(&bytes, MAX_IMAGE_UPLOAD_DIMENSION, "Image")?;
+        let (width, height) =
+            validate_image_dimensions(&bytes, MAX_IMAGE_UPLOAD_DIMENSION, "Image")?;
 
         let media_id = Uuid::new_v4();
         let storage_key = format!("original/{media_id}.{}", extension_for_mime(mime_type));
         let checksum = sha256_hex(&bytes);
 
         sqlx::query(
-            "INSERT INTO media_assets (id, owner_id, parent_id, derivative_kind, mime_type, bytes, checksum, storage_key, status)
-             VALUES ($1, $2, NULL, NULL, $3, $4, $5, $6, 'processing')",
+            "INSERT INTO media_assets (id, owner_id, parent_id, derivative_kind, mime_type, bytes, checksum, storage_key, status, width, height)
+             VALUES ($1, $2, NULL, NULL, $3, $4, $5, $6, 'processing', $7, $8)",
         )
         .bind(media_id)
         .bind(owner_id)
@@ -67,6 +68,8 @@ impl UploadService {
         .bind(bytes.len() as i64)
         .bind(&checksum)
         .bind(&storage_key)
+        .bind(width as i32)
+        .bind(height as i32)
         .execute(&self.db)
         .await?;
 
@@ -160,15 +163,16 @@ impl UploadService {
             ));
         }
 
-        validate_image_dimensions(&bytes, MAX_AVATAR_UPLOAD_DIMENSION, "Avatar")?;
+        let (width, height) =
+            validate_image_dimensions(&bytes, MAX_AVATAR_UPLOAD_DIMENSION, "Avatar")?;
 
         let media_id = Uuid::new_v4();
         let storage_key = format!("original/{media_id}.{}", extension_for_mime(mime_type));
         let checksum = sha256_hex(&bytes);
 
         sqlx::query(
-            "INSERT INTO media_assets (id, owner_id, parent_id, derivative_kind, mime_type, bytes, checksum, storage_key, status)
-             VALUES ($1, $2, NULL, NULL, $3, $4, $5, $6, 'processing')",
+            "INSERT INTO media_assets (id, owner_id, parent_id, derivative_kind, mime_type, bytes, checksum, storage_key, status, width, height)
+             VALUES ($1, $2, NULL, NULL, $3, $4, $5, $6, 'processing', $7, $8)",
         )
         .bind(media_id)
         .bind(owner_id)
@@ -176,6 +180,8 @@ impl UploadService {
         .bind(bytes.len() as i64)
         .bind(&checksum)
         .bind(&storage_key)
+        .bind(width as i32)
+        .bind(height as i32)
         .execute(&self.db)
         .await?;
 
@@ -321,18 +327,66 @@ impl UploadService {
         .await?;
 
         let (width, height) = image.dimensions();
-        let display = if width > 1920 || height > 1920 {
+        let optimized_original = if width > 1920 || height > 1920 {
             image.resize(1920, 1920, image::imageops::FilterType::Lanczos3)
         } else {
             image
         };
-        self.write_derivative(media_id, original.owner_id, "display", display)
+        self.rewrite_original_as_webp(&original, optimized_original)
             .await?;
 
         sqlx::query("UPDATE media_assets SET status = 'ready', error_message = NULL, updated_at = now() WHERE id = $1")
             .bind(media_id)
             .execute(&self.db)
             .await?;
+
+        Ok(())
+    }
+
+    async fn rewrite_original_as_webp(
+        &self,
+        original: &MediaAsset,
+        image: image::DynamicImage,
+    ) -> Result<(), AppError> {
+        let (width, height) = image.dimensions();
+        let bytes = encode_webp(&image)?;
+        let storage_key = format!("original/{}.webp", original.id);
+        let checksum = sha256_hex(&bytes);
+
+        self.storage
+            .put(&storage_key, bytes.clone(), "image/webp")
+            .await?;
+
+        sqlx::query(
+            "UPDATE media_assets
+             SET mime_type = 'image/webp',
+                 bytes = $2,
+                 checksum = $3,
+                 storage_key = $4,
+                 width = $5,
+                 height = $6,
+                 updated_at = now()
+             WHERE id = $1",
+        )
+        .bind(original.id)
+        .bind(bytes.len() as i64)
+        .bind(checksum)
+        .bind(&storage_key)
+        .bind(width as i32)
+        .bind(height as i32)
+        .execute(&self.db)
+        .await?;
+
+        if original.storage_key != storage_key {
+            if let Err(error) = self.storage.delete(&original.storage_key).await {
+                tracing::warn!(
+                    media_id = %original.id,
+                    old_storage_key = %original.storage_key,
+                    error = ?error,
+                    "Failed to delete replaced original upload object"
+                );
+            }
+        }
 
         Ok(())
     }
@@ -383,6 +437,7 @@ impl UploadService {
         derivative_kind: &str,
         image: image::DynamicImage,
     ) -> Result<(), AppError> {
+        let (width, height) = image.dimensions();
         let bytes = encode_webp(&image)?;
         let derivative_id = Uuid::new_v4();
         let storage_key = format!("derivatives/{parent_id}/{derivative_kind}.webp");
@@ -393,8 +448,8 @@ impl UploadService {
             .await?;
 
         sqlx::query(
-            "INSERT INTO media_assets (id, owner_id, parent_id, derivative_kind, mime_type, bytes, checksum, storage_key, status)
-             VALUES ($1, $2, $3, $4, 'image/webp', $5, $6, $7, 'ready')",
+            "INSERT INTO media_assets (id, owner_id, parent_id, derivative_kind, mime_type, bytes, checksum, storage_key, status, width, height)
+             VALUES ($1, $2, $3, $4, 'image/webp', $5, $6, $7, 'ready', $8, $9)",
         )
         .bind(derivative_id)
         .bind(owner_id)
@@ -403,6 +458,8 @@ impl UploadService {
         .bind(bytes.len() as i64)
         .bind(checksum)
         .bind(storage_key)
+        .bind(width as i32)
+        .bind(height as i32)
         .execute(&self.db)
         .await?;
 
@@ -571,7 +628,7 @@ fn validate_image_dimensions(
     bytes: &[u8],
     max_dimension: u32,
     label: &str,
-) -> Result<(), AppError> {
+) -> Result<(u32, u32), AppError> {
     let reader = image::ImageReader::new(Cursor::new(bytes))
         .with_guessed_format()
         .map_err(|error| AppError::BadRequest(format!("Invalid {label} payload: {error}")))?;
@@ -592,5 +649,5 @@ fn validate_image_dimensions(
         )));
     }
 
-    Ok(())
+    Ok((width, height))
 }

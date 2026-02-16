@@ -8,6 +8,7 @@ use axum::{
     Json, Router,
 };
 use serde::Serialize;
+use std::time::Instant;
 use uuid::Uuid;
 
 use crate::auth::extract_claims;
@@ -29,11 +30,13 @@ pub fn router(max_upload_bytes: usize) -> Router<AppState> {
         .layer(DefaultBodyLimit::max(max_upload_bytes))
 }
 
+#[tracing::instrument(skip(state, headers), fields(media_id = %media_id, variant = %variant))]
 async fn get_media_asset(
     axum::extract::State(state): axum::extract::State<AppState>,
     headers: axum::http::HeaderMap,
     axum::extract::Path((media_id, variant)): axum::extract::Path<(Uuid, String)>,
 ) -> Result<Response, AppError> {
+    let record_query_started = Instant::now();
     let record: Option<MediaFetchRow> = if variant == "original" {
         sqlx::query_as(
             "SELECT id, parent_id, owner_id, derivative_kind, storage_key, mime_type
@@ -54,6 +57,10 @@ async fn get_media_asset(
         .fetch_optional(&state.db)
         .await?
     };
+    state.telemetry.observe_db_query(
+        "media.get_media_asset.lookup",
+        record_query_started.elapsed(),
+    );
 
     let (_asset_id, parent_id, owner_id, derivative_kind, storage_key, mime_type) =
         record.ok_or_else(|| AppError::NotFound("Media asset not found".into()))?;
@@ -84,6 +91,7 @@ async fn get_media_asset(
     };
 
     if !requester_can_access {
+        state.telemetry.inc_media_denial();
         return Err(AppError::Unauthorized(
             "You do not have access to this media asset".into(),
         ));

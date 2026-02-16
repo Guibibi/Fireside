@@ -1,6 +1,6 @@
 use uuid::Uuid;
 
-use super::broadcast::send_server_message;
+use super::broadcast::{send_server_message, WsEnqueueResult};
 use super::messages::ServerMessage;
 use crate::media::transport::ClosedProducer;
 use crate::AppState;
@@ -29,13 +29,22 @@ pub async fn broadcast_media_signal_to_voice_channel(
     let connections = state.ws_connections.read().await;
     for connection_id in target_connections {
         if let Some(tx) = connections.get(&connection_id) {
-            send_server_message(
+            let send_result = send_server_message(
                 tx,
                 ServerMessage::MediaSignal {
                     channel_id,
                     payload: payload.clone(),
                 },
             );
+
+            if send_result == WsEnqueueResult::QueueFull {
+                state.telemetry.inc_ws_queue_pressure();
+                tracing::warn!(
+                    connection_id = %connection_id,
+                    channel_id = %channel_id,
+                    "Dropped media signal due to full outbound websocket queue"
+                );
+            }
         }
     }
 }
@@ -65,7 +74,7 @@ pub async fn broadcast_voice_activity_to_channel(
     let connections = state.ws_connections.read().await;
     for connection_id in target_connections {
         if let Some(tx) = connections.get(&connection_id) {
-            send_server_message(
+            let send_result = send_server_message(
                 tx,
                 ServerMessage::VoiceUserSpeaking {
                     channel_id,
@@ -73,6 +82,15 @@ pub async fn broadcast_voice_activity_to_channel(
                     speaking,
                 },
             );
+
+            if send_result == WsEnqueueResult::QueueFull {
+                state.telemetry.inc_ws_queue_pressure();
+                tracing::warn!(
+                    connection_id = %connection_id,
+                    channel_id = %channel_id,
+                    "Dropped voice activity signal due to full outbound websocket queue"
+                );
+            }
         }
     }
 }
