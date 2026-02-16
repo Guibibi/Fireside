@@ -363,7 +363,7 @@ export default function MessageRichContent(props: MessageRichContentProps) {
       return;
     }
 
-    if (emojiStore.loading || emojiStore.emojis.length > 0) {
+    if (emojiStore.loading || emojiStore.loaded) {
       return;
     }
 

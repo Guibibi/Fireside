@@ -43,8 +43,8 @@ export default function EmojiPicker(props: EmojiPickerProps) {
   };
 
   createEffect(() => {
-    if (emojiStore.emojis.length === 0 && !emojiStore.loading) {
-      loadEmojis();
+    if (!emojiStore.loaded && !emojiStore.loading) {
+      void loadEmojis();
     }
   });
 

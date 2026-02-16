@@ -75,7 +75,7 @@ export default function EmojiSettings(props: EmojiSettingsProps) {
     try {
       await createEmoji(nextShortcode, nextName, nextFile);
       resetForm();
-      await loadEmojis();
+      await loadEmojis({ force: true });
     } catch (error) {
       setFormError(errorMessage(error, "Failed to upload emoji"));
     } finally {
@@ -96,7 +96,7 @@ export default function EmojiSettings(props: EmojiSettingsProps) {
     setDeletingEmojiId(emojiId);
     try {
       await deleteEmoji(emojiId);
-      await loadEmojis();
+      await loadEmojis({ force: true });
     } catch (error) {
       setFormError(errorMessage(error, "Failed to delete emoji"));
     } finally {

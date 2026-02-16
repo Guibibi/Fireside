@@ -19,7 +19,7 @@ export default function ReactionPicker(props: ReactionPickerProps) {
   const [showCustom, setShowCustom] = createSignal(false);
 
   createEffect(() => {
-    loadEmojis();
+    void loadEmojis();
   });
 
   createEffect(() => {

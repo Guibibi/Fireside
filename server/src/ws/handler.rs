@@ -334,14 +334,16 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
             state.media_signal_rate_by_connection.write().await;
         media_signal_rate_by_connection.remove(&connection_id);
     }
-    broadcast_global_message(
-        &state,
-        ServerMessage::UserDisconnected {
-            username: disconnected_username,
-        },
-        None,
-    )
-    .await;
+    if !username_has_active_connections(&state, &disconnected_username).await {
+        broadcast_global_message(
+            &state,
+            ServerMessage::UserDisconnected {
+                username: disconnected_username,
+            },
+            None,
+        )
+        .await;
+    }
     writer.abort();
 }
 
@@ -378,6 +380,13 @@ async fn update_presence_status(state: &AppState, username: &str, status: &str) 
         )
         .await;
     }
+}
+
+async fn username_has_active_connections(state: &AppState, username: &str) -> bool {
+    let connection_usernames = state.connection_usernames.read().await;
+    connection_usernames
+        .values()
+        .any(|connected_username| connected_username == username)
 }
 
 async fn replace_existing_connection_for_username(state: &AppState, username: &str) {
@@ -440,14 +449,16 @@ async fn replace_existing_connection_for_username(state: &AppState, username: &s
         .await;
     broadcast_closed_producers(state, &closed_producers, Some(existing_connection_id)).await;
 
-    broadcast_global_message(
-        state,
-        ServerMessage::UserDisconnected {
-            username: username.to_string(),
-        },
-        None,
-    )
-    .await;
+    if !username_has_active_connections(state, username).await {
+        broadcast_global_message(
+            state,
+            ServerMessage::UserDisconnected {
+                username: username.to_string(),
+            },
+            None,
+        )
+        .await;
+    }
 }
 
 async fn handle_client_message(

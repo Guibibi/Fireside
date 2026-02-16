@@ -5,14 +5,18 @@ import { listEmojis } from "../api/emojis";
 interface EmojiStore {
   emojis: Emoji[];
   loading: boolean;
+  loaded: boolean;
   error: string | null;
 }
 
 const [emojiStore, setEmojiStore] = createStore<EmojiStore>({
   emojis: [],
   loading: false,
+  loaded: false,
   error: null,
 });
+
+let loadEmojisPromise: Promise<void> | null = null;
 
 export function useEmojiStore() {
   return {
@@ -21,6 +25,9 @@ export function useEmojiStore() {
     },
     get loading() {
       return emojiStore.loading;
+    },
+    get loaded() {
+      return emojiStore.loaded;
     },
     get error() {
       return emojiStore.error;
@@ -34,18 +41,34 @@ export function useEmojiStore() {
   };
 }
 
-export async function loadEmojis() {
+export async function loadEmojis(options?: { force?: boolean }) {
+  const force = options?.force ?? false;
+
+  if (!force && emojiStore.loaded) {
+    return;
+  }
+
+  if (loadEmojisPromise) {
+    return loadEmojisPromise;
+  }
+
   setEmojiStore("loading", true);
   setEmojiStore("error", null);
 
-  try {
-    const emojis = await listEmojis();
-    setEmojiStore("emojis", emojis);
-  } catch (error) {
-    setEmojiStore("error", error instanceof Error ? error.message : "Failed to load emojis");
-  } finally {
-    setEmojiStore("loading", false);
-  }
+  loadEmojisPromise = (async () => {
+    try {
+      const emojis = await listEmojis();
+      setEmojiStore("emojis", emojis);
+      setEmojiStore("loaded", true);
+    } catch (error) {
+      setEmojiStore("error", error instanceof Error ? error.message : "Failed to load emojis");
+    } finally {
+      setEmojiStore("loading", false);
+      loadEmojisPromise = null;
+    }
+  })();
+
+  return loadEmojisPromise;
 }
 
 export function addEmojiToStore(emoji: Emoji) {
