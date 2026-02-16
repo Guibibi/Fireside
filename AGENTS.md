@@ -10,16 +10,6 @@ Guidance for autonomous coding agents working in `yankcord`.
 - `client/src-tauri/`: Rust host crate for native desktop integration.
 - Keep changes focused and architecture-aligned; avoid broad refactors unless requested.
 
-## External Rules (Cursor/Copilot)
-
-Checked paths in this repository:
-
-- `.cursorrules`: not present
-- `.cursor/rules/`: not present
-- `.github/copilot-instructions.md`: not present
-
-If any are added later, treat them as higher-priority supplemental instructions.
-
 ## Environment Prereqs
 
 - Rust stable toolchain
@@ -37,6 +27,9 @@ Server bootstrap:
 ## Build, Lint, and Test Commands
 
 Run commands from repo root unless noted.
+
+## Git Commits
+- Use conventional commit messages
 
 ### Backend (`server/`)
 
