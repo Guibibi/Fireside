@@ -1,7 +1,7 @@
 .gif-picker {
   background: var(--surface-1);
   border: 1px solid var(--border-color);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
   width: 360px;
   max-height: 480px;
@@ -20,7 +20,7 @@
   padding: 10px 12px;
   background: var(--surface-2);
   border: 1px solid var(--border-color);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--text-primary);
   font-size: 14px;
 }
@@ -45,7 +45,7 @@
 .gif-item {
   background: var(--surface-2);
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   overflow: hidden;
   padding: 0;
@@ -80,7 +80,7 @@
   margin-top: 12px;
   background: var(--surface-2);
   border: 1px solid var(--border-color);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--text-primary);
   cursor: pointer;
   font-size: 14px;

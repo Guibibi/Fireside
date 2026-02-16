@@ -9,9 +9,7 @@
   min-height: 0;
   display: grid;
   grid-template-rows: auto 1fr;
-  background:
-    radial-gradient(circle at top right, rgba(244, 164, 164, 0.08), transparent 46%),
-    linear-gradient(180deg, rgba(19, 17, 28, 0.96), rgba(13, 12, 20, 0.98));
+  background: rgba(18, 17, 16, 0.98);
   z-index: 20;
 }
 
@@ -34,9 +32,9 @@
 .stream-watch-live-badge {
   padding: 0.15rem 0.5rem;
   border-radius: var(--radius-full);
-  border: 1px solid rgba(244, 164, 164, 0.45);
-  background: rgba(244, 164, 164, 0.16);
-  color: var(--coral);
+  border: 1px solid rgba(196, 112, 112, 0.45);
+  background: rgba(196, 112, 112, 0.16);
+  color: var(--danger);
   font-family: var(--font-mono);
   font-size: 0.64rem;
   font-weight: 700;
@@ -78,8 +76,8 @@
 }
 
 .stream-watch-icon-btn-danger:hover {
-  background: rgba(244, 164, 164, 0.22);
-  color: var(--coral);
+  background: rgba(196, 112, 112, 0.22);
+  color: var(--danger);
 }
 
 .stream-watch-focused-player {
@@ -153,7 +151,7 @@
   padding: 0.34rem 0.78rem;
   border-radius: var(--radius-full);
   border: 1px solid var(--cloud-dark);
-  background: rgba(19, 17, 28, 0.9);
+  background: rgba(18, 17, 16, 0.9);
   color: var(--mist);
   font-size: 0.75rem;
   z-index: 32;

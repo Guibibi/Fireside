@@ -17,7 +17,7 @@
 .message-area-header {
   padding: var(--space-xl);
   border-bottom: 1px solid var(--cloud-dark);
-  background: linear-gradient(180deg, rgba(180, 167, 214, 0.03) 0%, transparent 100%);
+  background: transparent;
 }
 
 .message-area-title {
@@ -31,7 +31,7 @@
 
 .message-area-prefix {
   font-family: var(--font-mono);
-  color: var(--lavender);
+  color: var(--gray-8);
   font-weight: 500;
   opacity: 0.8;
 }
@@ -58,8 +58,7 @@
   padding: 0.28rem 0.72rem;
   border-radius: var(--radius-full);
   border: 1px solid var(--cloud-dark);
-  background: rgba(18, 17, 26, 0.9);
-  backdrop-filter: blur(8px);
+  background: var(--gray-3);
   color: var(--mist);
   font-size: 0.72rem;
   letter-spacing: 0.02em;
@@ -72,7 +71,7 @@
   padding: 0.22rem 0.7rem;
   border-radius: var(--radius-full);
   border: 1px solid var(--cloud-dark);
-  background: rgba(18, 17, 26, 0.65);
+  background: rgba(18, 17, 16, 0.65);
   color: var(--mist);
   font-size: 0.7rem;
   letter-spacing: 0.01em;
@@ -132,7 +131,7 @@
   padding: 0.22rem 0.72rem;
   border-radius: var(--radius-full);
   border: 1px solid var(--cloud-dark);
-  background: rgba(18, 17, 26, 0.6);
+  background: rgba(18, 17, 16, 0.6);
   color: var(--haze);
   font-size: 0.72rem;
   letter-spacing: 0.02em;
@@ -140,18 +139,18 @@
 }
 
 .message-item:hover {
-  background: rgba(255, 255, 255, 0.04);
-  border-color: var(--cloud-dark);
+  background: var(--gray-4);
+  border-color: var(--gray-5);
 }
 
 .message-item-mentioned {
-  border-color: rgba(164, 131, 252, 0.5);
-  background: linear-gradient(140deg, rgba(164, 131, 252, 0.14), rgba(255, 255, 255, 0.03));
+  border-color: var(--accent-border);
+  background: var(--accent-dim);
 }
 
 .message-item-mentioned:hover {
-  border-color: rgba(164, 131, 252, 0.7);
-  background: linear-gradient(140deg, rgba(164, 131, 252, 0.2), rgba(255, 255, 255, 0.05));
+  border-color: var(--accent);
+  background: rgba(201, 149, 107, 0.2);
 }
 
 .message-meta {
@@ -234,7 +233,7 @@
 }
 
 .message-link {
-  color: var(--lavender);
+  color: var(--accent);
   text-decoration: underline;
   text-decoration-thickness: 1px;
   text-underline-offset: 2px;
@@ -328,7 +327,7 @@
 }
 
 .message-embed-title:hover {
-  color: var(--lavender);
+  color: var(--accent);
 }
 
 .message-embed-description {
@@ -402,9 +401,9 @@
 }
 
 .message-reaction-chip.is-active {
-  border-color: var(--lavender);
-  background: rgba(164, 131, 252, 0.14);
-  color: var(--snow);
+  border-color: var(--accent-border);
+  background: var(--accent-dim);
+  color: var(--gray-11);
 }
 
 .message-reaction-emoji {
@@ -516,9 +515,7 @@
   inset: 0;
   z-index: 20000;
   padding: 0;
-  background: rgba(19, 17, 28, 0.8);
-  -webkit-backdrop-filter: blur(8px);
-  backdrop-filter: blur(8px);
+  background: rgba(0, 0, 0, 0.7);
 }
 
 .message-image-popup-content {
@@ -557,7 +554,6 @@
   padding: 0.45rem;
   border-radius: var(--radius-md);
   background: rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(4px);
   z-index: 2;
 }
 
@@ -750,7 +746,7 @@
   padding: 6px;
   border: 1px solid var(--cloud);
   border-radius: var(--radius-md);
-  background: rgba(16, 14, 24, 0.96);
+  background: rgba(18, 17, 16, 0.96);
   box-shadow: 0 12px 26px rgba(0, 0, 0, 0.3);
 }
 
@@ -768,8 +764,8 @@
 
 .mention-picker-item:hover,
 .mention-picker-item.is-selected {
-  background: var(--lavender-soft);
-  color: var(--snow);
+  background: var(--accent-dim);
+  color: var(--gray-11);
   transform: none;
 }
 
@@ -803,6 +799,6 @@
   content: '';
   width: 32px;
   height: 10px;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='10' viewBox='0 0 32 10'%3E%3Ccircle cx='5' cy='5' r='4' fill='%237a7394'%3E%3Canimate attributeName='opacity' values='0.4;1;0.4' dur='1.2s' repeatCount='indefinite' begin='0s'/%3E%3C/circle%3E%3Ccircle cx='16' cy='5' r='4' fill='%237a7394'%3E%3Canimate attributeName='opacity' values='0.4;1;0.4' dur='1.2s' repeatCount='indefinite' begin='0.2s'/%3E%3C/circle%3E%3Ccircle cx='27' cy='5' r='4' fill='%237a7394'%3E%3Canimate attributeName='opacity' values='0.4;1;0.4' dur='1.2s' repeatCount='indefinite' begin='0.4s'/%3E%3C/circle%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='10' viewBox='0 0 32 10'%3E%3Ccircle cx='5' cy='5' r='4' fill='%235f5b59'%3E%3Canimate attributeName='opacity' values='0.4;1;0.4' dur='1.2s' repeatCount='indefinite' begin='0s'/%3E%3C/circle%3E%3Ccircle cx='16' cy='5' r='4' fill='%235f5b59'%3E%3Canimate attributeName='opacity' values='0.4;1;0.4' dur='1.2s' repeatCount='indefinite' begin='0.2s'/%3E%3C/circle%3E%3Ccircle cx='27' cy='5' r='4' fill='%235f5b59'%3E%3Canimate attributeName='opacity' values='0.4;1;0.4' dur='1.2s' repeatCount='indefinite' begin='0.4s'/%3E%3C/circle%3E%3C/svg%3E");
   background-repeat: no-repeat;
 }

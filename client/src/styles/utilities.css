@@ -8,7 +8,7 @@
   color: var(--coral);
   padding: var(--space-md);
   background: var(--coral-soft);
-  border: 1px solid rgba(244, 164, 164, 0.3);
+  border: 1px solid rgba(196, 112, 112, 0.3);
   border-radius: var(--radius-md);
 }
 
@@ -17,7 +17,7 @@
   color: var(--info);
   padding: var(--space-md);
   background: var(--sky-soft);
-  border: 1px solid rgba(167, 197, 235, 0.3);
+  border: 1px solid rgba(122, 158, 196, 0.3);
   border-radius: var(--radius-md);
 }
 
@@ -36,8 +36,8 @@
   max-width: min(360px, calc(100vw - 2rem));
   padding: var(--space-md) var(--space-xl);
   border-radius: var(--radius-lg);
-  border: 1px solid var(--cloud-dark);
-  background: var(--nebula);
+  border: 1px solid var(--gray-5);
+  background: var(--gray-3);
   color: var(--pearl);
   font-size: 0.85rem;
   box-shadow: var(--shadow-lg);
@@ -56,8 +56,8 @@
 }
 
 .toast-error {
-  border-color: rgba(244, 164, 164, 0.4);
-  color: var(--coral);
+  border-color: rgba(196, 112, 112, 0.4);
+  color: var(--danger);
 }
 
 /* Responsive */
@@ -68,8 +68,8 @@
   }
 
   .chat-view {
-    gap: var(--space-md);
-    padding: var(--space-md);
+    gap: var(--space-sm);
+    padding: var(--space-sm);
   }
 }
 
@@ -78,7 +78,7 @@
     display: grid;
     grid-template-columns: 200px 1fr;
     grid-template-rows: 1fr auto;
-    gap: var(--space-md);
+    gap: var(--space-sm);
   }
 
   .channel-list {

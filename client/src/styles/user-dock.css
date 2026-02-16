@@ -30,8 +30,7 @@
 }
 
 .user-dock-avatar.is-placeholder {
-  border: 2px solid var(--lavender);
-  box-shadow: 0 0 12px var(--lavender-glow);
+  border: 2px solid var(--accent);
 }
 
 .user-dock-avatar img {
@@ -69,8 +68,7 @@
   width: 6px;
   height: 6px;
   border-radius: var(--radius-full);
-  background: var(--mint);
-  box-shadow: 0 0 6px var(--mint-glow);
+  background: var(--success);
 }
 
 .user-dock-settings {
@@ -88,9 +86,9 @@
 }
 
 .user-dock-settings:hover:not(:disabled) {
-  background: var(--cloud);
-  color: var(--snow);
-  transform: rotate(30deg);
+  background: var(--gray-6);
+  color: var(--gray-11);
+  transform: none;
   box-shadow: none;
 }
 
@@ -139,7 +137,7 @@
 .invite-code {
   font-family: var(--font-mono);
   font-size: 0.85rem;
-  color: var(--lavender);
+  color: var(--accent);
   letter-spacing: 0.05em;
 }
 

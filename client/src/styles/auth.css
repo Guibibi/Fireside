@@ -7,25 +7,14 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--void);
+  background: var(--gray-1);
   position: relative;
-}
-
-.auth-page::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background:
-    radial-gradient(ellipse 80% 70% at 50% 30%, rgba(180, 167, 214, 0.12) 0%, transparent 55%),
-    radial-gradient(ellipse 60% 50% at 20% 80%, rgba(168, 230, 207, 0.08) 0%, transparent 45%),
-    radial-gradient(ellipse 50% 40% at 80% 70%, rgba(232, 180, 188, 0.08) 0%, transparent 40%);
-  pointer-events: none;
 }
 
 .auth-form {
   position: relative;
-  background: var(--nebula);
-  border: 1px solid var(--cloud-dark);
+  background: var(--gray-3);
+  border: 1px solid var(--gray-5);
   padding: var(--space-3xl);
   border-radius: var(--radius-xl);
   width: 100%;
@@ -69,7 +58,7 @@
 }
 
 .auth-link a {
-  color: var(--lavender);
+  color: var(--accent);
   text-decoration: none;
 }
 

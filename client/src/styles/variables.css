@@ -3,55 +3,84 @@
    ========================================================================== */
 
 :root {
-  /* Core palette - Deep purple-grey night sky */
-  --void: #13111c;
-  --nebula-deep: #1a1726;
-  --nebula: #1e1b2e;
-  --nebula-light: #262336;
-  --cloud-dark: #322e45;
-  --cloud: #433e5a;
-  --mist: #5c5678;
-  --haze: #7a7394;
-  --soft: #9d97b5;
-  --pearl: #c4bfd6;
-  --snow: #e8e4f0;
-  --white: #f8f6fc;
+  /* Warm neutral scale (charcoal with brown undertones) */
+  --gray-1:  #121110;
+  --gray-2:  #1a1918;
+  --gray-3:  #222120;
+  --gray-4:  #2c2a28;
+  --gray-5:  #3a3836;
+  --gray-6:  #4a4745;
+  --gray-7:  #5f5b59;
+  --gray-8:  #7a7572;
+  --gray-9:  #9e9995;
+  --gray-10: #b5b0ac;
+  --gray-11: #d4cfcb;
+  --gray-12: #eeebe8;
 
-  /* Pastel accents - Soft and dreamy */
-  --lavender: #b4a7d6;
-  --lavender-soft: rgba(180, 167, 214, 0.15);
-  --lavender-glow: rgba(180, 167, 214, 0.25);
+  /* Single warm accent */
+  --accent:    #c9956b;
+  --accent-dim: rgba(201, 149, 107, 0.15);
+  --accent-border: rgba(201, 149, 107, 0.3);
 
-  --pink: #e8b4bc;
-  --pink-soft: rgba(232, 180, 188, 0.15);
-  --pink-glow: rgba(232, 180, 188, 0.25);
+  /* Semantic (muted, not pastel) */
+  --success: #7db88a;
+  --warning: #d4a64e;
+  --danger:  #c47070;
+  --info:    #7a9ec4;
 
-  --mint: #a8e6cf;
-  --mint-soft: rgba(168, 230, 207, 0.15);
-  --mint-glow: rgba(168, 230, 207, 0.3);
+  /* Semantic dim variants */
+  --success-dim: rgba(125, 184, 138, 0.15);
+  --warning-dim: rgba(212, 166, 78, 0.15);
+  --danger-dim:  rgba(196, 112, 112, 0.15);
+  --info-dim:    rgba(122, 158, 196, 0.15);
 
-  --peach: #ffd3b6;
-  --peach-soft: rgba(255, 211, 182, 0.15);
-  --peach-glow: rgba(255, 211, 182, 0.3);
+  /* Legacy aliases for old token names */
+  --void: var(--gray-1);
+  --nebula-deep: var(--gray-2);
+  --nebula: var(--gray-3);
+  --nebula-light: var(--gray-4);
+  --cloud-dark: var(--gray-5);
+  --cloud: var(--gray-6);
+  --mist: var(--gray-7);
+  --haze: var(--gray-8);
+  --soft: var(--gray-9);
+  --pearl: var(--gray-10);
+  --snow: var(--gray-11);
+  --white: var(--gray-12);
 
-  --sky: #a7c5eb;
-  --sky-soft: rgba(167, 197, 235, 0.15);
-  --sky-glow: rgba(167, 197, 235, 0.25);
+  /* Legacy accent aliases -> single accent */
+  --lavender: var(--accent);
+  --lavender-soft: var(--accent-dim);
+  --lavender-glow: var(--accent-border);
+  --pink: var(--danger);
+  --pink-soft: var(--danger-dim);
+  --pink-glow: rgba(196, 112, 112, 0.25);
+  --mint: var(--success);
+  --mint-soft: var(--success-dim);
+  --mint-glow: rgba(125, 184, 138, 0.3);
+  --peach: var(--warning);
+  --peach-soft: var(--warning-dim);
+  --peach-glow: rgba(212, 166, 78, 0.3);
+  --sky: var(--info);
+  --sky-soft: var(--info-dim);
+  --sky-glow: rgba(122, 158, 196, 0.25);
+  --coral: var(--danger);
+  --coral-soft: var(--danger-dim);
+  --coral-glow: rgba(196, 112, 112, 0.3);
+  --rose: var(--danger);
 
-  --coral: #f4a4a4;
-  --coral-soft: rgba(244, 164, 164, 0.15);
-  --coral-glow: rgba(244, 164, 164, 0.3);
-
-  /* Semantic colors */
-  --accent: var(--lavender);
-  --success: var(--mint);
-  --warning: var(--peach);
-  --danger: var(--coral);
-  --info: var(--sky);
+  /* Picker aliases (used by emoji/gif/reaction pickers) */
+  --surface-1: var(--gray-3);
+  --surface-2: var(--gray-4);
+  --surface-3: var(--gray-5);
+  --border-color: var(--gray-5);
+  --text-primary: var(--gray-11);
+  --text-secondary: var(--gray-8);
+  --primary: var(--accent);
 
   /* Typography */
-  --font-sans: 'DM Sans', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
-  --font-mono: 'Inconsolata', 'Consolas', monospace;
+  --font-sans: 'Geist', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', 'Consolas', monospace;
 
   /* Spacing */
   --space-2xs: 0.125rem;
@@ -63,24 +92,20 @@
   --space-2xl: 1.75rem;
   --space-3xl: 2.5rem;
 
-  /* Border radius - Pillowy and soft */
-  --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-lg: 16px;
-  --radius-xl: 24px;
+  /* Border radius - Reduced */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 10px;
   --radius-full: 9999px;
 
-  /* Shadows - Soft and diffused */
-  --shadow-sm: 0 2px 8px rgba(19, 17, 28, 0.3);
-  --shadow-md: 0 4px 16px rgba(19, 17, 28, 0.4);
-  --shadow-lg: 0 8px 32px rgba(19, 17, 28, 0.5);
-  --shadow-glow-lavender: 0 0 20px var(--lavender-glow);
-  --shadow-glow-mint: 0 0 16px var(--mint-glow);
-  --shadow-glow-pink: 0 0 16px var(--pink-glow);
+  /* Shadows - Flat and subtle */
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.2);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.25);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.3);
 
   /* Transitions */
   --ease-soft: cubic-bezier(0.4, 0, 0.2, 1);
-  --ease-bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
 
   /* Layout */
   --sidebar-width: 260px;

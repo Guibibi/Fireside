@@ -4,7 +4,7 @@
 
 .member-list {
   width: var(--member-list-width);
-  background: linear-gradient(180deg, var(--nebula-light) 0%, var(--nebula) 100%);
+  background: var(--gray-4);
   border: 1px solid var(--cloud-dark);
   border-radius: var(--radius-xl);
   padding: var(--space-xl);
@@ -73,13 +73,11 @@
 }
 
 .member-status-dot-online {
-  background: var(--mint);
-  box-shadow: 0 0 6px var(--mint-glow);
+  background: var(--success);
 }
 
 .member-status-dot-idle {
-  background: var(--peach);
-  box-shadow: 0 0 6px var(--peach-glow);
+  background: var(--warning);
 }
 
 .member-status-dot-offline {
@@ -89,11 +87,11 @@
 .member-voice-indicator {
   font-family: var(--font-mono);
   font-size: 0.65rem;
-  color: var(--lavender);
+  color: var(--accent);
   text-transform: uppercase;
   letter-spacing: 0.04em;
   padding: var(--space-xs) var(--space-sm);
-  background: var(--lavender-soft);
+  background: var(--accent-dim);
   border-radius: var(--radius-full);
 }
 

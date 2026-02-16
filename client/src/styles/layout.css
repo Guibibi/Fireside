@@ -6,10 +6,10 @@
   height: 100%;
   display: flex;
   flex-direction: column;
-  animation: softFadeIn 0.5s var(--ease-soft);
+  animation: fadeIn 0.2s var(--ease-soft);
 }
 
-@keyframes softFadeIn {
+@keyframes fadeIn {
   from { opacity: 0; }
   to { opacity: 1; }
 }
@@ -17,8 +17,8 @@
 .chat-view {
   display: flex;
   height: 100%;
-  gap: var(--space-lg);
-  padding: var(--space-lg);
+  gap: var(--space-sm);
+  padding: var(--space-sm);
   isolation: isolate;
 }
 
@@ -27,8 +27,8 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
-  background: var(--nebula-deep);
-  border: 1px solid var(--cloud-dark);
+  background: var(--gray-2);
+  border: 1px solid var(--gray-5);
   border-radius: var(--radius-xl);
   overflow: hidden;
   position: relative;

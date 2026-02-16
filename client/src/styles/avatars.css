@@ -7,7 +7,7 @@
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  background: rgba(107, 116, 235, 0.18);
+  background: rgba(201, 149, 107, 0.18);
   color: rgba(255, 255, 255, 0.92);
   font-size: calc(var(--avatar-size) * 0.42);
   font-weight: 700;

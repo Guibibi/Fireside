@@ -7,7 +7,7 @@
   position: sticky;
   bottom: calc(var(--space-xl) * -1);
   padding-top: var(--space-xl);
-  background: linear-gradient(to bottom, transparent, var(--nebula) 40%);
+  background: linear-gradient(to bottom, transparent, var(--gray-3) 40%);
 }
 
 .channel-footer-banner {
@@ -18,9 +18,9 @@
   gap: var(--space-sm);
   padding: var(--space-md);
   border-radius: var(--radius-lg);
-  background: var(--coral-soft);
-  border: 1px solid rgba(244, 164, 164, 0.3);
-  color: var(--coral);
+  background: var(--danger-dim);
+  border: 1px solid rgba(196, 112, 112, 0.3);
+  color: var(--danger);
   font-size: 0.8rem;
   font-weight: 500;
   animation: slideUp 0.3s var(--ease-soft);
@@ -42,22 +42,22 @@
   padding: var(--space-xs) var(--space-md);
   font-size: 0.75rem;
   border-radius: var(--radius-full);
-  background: rgba(244, 164, 164, 0.2);
-  color: var(--snow);
+  background: rgba(196, 112, 112, 0.2);
+  color: var(--gray-11);
   border: none;
   box-shadow: none;
 }
 
 .channel-footer-banner-dismiss:hover:not(:disabled) {
-  background: rgba(244, 164, 164, 0.3);
+  background: rgba(196, 112, 112, 0.3);
   transform: none;
   box-shadow: none;
 }
 
 .voice-dock {
   padding: var(--space-lg);
-  background: var(--nebula-light);
-  border: 1px solid var(--cloud-dark);
+  background: var(--gray-4);
+  border: 1px solid var(--gray-5);
   border-radius: var(--radius-lg);
   animation: slideUp 0.3s var(--ease-soft);
 }
@@ -77,9 +77,9 @@
   justify-content: center;
   padding: 0;
   border-radius: var(--radius-full);
-  background: var(--cloud-dark);
+  background: var(--gray-5);
   border: none;
-  color: var(--pearl);
+  color: var(--gray-10);
   box-shadow: none;
   transition: all 0.2s var(--ease-soft);
 }
@@ -89,47 +89,46 @@
 }
 
 .voice-dock-icon:focus-visible {
-  outline: 2px solid var(--lavender);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
 .voice-dock-disconnect {
-  background: linear-gradient(135deg, var(--coral), #e88a8a);
-  color: var(--void);
+  background: var(--danger);
+  color: var(--gray-1);
 }
 
 .voice-dock-disconnect:hover:not(:disabled) {
-  box-shadow: var(--shadow-glow-pink);
-  transform: scale(1.05);
+  opacity: 0.9;
+  transform: none;
 }
 
 .voice-dock-toggle {
-  background: var(--cloud-dark);
-  color: var(--soft);
+  background: var(--gray-5);
+  color: var(--gray-9);
 }
 
 .voice-dock-toggle:hover:not(:disabled) {
-  background: var(--cloud);
-  color: var(--snow);
+  background: var(--gray-6);
+  color: var(--gray-11);
   transform: none;
 }
 
 .voice-dock-camera,
 .voice-dock-screen {
-  background: var(--cloud-dark);
+  background: var(--gray-5);
 }
 
 .voice-dock-camera:hover:not(:disabled),
 .voice-dock-screen:hover:not(:disabled) {
-  background: var(--lavender-soft);
-  color: var(--lavender);
+  background: var(--accent-dim);
+  color: var(--accent);
 }
 
 .voice-dock-camera.is-active,
 .voice-dock-screen.is-active {
-  background: linear-gradient(135deg, var(--mint), #8ed9ba);
-  color: var(--void);
-  box-shadow: var(--shadow-glow-mint);
+  background: var(--success);
+  color: var(--gray-1);
 }
 
 .voice-dock-camera:disabled,
@@ -141,25 +140,25 @@
   margin-top: var(--space-sm);
   font-family: var(--font-mono);
   font-size: 0.75rem;
-  color: var(--mist);
+  color: var(--gray-7);
 }
 
 .voice-dock-channel-alert {
-  color: var(--coral);
+  color: var(--danger);
 }
 
 .voice-dock-error {
   margin-top: var(--space-xs);
   font-size: 0.75rem;
-  color: var(--coral);
+  color: var(--danger);
 }
 
 .voice-dock-native-debug {
   margin-top: var(--space-md);
   padding: var(--space-md);
   border-radius: var(--radius-md);
-  border: 1px solid var(--sky-soft);
-  background: rgba(167, 197, 235, 0.05);
+  border: 1px solid var(--info-dim);
+  background: rgba(122, 158, 196, 0.05);
   font-family: var(--font-mono);
   font-size: 0.7rem;
 }
@@ -168,7 +167,7 @@
   font-size: 0.65rem;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: var(--sky);
+  color: var(--info);
   margin-bottom: var(--space-sm);
 }
 
@@ -183,5 +182,5 @@
   padding: var(--space-xs) var(--space-sm);
   font-size: 0.7rem;
   border-radius: var(--radius-full);
-  background: var(--cloud-dark);
+  background: var(--gray-5);
 }

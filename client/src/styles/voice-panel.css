@@ -4,7 +4,7 @@
 
 .voice-panel {
   padding: var(--space-lg);
-  background: var(--nebula-light);
+  background: var(--gray-4);
   border-top: 1px solid var(--cloud-dark);
 }
 

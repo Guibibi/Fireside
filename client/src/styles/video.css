@@ -36,13 +36,11 @@
 }
 
 .video-stage-tile.is-local {
-  border-color: var(--lavender);
-  box-shadow: 0 0 16px var(--lavender-glow);
+  border-color: var(--accent);
 }
 
 .video-stage-tile.is-screen-share {
-  border-color: var(--peach);
-  box-shadow: 0 0 16px var(--peach-glow);
+  border-color: var(--warning);
 }
 
 .video-stage-stream {
@@ -61,15 +59,7 @@
   font-size: 0.7rem;
   font-weight: 500;
   color: var(--snow);
-  background: rgba(19, 17, 28, 0.92); /* Fallback */
-  -webkit-backdrop-filter: blur(8px);
-  backdrop-filter: blur(8px);
+  background: rgba(18, 17, 16, 0.88);
   padding: var(--space-xs) var(--space-sm);
   border-radius: var(--radius-full);
-}
-
-@supports (backdrop-filter: blur(8px)) or (-webkit-backdrop-filter: blur(8px)) {
-  .video-stage-label {
-    background: rgba(19, 17, 28, 0.8);
-  }
 }

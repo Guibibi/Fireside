@@ -12,7 +12,7 @@
   position: fixed;
   z-index: 999;
   min-width: 160px;
-  background: var(--nebula);
+  background: var(--gray-3);
   border: 1px solid var(--cloud-dark);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-lg);
@@ -48,7 +48,7 @@
 }
 
 .context-menu-item:hover:not(:disabled) {
-  background: var(--lavender-soft);
+  background: var(--accent-dim);
   color: var(--snow);
   transform: none;
   box-shadow: none;
@@ -74,7 +74,7 @@
 }
 
 .context-menu-item:focus-visible {
-  outline: 2px solid var(--lavender);
+  outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
 
@@ -120,20 +120,20 @@
   appearance: none;
   width: 14px;
   height: 14px;
-  background: var(--lavender);
+  background: var(--accent);
   border-radius: 50%;
   cursor: pointer;
   transition: background 0.15s var(--ease-soft);
 }
 
 .context-menu-volume-slider::-webkit-slider-thumb:hover {
-  background: var(--lavender-light);
+  background: var(--accent);
 }
 
 .context-menu-volume-slider::-moz-range-thumb {
   width: 14px;
   height: 14px;
-  background: var(--lavender);
+  background: var(--accent);
   border-radius: 50%;
   cursor: pointer;
   border: none;
@@ -141,7 +141,7 @@
 }
 
 .context-menu-volume-slider::-moz-range-thumb:hover {
-  background: var(--lavender-light);
+  background: var(--accent);
 }
 
 .context-menu-volume-reset {

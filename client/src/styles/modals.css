@@ -6,20 +6,12 @@
   position: fixed;
   inset: 0;
   z-index: 1200;
-  background: rgba(19, 17, 28, 0.92); /* Fallback for browsers without backdrop-filter */
-  -webkit-backdrop-filter: blur(8px);
-  backdrop-filter: blur(8px);
+  background: rgba(0, 0, 0, 0.7);
   display: flex;
   align-items: center;
   justify-content: center;
   padding: var(--space-xl);
   animation: fadeIn 0.2s var(--ease-soft);
-}
-
-@supports (backdrop-filter: blur(8px)) or (-webkit-backdrop-filter: blur(8px)) {
-  .settings-modal-backdrop {
-    background: rgba(19, 17, 28, 0.8);
-  }
 }
 
 @keyframes fadeIn {
@@ -33,8 +25,8 @@
   overflow-y: auto;
   overflow-x: hidden;
   border-radius: var(--radius-xl);
-  background: var(--nebula);
-  border: 1px solid var(--cloud-dark);
+  background: var(--gray-3);
+  border: 1px solid var(--gray-5);
   box-shadow: var(--shadow-lg);
   padding: var(--space-2xl);
   display: flex;
@@ -112,7 +104,7 @@
   border: 1px solid var(--cloud-dark);
   border-radius: var(--radius-lg);
   padding: var(--space-xl);
-  background: var(--nebula-light);
+  background: var(--gray-4);
   display: flex;
   flex-direction: column;
   gap: var(--space-md);
@@ -123,7 +115,7 @@
   font-size: 0.7rem;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: var(--lavender);
+  color: var(--gray-8);
   margin-bottom: var(--space-xs);
 }
 
@@ -151,7 +143,7 @@
 .settings-checkbox input[type="checkbox"] {
   width: 1rem;
   height: 1rem;
-  accent-color: var(--lavender);
+  accent-color: var(--accent);
 }
 
 .settings-avatar-preview {
@@ -197,7 +189,7 @@
 }
 
 .settings-danger:hover:not(:disabled) {
-  background: rgba(244, 164, 164, 0.25);
+  background: rgba(196, 112, 112, 0.25);
   box-shadow: none;
 }
 
@@ -258,7 +250,7 @@
 
 .settings-volume-value {
   font-size: 0.8rem;
-  color: var(--muted);
+  color: var(--gray-8);
 }
 
 .voice-share-preview {
@@ -278,5 +270,5 @@
   max-height: 180px;
   border-radius: var(--radius-md);
   object-fit: contain;
-  background: var(--void);
+  background: var(--gray-1);
 }

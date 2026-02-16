@@ -23,17 +23,17 @@ body {
   font-family: var(--font-sans);
   font-weight: 400;
   font-size: 15px;
-  background: var(--nebula);
-  color: var(--pearl);
+  background: var(--gray-2);
+  color: var(--gray-10);
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Global scrollbar styling (matches message timeline) */
+/* Global scrollbar styling */
 * {
   scrollbar-width: auto;
-  scrollbar-color: var(--haze) transparent;
+  scrollbar-color: var(--gray-6) transparent;
 }
 
 *::-webkit-scrollbar {
@@ -46,43 +46,30 @@ body {
 }
 
 *::-webkit-scrollbar-thumb {
-  background: var(--haze);
+  background: var(--gray-6);
   border-radius: var(--radius-full);
 }
 
 *::-webkit-scrollbar-thumb:hover {
-  background: var(--haze);
-}
-
-/* Dreamy ambient background */
-body::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  background:
-    radial-gradient(ellipse 120% 80% at 10% 20%, rgba(180, 167, 214, 0.08) 0%, transparent 50%),
-    radial-gradient(ellipse 100% 60% at 90% 80%, rgba(232, 180, 188, 0.06) 0%, transparent 45%),
-    radial-gradient(ellipse 80% 50% at 50% 50%, rgba(168, 230, 207, 0.04) 0%, transparent 50%);
-  pointer-events: none;
-  z-index: -1;
+  background: var(--gray-7);
 }
 
 /* Typography */
 h1, h2, h3, h4, h5, h6 {
   font-family: var(--font-sans);
   font-weight: 600;
-  color: var(--snow);
+  color: var(--gray-11);
   letter-spacing: -0.01em;
 }
 
 a {
-  color: var(--lavender);
+  color: var(--accent);
   text-decoration: none;
   transition: color 0.2s var(--ease-soft);
 }
 
 a:hover {
-  color: var(--snow);
+  color: var(--gray-12);
 }
 
 /* Form Elements */
@@ -93,20 +80,18 @@ button {
   cursor: pointer;
   border: none;
   padding: var(--space-sm) var(--space-xl);
-  border-radius: var(--radius-full);
-  background: linear-gradient(135deg, var(--lavender) 0%, #9d8ec9 100%);
-  color: var(--void);
-  transition: all 0.25s var(--ease-soft);
-  box-shadow: 0 2px 8px var(--lavender-glow);
+  border-radius: var(--radius-md);
+  background: var(--accent);
+  color: var(--gray-1);
+  transition: all 0.2s var(--ease-soft);
 }
 
 button:hover:not(:disabled) {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 16px var(--lavender-glow);
+  opacity: 0.9;
 }
 
 button:active:not(:disabled) {
-  transform: translateY(0);
+  opacity: 0.85;
 }
 
 button:disabled {
@@ -118,35 +103,35 @@ input,
 select {
   font-family: var(--font-sans);
   font-size: 0.9rem;
-  border: 1.5px solid var(--cloud-dark);
-  background: var(--nebula-deep);
-  color: var(--pearl);
+  border: 1.5px solid var(--gray-5);
+  background: var(--gray-2);
+  color: var(--gray-10);
   padding: var(--space-sm) var(--space-lg);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   outline: none;
   transition: all 0.2s var(--ease-soft);
 }
 
 input:focus,
 select:focus {
-  border-color: var(--lavender);
-  box-shadow: 0 0 0 3px var(--lavender-soft);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-border);
 }
 
 input::placeholder {
-  color: var(--mist);
+  color: var(--gray-7);
 }
 
 select {
   cursor: pointer;
   appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%237a7394' d='M6 8L2 4h8z'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%237a7572' d='M6 8L2 4h8z'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 0.875rem center;
   padding-right: 2.25rem;
 }
 
 select option {
-  background: var(--nebula);
-  color: var(--pearl);
+  background: var(--gray-3);
+  color: var(--gray-10);
 }
