@@ -614,6 +614,7 @@ async fn handle_send_message(
                     | crate::errors::AppError::Unauthorized(message)
                     | crate::errors::AppError::NotFound(message)
                     | crate::errors::AppError::Conflict(message)
+                    | crate::errors::AppError::TooManyRequests(message)
                     | crate::errors::AppError::Internal(message) => message,
                 };
                 send_server_message(out_tx, ServerMessage::Error { message });

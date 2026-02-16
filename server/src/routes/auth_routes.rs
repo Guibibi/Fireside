@@ -1,15 +1,34 @@
 use axum::{
     extract::State,
+    http::HeaderMap,
     routing::{get, post},
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::LazyLock;
+use std::time::{Duration, Instant};
+use tokio::sync::Mutex;
 use uuid::Uuid;
 
 use crate::auth::{create_token, hash_password, verify_password};
 use crate::errors::AppError;
 use crate::models::UserRole;
 use crate::AppState;
+
+const AUTH_RATE_LIMIT_WINDOW: Duration = Duration::from_secs(60);
+const LOGIN_MAX_ATTEMPTS_PER_WINDOW: u32 = 12;
+const REGISTER_MAX_ATTEMPTS_PER_WINDOW: u32 = 10;
+const SETUP_MAX_ATTEMPTS_PER_WINDOW: u32 = 5;
+
+#[derive(Debug, Clone)]
+struct AuthRateLimitEntry {
+    window_started_at: Instant,
+    attempts: u32,
+}
+
+static AUTH_RATE_LIMITS: LazyLock<Mutex<HashMap<String, AuthRateLimitEntry>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
 #[derive(Serialize)]
 pub struct AuthResponse {
@@ -65,8 +84,22 @@ async fn setup_status(
 
 async fn setup(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(body): Json<SetupRequest>,
 ) -> Result<Json<AuthResponse>, AppError> {
+    let client_ip = client_ip_from_headers(&headers);
+    let rate_limit_key = format!("setup:{client_ip}");
+    if !allow_auth_attempt(rate_limit_key, SETUP_MAX_ATTEMPTS_PER_WINDOW).await {
+        tracing::warn!(
+            event = "auth_setup_rate_limited",
+            client_ip = %client_ip,
+            "Blocked setup request by auth rate limiter"
+        );
+        return Err(AppError::TooManyRequests(
+            "Too many setup attempts. Please try again later.".into(),
+        ));
+    }
+
     validate_username(&body.username)?;
     validate_password(&body.password)?;
 
@@ -111,8 +144,26 @@ async fn setup(
 
 async fn register(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(body): Json<RegisterRequest>,
 ) -> Result<Json<AuthResponse>, AppError> {
+    let client_ip = client_ip_from_headers(&headers);
+    let rate_limit_key = format!(
+        "register:{client_ip}:{}",
+        body.username.to_ascii_lowercase()
+    );
+    if !allow_auth_attempt(rate_limit_key, REGISTER_MAX_ATTEMPTS_PER_WINDOW).await {
+        tracing::warn!(
+            event = "auth_register_rate_limited",
+            client_ip = %client_ip,
+            username = %body.username,
+            "Blocked registration request by auth rate limiter"
+        );
+        return Err(AppError::TooManyRequests(
+            "Too many registration attempts. Please try again later.".into(),
+        ));
+    }
+
     validate_username(&body.username)?;
     validate_password(&body.password)?;
 
@@ -201,19 +252,49 @@ async fn register(
 
 async fn login(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(body): Json<LoginRequest>,
 ) -> Result<Json<AuthResponse>, AppError> {
+    let client_ip = client_ip_from_headers(&headers);
+    let rate_limit_key = format!("login:{client_ip}:{}", body.username.to_ascii_lowercase());
+    if !allow_auth_attempt(rate_limit_key, LOGIN_MAX_ATTEMPTS_PER_WINDOW).await {
+        tracing::warn!(
+            event = "auth_login_rate_limited",
+            client_ip = %client_ip,
+            username = %body.username,
+            "Blocked login request by auth rate limiter"
+        );
+        return Err(AppError::TooManyRequests(
+            "Too many login attempts. Please try again later.".into(),
+        ));
+    }
+
     let row: Option<(Uuid, String, String, UserRole)> =
         sqlx::query_as("SELECT id, username, password_hash, role FROM users WHERE username = $1")
             .bind(&body.username)
             .fetch_optional(&state.db)
             .await?;
 
-    let (user_id, username, password_hash, role) =
-        row.ok_or_else(|| AppError::Unauthorized("Invalid username or password".into()))?;
+    let (user_id, username, password_hash, role) = row.ok_or_else(|| {
+        tracing::warn!(
+            event = "auth_login_failed",
+            client_ip = %client_ip,
+            username = %body.username,
+            reason = "unknown_username",
+            "Login failed"
+        );
+        AppError::Unauthorized("Invalid username or password".into())
+    })?;
 
     let valid = verify_password(&body.password, &password_hash)?;
     if !valid {
+        tracing::warn!(
+            event = "auth_login_failed",
+            client_ip = %client_ip,
+            username = %body.username,
+            reason = "invalid_password",
+            "Login failed"
+        );
         return Err(AppError::Unauthorized(
             "Invalid username or password".into(),
         ));
@@ -233,6 +314,56 @@ async fn login(
         username,
         role: role.as_str().to_string(),
     }))
+}
+
+fn client_ip_from_headers(headers: &HeaderMap) -> String {
+    if let Some(value) = headers
+        .get("x-forwarded-for")
+        .and_then(|value| value.to_str().ok())
+    {
+        if let Some(first) = value.split(',').next() {
+            let first = first.trim();
+            if !first.is_empty() {
+                return first.to_string();
+            }
+        }
+    }
+
+    if let Some(value) = headers
+        .get("x-real-ip")
+        .and_then(|value| value.to_str().ok())
+    {
+        let value = value.trim();
+        if !value.is_empty() {
+            return value.to_string();
+        }
+    }
+
+    "unknown".to_string()
+}
+
+async fn allow_auth_attempt(key: String, max_attempts_per_window: u32) -> bool {
+    let now = Instant::now();
+    let mut limits = AUTH_RATE_LIMITS.lock().await;
+
+    limits.retain(|_, entry| now.duration_since(entry.window_started_at) < AUTH_RATE_LIMIT_WINDOW);
+
+    let entry = limits.entry(key).or_insert(AuthRateLimitEntry {
+        window_started_at: now,
+        attempts: 0,
+    });
+
+    if now.duration_since(entry.window_started_at) >= AUTH_RATE_LIMIT_WINDOW {
+        entry.window_started_at = now;
+        entry.attempts = 0;
+    }
+
+    if entry.attempts >= max_attempts_per_window {
+        return false;
+    }
+
+    entry.attempts += 1;
+    true
 }
 
 fn validate_username(username: &str) -> Result<(), AppError> {

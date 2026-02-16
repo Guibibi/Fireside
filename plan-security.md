@@ -2,18 +2,18 @@
 
 ## Phase 0 - Critical (Do First)
 
-- [ ] Protect media reads by requiring authentication in `GET /api/media/{media_id}/{variant}`.
-- [ ] Enforce authorization for media access (owner/channel/member policy), not just URL possession.
-- [ ] Add role checks for channel mutation endpoints (`create_channel`, `delete_channel`).
-- [ ] Replace global permissive CORS with config-driven allowlists for origins/methods/headers.
+- [x] Protect media reads by requiring authentication in `GET /api/media/{media_id}/{variant}`.
+- [x] Enforce authorization for media access (owner/channel/member policy), not just URL possession.
+- [x] Add role checks for channel mutation endpoints (`create_channel`, `delete_channel`).
+- [x] Replace global permissive CORS with config-driven allowlists for origins/methods/headers.
 - [ ] Add tests proving unauthorized media access and unauthorized channel mutations are denied.
 
 ## Phase 1 - High Security Hardening
 
-- [ ] Add rate limiting for `/api/login`, `/api/register`, and `/api/setup`.
-- [ ] Use combined limiter keys (IP + username where applicable) to reduce credential stuffing risk.
-- [ ] Keep auth error responses generic and uniform to avoid account enumeration.
-- [ ] Add structured security logs for auth failures and rate-limit triggers.
+- [x] Add rate limiting for `/api/login`, `/api/register`, and `/api/setup`.
+- [x] Use combined limiter keys (IP + username where applicable) to reduce credential stuffing risk.
+- [x] Keep auth error responses generic and uniform to avoid account enumeration.
+- [x] Add structured security logs for auth failures and rate-limit triggers.
 - [ ] Add endpoint/body-size guardrails where missing.
 - [ ] Add tests for rate-limit behavior (allow, block, and reset window).
 
@@ -37,15 +37,15 @@
 ## Validation Checklist (Run Per Phase)
 
 - [ ] `cargo fmt --all --manifest-path server/Cargo.toml -- --check`
-- [ ] `cargo clippy --manifest-path server/Cargo.toml --all-targets -- -D warnings`
-- [ ] `cargo test --manifest-path server/Cargo.toml`
+- [x] `cargo clippy --manifest-path server/Cargo.toml --all-targets -- -D warnings`
+- [x] `cargo test --manifest-path server/Cargo.toml`
 - [ ] Add or update focused integration tests for each changed security/performance behavior.
 
 ## Recommended Execution Order
 
-- [ ] 1) Media auth/authz + channel role enforcement.
-- [ ] 2) CORS tightening.
-- [ ] 3) Auth endpoint rate limiting.
+- [x] 1) Media auth/authz + channel role enforcement.
+- [x] 2) CORS tightening.
+- [x] 3) Auth endpoint rate limiting.
 - [ ] 4) Attachment metadata optimization.
 - [ ] 5) Websocket queue backpressure + DB index tuning.
 
