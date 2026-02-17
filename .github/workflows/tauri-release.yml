@@ -113,7 +113,10 @@ jobs:
           if-no-files-found: error
           path: |
             client/src-tauri/target/release/bundle/**/*.sig
+            client/src-tauri/target/release/bundle/**/*.dmg
             client/src-tauri/target/release/bundle/**/*.AppImage
+            client/src-tauri/target/release/bundle/**/*.deb
+            client/src-tauri/target/release/bundle/**/*.rpm
             client/src-tauri/target/release/bundle/**/*.app.tar.gz
             client/src-tauri/target/release/bundle/**/*.msi
             client/src-tauri/target/release/bundle/**/*-setup.exe
@@ -145,4 +148,4 @@ jobs:
           fail_on_unmatched_files: true
           make_latest: true
           files: |
-            release-assets/*
+            release-assets/**
