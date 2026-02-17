@@ -282,9 +282,13 @@ export default function SettingsPage() {
       return;
     }
 
-    const contentType = file.type;
-    if (!["image/jpeg", "image/png", "image/webp"].includes(contentType)) {
-      setProfileError("Avatar must be JPEG, PNG, or WebP");
+    const contentType = file.type.toLowerCase();
+    const fileName = file.name.toLowerCase();
+    const hasAllowedMimeType = ["image/jpeg", "image/jpg", "image/pjpeg", "image/png", "image/webp"].includes(contentType);
+    const hasAllowedExtension = [".jpg", ".jpeg", ".png", ".webp"].some((extension) => fileName.endsWith(extension));
+
+    if (!hasAllowedMimeType && !hasAllowedExtension) {
+      setProfileError("Avatar must be JPG, PNG, or WebP");
       return;
     }
 
@@ -494,8 +498,8 @@ export default function SettingsPage() {
                     <UserAvatar username={currentUsername() ?? avatarFallbackLabel()} size={72} />
                   </div>
                   <label class="settings-label" for="settings-avatar">Upload new image</label>
-                  <input id="settings-avatar" type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => void handleAvatarInput(event.currentTarget)} disabled={isUploadingAvatar()} />
-                  <p class="settings-help">JPEG, PNG, or WebP. Max size 2 MB.</p>
+                  <input id="settings-avatar" type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/jpg,image/pjpeg,image/png,image/webp" onChange={(event) => void handleAvatarInput(event.currentTarget)} disabled={isUploadingAvatar()} />
+                  <p class="settings-help">JPG, PNG, or WebP. Max size 2 MB.</p>
                 </section>
               </div>
 
