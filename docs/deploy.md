@@ -44,7 +44,7 @@ Edit `server/.env.docker` and set at minimum:
 - `NATIVE_RTP_ANNOUNCED_IP` when Tauri desktop clients on other hosts use native screen share
 - `STORAGE_BACKEND` and `STORAGE_LOCAL_ROOT` for media upload storage
 - `CORS_ALLOWED_ORIGINS` for browser origin allowlist (comma-separated)
-- `TENOR_API_KEY` (optional) for GIF search via the Tenor API
+- `KLIPY_API_KEY` (optional) for GIF search via the Klipy API
 
 Notes:
 

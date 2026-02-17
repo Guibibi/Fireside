@@ -10,7 +10,7 @@ use crate::auth::extract_claims;
 use crate::errors::AppError;
 use crate::AppState;
 
-const TENOR_API_BASE: &str = "https://tenor.googleapis.com/v2";
+const KLIPY_API_BASE: &str = "https://api.klipy.com/v2";
 const MAX_RESULTS: usize = 50;
 const GIF_SEARCH_CACHE_TTL: Duration = Duration::from_secs(60);
 const GIF_SEARCH_CACHE_MAX_ENTRIES: usize = 200;
@@ -64,10 +64,10 @@ async fn search_gifs(
 ) -> Result<Json<GifSearchResponse>, AppError> {
     let _claims = extract_claims(&headers, &state.config.jwt.secret)?;
 
-    let tenor_api_key = state
+    let klipy_api_key = state
         .config
         .integrations
-        .tenor_api_key
+        .klipy_api_key
         .as_ref()
         .ok_or_else(|| AppError::Internal("GIF search is not configured".into()))?;
 
@@ -88,8 +88,8 @@ async fn search_gifs(
         .build()
         .map_err(|error| AppError::Internal(format!("Failed to create HTTP client: {error}")))?;
 
-    let mut request = client.get(format!("{}/search", TENOR_API_BASE)).query(&[
-        ("key", tenor_api_key.as_str()),
+    let mut request = client.get(format!("{}/search", KLIPY_API_BASE)).query(&[
+        ("key", klipy_api_key.as_str()),
         ("q", query.q.as_str()),
         ("limit", &limit.to_string()),
         ("media_filter", "gif,tinygif"),
@@ -101,8 +101,8 @@ async fn search_gifs(
     }
 
     let response = request.send().await.map_err(|error| {
-        tracing::error!(error = %error, "Tenor API request failed");
-        AppError::Internal("Tenor API request failed".into())
+        tracing::error!(error = %error, "Klipy API request failed");
+        AppError::Internal("Klipy API request failed".into())
     })?;
 
     if !response.status().is_success() {
@@ -111,17 +111,17 @@ async fn search_gifs(
             .text()
             .await
             .unwrap_or_else(|_| "Unknown error".into());
-        tracing::error!(status = %status, body = %body, "Tenor API error");
+        tracing::error!(status = %status, body = %body, "Klipy API error");
         return Err(AppError::Internal("GIF search service unavailable".into()));
     }
 
-    let tenor_response: serde_json::Value = response
+    let klipy_response: serde_json::Value = response
         .json()
         .await
-        .map_err(|error| AppError::Internal(format!("Failed to parse Tenor response: {error}")))?;
+        .map_err(|error| AppError::Internal(format!("Failed to parse Klipy response: {error}")))?;
 
-    let results = parse_tenor_results(&tenor_response)?;
-    let next_cursor = tenor_response
+    let results = parse_klipy_results(&klipy_response)?;
+    let next_cursor = klipy_response
         .get("next")
         .and_then(|v| v.as_str())
         .map(String::from);
@@ -178,11 +178,11 @@ async fn cache_search_result(cache_key: String, response: GifSearchResponse) {
     }
 }
 
-fn parse_tenor_results(response: &serde_json::Value) -> Result<Vec<GifResult>, AppError> {
+fn parse_klipy_results(response: &serde_json::Value) -> Result<Vec<GifResult>, AppError> {
     let results = response
         .get("results")
         .and_then(|v| v.as_array())
-        .ok_or_else(|| AppError::Internal("Invalid Tenor response format".into()))?;
+        .ok_or_else(|| AppError::Internal("Invalid Klipy response format".into()))?;
 
     let mut gifs = Vec::new();
 
@@ -191,23 +191,23 @@ fn parse_tenor_results(response: &serde_json::Value) -> Result<Vec<GifResult>, A
             .get("id")
             .and_then(|v| v.as_str())
             .map(String::from)
-            .ok_or_else(|| AppError::Internal("Missing GIF ID in Tenor response".into()))?;
+            .ok_or_else(|| AppError::Internal("Missing GIF ID in Klipy response".into()))?;
 
         let media_formats = result
             .get("media_formats")
             .and_then(|v| v.as_object())
-            .ok_or_else(|| AppError::Internal("Missing media formats in Tenor response".into()))?;
+            .ok_or_else(|| AppError::Internal("Missing media formats in Klipy response".into()))?;
 
         let gif_format = media_formats
             .get("gif")
             .and_then(|v| v.as_object())
-            .ok_or_else(|| AppError::Internal("Missing GIF format in Tenor response".into()))?;
+            .ok_or_else(|| AppError::Internal("Missing GIF format in Klipy response".into()))?;
 
         let url = gif_format
             .get("url")
             .and_then(|v| v.as_str())
             .map(String::from)
-            .ok_or_else(|| AppError::Internal("Missing GIF URL in Tenor response".into()))?;
+            .ok_or_else(|| AppError::Internal("Missing GIF URL in Klipy response".into()))?;
 
         let tinygif_format = media_formats.get("tinygif").and_then(|v| v.as_object());
 

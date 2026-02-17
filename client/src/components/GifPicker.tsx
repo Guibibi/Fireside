@@ -200,7 +200,7 @@ export default function GifPicker(props: GifPickerProps) {
       </div>
 
       <div class="gif-picker-footer">
-        <span>Powered by Tenor</span>
+        <span>Powered by Klipy</span>
       </div>
     </div>
   );

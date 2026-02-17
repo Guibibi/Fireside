@@ -76,7 +76,8 @@ pub struct S3Config {
 
 #[derive(Debug, Deserialize, Clone, Default)]
 pub struct IntegrationsConfig {
-    pub tenor_api_key: Option<String>,
+    #[serde(alias = "tenor_api_key")]
+    pub klipy_api_key: Option<String>,
 }
 
 fn default_native_rtp_listen_ip() -> String {
@@ -253,7 +254,9 @@ impl AppConfig {
                     },
                 },
                 integrations: IntegrationsConfig {
-                    tenor_api_key: std::env::var("TENOR_API_KEY").ok(),
+                    klipy_api_key: std::env::var("KLIPY_API_KEY")
+                        .ok()
+                        .or_else(|| std::env::var("TENOR_API_KEY").ok()),
                 },
             }
         };

@@ -31,9 +31,9 @@ max_upload_bytes = 10485760
 cleanup_interval_seconds = 900
 failed_retention_hours = 24
 
-# Tenor GIF search integration (optional)
+# Klipy GIF search integration (optional)
 [integrations]
-tenor_api_key = ""
+klipy_api_key = ""
 
 [storage.s3]
 endpoint = ""

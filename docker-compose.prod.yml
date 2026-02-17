@@ -36,6 +36,7 @@ services:
       MEDIA_WORKER_COUNT: ${MEDIA_WORKER_COUNT:-2}
       WEBRTC_LISTEN_IP: ${WEBRTC_LISTEN_IP:-0.0.0.0}
       WEBRTC_ANNOUNCED_IP: ${WEBRTC_ANNOUNCED_IP:-}
+      KLIPY_API_KEY: ${KLIPY_API_KEY:-}
       RUST_LOG: ${RUST_LOG:-yankcord_server=info,tower_http=info}
 
   web:
