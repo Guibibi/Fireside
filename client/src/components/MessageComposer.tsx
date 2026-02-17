@@ -1,6 +1,8 @@
-import { For, Show, createMemo, createSignal, lazy, Suspense } from "solid-js";
+import { For, Show, createEffect, createMemo, createSignal, lazy, Suspense } from "solid-js";
+import type { Emoji } from "../api/emojis";
 import type { PendingAttachment } from "./messageTypes";
 import type { GifResult } from "../api/gifs";
+import { loadEmojis, useEmojiStore } from "../stores/emojis";
 
 const EmojiPicker = lazy(() => import("./EmojiPicker"));
 const GifPicker = lazy(() => import("./GifPicker"));
@@ -24,6 +26,7 @@ interface MessageComposerProps {
 }
 
 export default function MessageComposer(props: MessageComposerProps) {
+  const emojiStore = useEmojiStore();
   let fileInputRef: HTMLInputElement | undefined;
   let draftInputRef: HTMLInputElement | undefined;
   let emojiButtonRef: HTMLButtonElement | undefined;
@@ -32,8 +35,17 @@ export default function MessageComposer(props: MessageComposerProps) {
   const [mentionRange, setMentionRange] = createSignal<{ start: number; end: number } | null>(null);
   const [mentionQuery, setMentionQuery] = createSignal("");
   const [selectedMentionIndex, setSelectedMentionIndex] = createSignal(0);
+  const [emojiRange, setEmojiRange] = createSignal<{ start: number; end: number } | null>(null);
+  const [emojiQuery, setEmojiQuery] = createSignal("");
+  const [selectedEmojiIndex, setSelectedEmojiIndex] = createSignal(0);
   const [showEmojiPicker, setShowEmojiPicker] = createSignal(false);
   const [showGifPicker, setShowGifPicker] = createSignal(false);
+
+  createEffect(() => {
+    if (!emojiStore.loaded && !emojiStore.loading) {
+      void loadEmojis();
+    }
+  });
 
   function insertEmoji(emoji: string) {
     const input = draftInputRef;
@@ -55,6 +67,12 @@ export default function MessageComposer(props: MessageComposerProps) {
     setMentionRange(null);
     setMentionQuery("");
     setSelectedMentionIndex(0);
+  }
+
+  function closeEmojiShortcodePicker() {
+    setEmojiRange(null);
+    setEmojiQuery("");
+    setSelectedEmojiIndex(0);
   }
 
   function refreshMentionPicker(nextDraft: string, caretIndex: number | null | undefined) {
@@ -104,6 +122,53 @@ export default function MessageComposer(props: MessageComposerProps) {
     setSelectedMentionIndex(0);
   }
 
+  function refreshEmojiShortcodePicker(nextDraft: string, caretIndex: number | null | undefined) {
+    if (caretIndex == null || caretIndex < 0) {
+      closeEmojiShortcodePicker();
+      return;
+    }
+
+    let tokenStart = caretIndex - 1;
+    while (tokenStart >= 0 && !/\s/.test(nextDraft[tokenStart])) {
+      tokenStart -= 1;
+    }
+
+    tokenStart += 1;
+    if (tokenStart >= caretIndex) {
+      closeEmojiShortcodePicker();
+      return;
+    }
+
+    const token = nextDraft.slice(tokenStart, caretIndex);
+    if (!token.startsWith(":") || !/^:[a-zA-Z0-9_]*$/.test(token)) {
+      closeEmojiShortcodePicker();
+      return;
+    }
+
+    const prefixCharacter = tokenStart > 0 ? nextDraft[tokenStart - 1] : "";
+    if (prefixCharacter && /[a-zA-Z0-9_]/.test(prefixCharacter)) {
+      closeEmojiShortcodePicker();
+      return;
+    }
+
+    const nextQuery = token.slice(1);
+    const currentRange = emojiRange();
+    const currentQuery = emojiQuery();
+
+    if (
+      currentRange
+      && currentRange.start === tokenStart
+      && currentRange.end === caretIndex
+      && currentQuery === nextQuery
+    ) {
+      return;
+    }
+
+    setEmojiRange({ start: tokenStart, end: caretIndex });
+    setEmojiQuery(nextQuery);
+    setSelectedEmojiIndex(0);
+  }
+
   const mentionSuggestions = createMemo(() => {
     const query = mentionQuery().trim().toLowerCase();
     const allUsers = props.mentionUsernames;
@@ -122,6 +187,26 @@ export default function MessageComposer(props: MessageComposerProps) {
     return suggestions;
   });
 
+  const emojiSuggestions = createMemo(() => {
+    const allEmojis = [...emojiStore.emojis].sort((left, right) => left.shortcode.localeCompare(right.shortcode));
+    if (allEmojis.length === 0) {
+      return [];
+    }
+
+    const query = emojiQuery().trim().toLowerCase();
+    if (!query) {
+      return allEmojis.slice(0, 6);
+    }
+
+    const byPrefix = allEmojis.filter((entry) => entry.shortcode.toLowerCase().startsWith(query));
+    const byContain = allEmojis.filter(
+      (entry) => !entry.shortcode.toLowerCase().startsWith(query)
+        && (entry.shortcode.toLowerCase().includes(query) || entry.name.toLowerCase().includes(query)),
+    );
+
+    return [...byPrefix, ...byContain].slice(0, 6);
+  });
+
   function applyMention(username: string) {
     const range = mentionRange();
     if (!range) {
@@ -132,6 +217,24 @@ export default function MessageComposer(props: MessageComposerProps) {
     const nextCaret = range.start + username.length + 2;
     props.onDraftInput(nextDraft);
     closeMentionPicker();
+    queueMicrotask(() => {
+      if (draftInputRef) {
+        draftInputRef.focus();
+        draftInputRef.setSelectionRange(nextCaret, nextCaret);
+      }
+    });
+  }
+
+  function applyEmojiShortcode(emoji: Emoji) {
+    const range = emojiRange();
+    if (!range) {
+      return;
+    }
+
+    const nextDraft = `${props.draft.slice(0, range.start)}:${emoji.shortcode}: ${props.draft.slice(range.end)}`;
+    const nextCaret = range.start + emoji.shortcode.length + 3;
+    props.onDraftInput(nextDraft);
+    closeEmojiShortcodePicker();
     queueMicrotask(() => {
       if (draftInputRef) {
         draftInputRef.focus();
@@ -201,48 +304,75 @@ export default function MessageComposer(props: MessageComposerProps) {
           onInput={(event) => {
             props.onDraftInput(event.currentTarget.value);
             refreshMentionPicker(event.currentTarget.value, event.currentTarget.selectionStart);
+            refreshEmojiShortcodePicker(event.currentTarget.value, event.currentTarget.selectionStart);
           }}
-          onClick={(event) => refreshMentionPicker(event.currentTarget.value, event.currentTarget.selectionStart)}
+          onClick={(event) => {
+            refreshMentionPicker(event.currentTarget.value, event.currentTarget.selectionStart);
+            refreshEmojiShortcodePicker(event.currentTarget.value, event.currentTarget.selectionStart);
+          }}
           onKeyUp={(event) => {
             if (["ArrowDown", "ArrowUp", "Enter", "Tab", "Escape"].includes(event.key)) {
               return;
             }
             refreshMentionPicker(event.currentTarget.value, event.currentTarget.selectionStart);
+            refreshEmojiShortcodePicker(event.currentTarget.value, event.currentTarget.selectionStart);
           }}
           onKeyDown={(event) => {
-            const suggestions = mentionSuggestions();
-            if (suggestions.length === 0 || !mentionRange()) {
+            const mentionItems = mentionSuggestions();
+            const emojiItems = emojiSuggestions();
+            const hasMentionSuggestions = mentionItems.length > 0 && mentionRange() !== null;
+            const hasEmojiSuggestions = emojiItems.length > 0 && emojiRange() !== null;
+
+            if (!hasMentionSuggestions && !hasEmojiSuggestions) {
               return;
             }
 
             if (event.key === "ArrowDown") {
               event.preventDefault();
-              setSelectedMentionIndex((current) => (current + 1) % suggestions.length);
+              if (hasMentionSuggestions) {
+                setSelectedMentionIndex((current) => (current + 1) % mentionItems.length);
+              } else {
+                setSelectedEmojiIndex((current) => (current + 1) % emojiItems.length);
+              }
               return;
             }
 
             if (event.key === "ArrowUp") {
               event.preventDefault();
-              setSelectedMentionIndex((current) => (current - 1 + suggestions.length) % suggestions.length);
+              if (hasMentionSuggestions) {
+                setSelectedMentionIndex((current) => (current - 1 + mentionItems.length) % mentionItems.length);
+              } else {
+                setSelectedEmojiIndex((current) => (current - 1 + emojiItems.length) % emojiItems.length);
+              }
               return;
             }
 
             if (event.key === "Escape") {
               event.preventDefault();
               closeMentionPicker();
+              closeEmojiShortcodePicker();
               return;
             }
 
             if (event.key === "Enter" || event.key === "Tab") {
               event.preventDefault();
-              const nextIndex = selectedMentionIndex() % suggestions.length;
-              applyMention(suggestions[nextIndex] ?? suggestions[0]);
+              if (hasMentionSuggestions) {
+                const nextIndex = selectedMentionIndex() % mentionItems.length;
+                applyMention(mentionItems[nextIndex] ?? mentionItems[0]);
+              } else {
+                const nextIndex = selectedEmojiIndex() % emojiItems.length;
+                const selectedEmoji = emojiItems[nextIndex] ?? emojiItems[0];
+                if (selectedEmoji) {
+                  applyEmojiShortcode(selectedEmoji);
+                }
+              }
             }
           }}
           onPaste={(event) => props.onDraftPaste(event)}
           onBlur={() => {
             setTimeout(() => {
               closeMentionPicker();
+              closeEmojiShortcodePicker();
             }, 100);
           }}
           disabled={!props.activeChannelId || !!props.savingMessageId || !!props.deletingMessageId}
@@ -260,6 +390,24 @@ export default function MessageComposer(props: MessageComposerProps) {
                   }}
                 >
                   @{entry}
+                </button>
+              )}
+            </For>
+          </div>
+        </Show>
+        <Show when={emojiSuggestions().length > 0 && emojiRange() !== null}>
+          <div class="mention-picker" role="listbox" aria-label="Emoji shortcode suggestions">
+            <For each={emojiSuggestions()}>
+              {(entry, index) => (
+                <button
+                  type="button"
+                  class={`mention-picker-item${index() === selectedEmojiIndex() ? " is-selected" : ""}`}
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                    applyEmojiShortcode(entry);
+                  }}
+                >
+                  :{entry.shortcode}: {entry.name}
                 </button>
               )}
             </For>

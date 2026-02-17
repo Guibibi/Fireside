@@ -1,4 +1,5 @@
 import { get, del } from "./http";
+import { getApiBaseUrl, token } from "../stores/auth";
 
 export interface Emoji {
   id: string;
@@ -30,11 +31,15 @@ export async function createEmoji(
   formData.append("name", name);
   formData.append("file", file);
 
-  const res = await fetch(`/api/emojis`, {
+  const headers: Record<string, string> = {};
+  const currentToken = token();
+  if (currentToken) {
+    headers.Authorization = `Bearer ${currentToken}`;
+  }
+
+  const res = await fetch(`${getApiBaseUrl()}/emojis`, {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${localStorage.getItem("token") || ""}`,
-    },
+    headers,
     body: formData,
   });
 

@@ -5,7 +5,9 @@ use axum::{
     routing::{delete, get},
     Json, Router,
 };
+use image::codecs::gif::GifEncoder;
 use image::GenericImageView;
+use image::ImageFormat;
 use serde::Serialize;
 use uuid::Uuid;
 
@@ -152,16 +154,16 @@ async fn create_emoji(
         .map_err(|error| AppError::BadRequest(format!("Invalid image file: {error}")))?;
 
     let (width, height) = image.dimensions();
-    if width > MAX_EMOJI_DIMENSION || height > MAX_EMOJI_DIMENSION {
-        return Err(AppError::BadRequest(format!(
-            "Emoji dimensions must not exceed {}x{} pixels",
-            MAX_EMOJI_DIMENSION, MAX_EMOJI_DIMENSION
-        )));
-    }
+    let processed_image_bytes = if width > MAX_EMOJI_DIMENSION || height > MAX_EMOJI_DIMENSION {
+        let resized = image.thumbnail(MAX_EMOJI_DIMENSION, MAX_EMOJI_DIMENSION);
+        encode_resized_emoji(&resized, mime_type)?
+    } else {
+        image_bytes
+    };
 
     let media_result = state
         .uploads
-        .upload_emoji(user_id, mime_type, image_bytes)
+        .upload_emoji(user_id, mime_type, processed_image_bytes)
         .await?;
 
     let emoji_id = Uuid::new_v4();
@@ -300,4 +302,35 @@ fn sniff_mime_type(bytes: &[u8]) -> Result<&'static str, AppError> {
     Err(AppError::BadRequest(
         "Unsupported image format. Allowed: PNG, WEBP, GIF".into(),
     ))
+}
+
+fn encode_resized_emoji(image: &image::DynamicImage, mime_type: &str) -> Result<Vec<u8>, AppError> {
+    let mut output = std::io::Cursor::new(Vec::new());
+
+    match mime_type {
+        "image/png" => image
+            .write_to(&mut output, ImageFormat::Png)
+            .map_err(|error| {
+                AppError::BadRequest(format!("Failed to resize PNG emoji: {error}"))
+            })?,
+        "image/webp" => image
+            .write_to(&mut output, ImageFormat::WebP)
+            .map_err(|error| {
+                AppError::BadRequest(format!("Failed to resize WebP emoji: {error}"))
+            })?,
+        "image/gif" => {
+            let mut encoder = GifEncoder::new(&mut output);
+            let frame = image::Frame::new(image.to_rgba8());
+            encoder.encode_frame(frame).map_err(|error| {
+                AppError::BadRequest(format!("Failed to resize GIF emoji: {error}"))
+            })?;
+        }
+        _ => {
+            return Err(AppError::BadRequest(
+                "Unsupported emoji format. Allowed: PNG, WEBP, GIF".into(),
+            ))
+        }
+    }
+
+    Ok(output.into_inner())
 }

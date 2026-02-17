@@ -145,7 +145,7 @@ export default function EmojiSettings(props: EmojiSettingsProps) {
             }}
             disabled={isUploading()}
           />
-          <p class="settings-help">PNG/WebP/GIF, up to 512 KB. Max dimensions: 128x128.</p>
+          <p class="settings-help">PNG/WebP/GIF, up to 512 KB. Larger images are automatically resized to 128x128 max.</p>
 
           <div class="settings-actions">
             <button type="submit" disabled={isUploading()}>{isUploading() ? "Uploading..." : "Upload emoji"}</button>
