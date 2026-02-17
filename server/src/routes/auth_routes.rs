@@ -21,6 +21,9 @@ const LOGIN_MAX_ATTEMPTS_PER_WINDOW: u32 = 12;
 const REGISTER_MAX_ATTEMPTS_PER_WINDOW: u32 = 10;
 const SETUP_MAX_ATTEMPTS_PER_WINDOW: u32 = 5;
 const AUTH_MAX_REQUEST_BODY_BYTES: usize = 16 * 1024;
+const USERNAME_MIN_LENGTH: usize = 3;
+const USERNAME_MAX_LENGTH: usize = 32;
+const DISPLAY_NAME_MAX_LENGTH: usize = 32;
 
 #[derive(Debug, Clone)]
 struct AuthRateLimitEntry {
@@ -47,6 +50,7 @@ pub struct SetupStatusResponse {
 #[derive(Deserialize)]
 pub struct SetupRequest {
     pub username: String,
+    pub display_name: Option<String>,
     pub password: String,
 }
 
@@ -54,6 +58,7 @@ pub struct SetupRequest {
 pub struct RegisterRequest {
     pub invite_code: String,
     pub username: String,
+    pub display_name: Option<String>,
     pub password: String,
 }
 
@@ -105,6 +110,7 @@ async fn setup(
 
     validate_username(&body.username)?;
     validate_password(&body.password)?;
+    let display_name = normalize_display_name(body.display_name.as_deref(), &body.username)?;
 
     let password_hash = hash_password(&body.password)?;
     let user_id = Uuid::new_v4();
@@ -118,7 +124,7 @@ async fn setup(
     )
     .bind(user_id)
     .bind(&body.username)
-    .bind(&body.username)
+    .bind(&display_name)
     .bind(&password_hash)
     .bind(role.as_str())
     .execute(&state.db)
@@ -171,6 +177,7 @@ async fn register(
 
     validate_username(&body.username)?;
     validate_password(&body.password)?;
+    let display_name = normalize_display_name(body.display_name.as_deref(), &body.username)?;
 
     let password_hash = hash_password(&body.password)?;
     let user_id = Uuid::new_v4();
@@ -220,7 +227,7 @@ async fn register(
     )
     .bind(user_id)
     .bind(&body.username)
-    .bind(&body.username)
+    .bind(&display_name)
     .bind(&password_hash)
     .bind(role.as_str())
     .execute(&mut *tx)
@@ -376,12 +383,40 @@ async fn allow_auth_attempt(key: String, max_attempts_per_window: u32) -> bool {
 }
 
 fn validate_username(username: &str) -> Result<(), AppError> {
-    if username.len() < 3 || username.len() > 32 {
+    if username.len() < USERNAME_MIN_LENGTH || username.len() > USERNAME_MAX_LENGTH {
         return Err(AppError::BadRequest(
             "Username must be between 3 and 32 characters".into(),
         ));
     }
+
+    if username.chars().any(char::is_whitespace) {
+        return Err(AppError::BadRequest(
+            "Username cannot contain spaces".into(),
+        ));
+    }
+
+    if !username
+        .chars()
+        .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.'))
+    {
+        return Err(AppError::BadRequest(
+            "Username can only contain letters, numbers, ., _, and -".into(),
+        ));
+    }
+
     Ok(())
+}
+
+fn normalize_display_name(display_name: Option<&str>, username: &str) -> Result<String, AppError> {
+    let candidate = display_name.unwrap_or(username).trim();
+
+    if candidate.is_empty() || candidate.len() > DISPLAY_NAME_MAX_LENGTH {
+        return Err(AppError::BadRequest(
+            "Display name must be between 1 and 32 characters".into(),
+        ));
+    }
+
+    Ok(candidate.to_string())
 }
 
 fn validate_password(password: &str) -> Result<(), AppError> {
@@ -449,5 +484,27 @@ mod tests {
         headers.insert("x-real-ip", HeaderValue::from_static("198.51.100.9"));
 
         assert_eq!(client_ip_from_headers(&headers), "198.51.100.9");
+    }
+
+    #[test]
+    fn validate_username_rejects_spaces() {
+        let result = validate_username("john doe");
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn validate_username_rejects_symbols() {
+        let result = validate_username("john@doe");
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn normalize_display_name_accepts_spaces_and_symbols() {
+        let display_name = normalize_display_name(Some("John Doe !!"), "johndoe")
+            .expect("display name should be valid");
+
+        assert_eq!(display_name, "John Doe !!");
     }
 }

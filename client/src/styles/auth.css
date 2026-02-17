@@ -57,6 +57,13 @@
   font-size: 0.85rem;
 }
 
+.auth-field-hint {
+  margin-top: calc(-1 * var(--space-md));
+  margin-bottom: calc(-1 * var(--space-sm));
+  font-size: 0.78rem;
+  color: var(--soft);
+}
+
 .auth-link a {
   color: var(--accent);
   text-decoration: none;

@@ -4,12 +4,18 @@ import type { AuthResponse } from "../api/http";
 import { normalizeServerUrl, saveAuth, serverUrl } from "../stores/auth";
 import { errorMessage } from "../utils/error";
 
+const USERNAME_PATTERN = /^[A-Za-z0-9._-]+$/;
+const USERNAME_MIN_LENGTH = 3;
+const USERNAME_MAX_LENGTH = 32;
+const DISPLAY_NAME_MAX_LENGTH = 32;
+
 export default function Register() {
   const navigate = useNavigate();
   const params = useParams<{ code?: string }>();
   const [url, setUrl] = createSignal(serverUrl());
   const [inviteCode, setInviteCode] = createSignal(params.code ?? "");
   const [username, setUsername] = createSignal("");
+  const [displayName, setDisplayName] = createSignal("");
   const [password, setPassword] = createSignal("");
   const [confirmPassword, setConfirmPassword] = createSignal("");
   const [error, setError] = createSignal("");
@@ -18,8 +24,26 @@ export default function Register() {
     e.preventDefault();
     setError("");
 
-    if (!url().trim() || !inviteCode().trim() || !username().trim() || !password().trim()) {
+    const trimmedUsername = username().trim();
+    const trimmedDisplayName = displayName().trim();
+
+    if (!url().trim() || !inviteCode().trim() || !trimmedUsername || !trimmedDisplayName || !password().trim()) {
       setError("All fields are required");
+      return;
+    }
+
+    if (trimmedUsername.length < USERNAME_MIN_LENGTH || trimmedUsername.length > USERNAME_MAX_LENGTH) {
+      setError("Username must be between 3 and 32 characters");
+      return;
+    }
+
+    if (!USERNAME_PATTERN.test(trimmedUsername)) {
+      setError("Username can only contain letters, numbers, ., _, and -");
+      return;
+    }
+
+    if (trimmedDisplayName.length > DISPLAY_NAME_MAX_LENGTH) {
+      setError("Display name must be 32 characters or fewer");
       return;
     }
 
@@ -34,7 +58,8 @@ export default function Register() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           invite_code: inviteCode().trim(),
-          username: username().trim(),
+          username: trimmedUsername,
+          display_name: trimmedDisplayName,
           password: password(),
         }),
       });
@@ -76,6 +101,16 @@ export default function Register() {
           placeholder="Username"
           value={username()}
           onInput={(e) => setUsername(e.currentTarget.value)}
+          minLength={USERNAME_MIN_LENGTH}
+          maxLength={USERNAME_MAX_LENGTH}
+        />
+        <p class="auth-field-hint">Username: 3-32 chars, letters/numbers and . _ - only, no spaces.</p>
+        <input
+          type="text"
+          placeholder="Display name"
+          value={displayName()}
+          onInput={(e) => setDisplayName(e.currentTarget.value)}
+          maxLength={DISPLAY_NAME_MAX_LENGTH}
         />
         <input
           type="password"
