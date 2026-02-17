@@ -1,4 +1,4 @@
-import { For, Show, createSignal, onMount } from "solid-js";
+import { For, Show, createEffect, createSignal, onMount, onCleanup } from "solid-js";
 import { createEmoji, deleteEmoji } from "../../api/emojis";
 import { errorMessage } from "../../utils/error";
 import { loadEmojis, useEmojiStore } from "../../stores/emojis";
@@ -15,6 +15,9 @@ export default function EmojiSettings(props: EmojiSettingsProps) {
   const [isUploading, setIsUploading] = createSignal(false);
   const [deletingEmojiId, setDeletingEmojiId] = createSignal<string | null>(null);
   const [formError, setFormError] = createSignal("");
+  const [previewUrl, setPreviewUrl] = createSignal<string | null>(null);
+
+  let fileInputRef: HTMLInputElement | undefined;
 
   onMount(() => {
     void loadEmojis();
@@ -24,7 +27,24 @@ export default function EmojiSettings(props: EmojiSettingsProps) {
     setShortcode("");
     setName("");
     setFile(null);
+    if (fileInputRef) {
+      fileInputRef.value = "";
+    }
   }
+
+  createEffect(() => {
+    const selected = file();
+    if (!selected) {
+      setPreviewUrl(null);
+      return;
+    }
+
+    const objectUrl = URL.createObjectURL(selected);
+    setPreviewUrl(objectUrl);
+    onCleanup(() => {
+      URL.revokeObjectURL(objectUrl);
+    });
+  });
 
   function validateUpload(fileValue: File, shortcodeValue: string, nameValue: string): string | null {
     if (!shortcodeValue || shortcodeValue.length > 32) {
@@ -111,83 +131,108 @@ export default function EmojiSettings(props: EmojiSettingsProps) {
         when={props.isOperatorOrAdmin}
         fallback={<p class="settings-help">Only operators/admins can manage server emojis.</p>}
       >
-        <form class="settings-audio-row" onSubmit={(event) => void handleCreateEmoji(event)}>
-          <label class="settings-label" for="emoji-shortcode">Shortcode</label>
-          <input
-            id="emoji-shortcode"
-            type="text"
-            value={shortcode()}
-            maxlength={32}
-            placeholder="party_parrot"
-            onInput={(event) => setShortcode(event.currentTarget.value)}
-            disabled={isUploading()}
-          />
+        <div class="emoji-settings-layout">
+          <form class="settings-audio-row emoji-upload-card" onSubmit={(event) => void handleCreateEmoji(event)}>
+            <h6 class="emoji-settings-card-title">Upload emoji</h6>
 
-          <label class="settings-label" for="emoji-name">Name</label>
-          <input
-            id="emoji-name"
-            type="text"
-            value={name()}
-            maxlength={32}
-            placeholder="Party Parrot"
-            onInput={(event) => setName(event.currentTarget.value)}
-            disabled={isUploading()}
-          />
+            <label class="settings-label" for="emoji-shortcode">Shortcode</label>
+            <input
+              id="emoji-shortcode"
+              type="text"
+              value={shortcode()}
+              maxlength={32}
+              placeholder="party_parrot"
+              onInput={(event) => setShortcode(event.currentTarget.value)}
+              disabled={isUploading()}
+            />
 
-          <label class="settings-label" for="emoji-file">Emoji file</label>
-          <input
-            id="emoji-file"
-            type="file"
-            accept="image/png,image/webp,image/gif"
-            onChange={(event) => {
-              const selected = event.currentTarget.files?.[0] ?? null;
-              setFile(selected);
-            }}
-            disabled={isUploading()}
-          />
-          <p class="settings-help">PNG/WebP/GIF, up to 512 KB. Larger images are automatically resized to 128x128 max.</p>
+            <label class="settings-label" for="emoji-name">Name</label>
+            <input
+              id="emoji-name"
+              type="text"
+              value={name()}
+              maxlength={32}
+              placeholder="Party Parrot"
+              onInput={(event) => setName(event.currentTarget.value)}
+              disabled={isUploading()}
+            />
 
-          <div class="settings-actions">
-            <button type="submit" disabled={isUploading()}>{isUploading() ? "Uploading..." : "Upload emoji"}</button>
+            <label class="settings-label" for="emoji-file">Emoji file</label>
+            <input
+              ref={fileInputRef}
+              id="emoji-file"
+              type="file"
+              accept="image/png,image/webp,image/gif"
+              onChange={(event) => {
+                const selected = event.currentTarget.files?.[0] ?? null;
+                setFile(selected);
+              }}
+              disabled={isUploading()}
+            />
+
+            <Show when={previewUrl()}>
+              <div class="emoji-upload-preview" role="status" aria-live="polite">
+                <img src={previewUrl() ?? ""} alt="Emoji preview" />
+                <div class="emoji-upload-preview-meta">
+                  <p class="emoji-upload-preview-name">{file()?.name}</p>
+                  <p class="emoji-upload-preview-size">{Math.max(1, Math.round((file()?.size ?? 0) / 1024))} KB</p>
+                </div>
+              </div>
+            </Show>
+
+            <p class="settings-help">PNG/WebP/GIF, up to 512 KB. Larger images are automatically resized to 128x128 max.</p>
+
+            <div class="settings-actions">
+              <button type="submit" disabled={isUploading()}>{isUploading() ? "Uploading..." : "Upload emoji"}</button>
+            </div>
+          </form>
+
+          <div class="emoji-library-card">
+            <div class="emoji-library-head">
+              <h6 class="emoji-settings-card-title">Emoji library</h6>
+              <Show when={emojiStore.emojis.length > 0}>
+                <span class="emoji-library-count">{emojiStore.emojis.length} total</span>
+              </Show>
+            </div>
+
+            <Show when={emojiStore.loading}>
+              <p class="settings-help">Loading emojis...</p>
+            </Show>
+
+            <Show when={!emojiStore.loading && emojiStore.emojis.length === 0}>
+              <p class="settings-help">No custom emojis uploaded yet.</p>
+            </Show>
+
+            <Show when={emojiStore.emojis.length > 0}>
+              <ul class="emoji-settings-list">
+                <For each={emojiStore.emojis}>
+                  {(emoji) => (
+                    <li class="emoji-settings-item">
+                      <div class="emoji-settings-item-main">
+                        <img src={emoji.url} alt={`:${emoji.shortcode}:`} loading="lazy" />
+                        <div>
+                          <p class="emoji-settings-shortcode">:{emoji.shortcode}:</p>
+                          <p class="emoji-settings-name">{emoji.name}</p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        class="settings-secondary"
+                        onClick={() => void handleDeleteEmoji(emoji.id)}
+                        disabled={deletingEmojiId() === emoji.id}
+                      >
+                        {deletingEmojiId() === emoji.id ? "Deleting..." : "Delete"}
+                      </button>
+                    </li>
+                  )}
+                </For>
+              </ul>
+            </Show>
           </div>
-        </form>
+        </div>
 
         <Show when={formError()}>
           <p class="error">{formError()}</p>
-        </Show>
-
-        <Show when={emojiStore.loading}>
-          <p class="settings-help">Loading emojis...</p>
-        </Show>
-
-        <Show when={!emojiStore.loading && emojiStore.emojis.length === 0}>
-          <p class="settings-help">No custom emojis uploaded yet.</p>
-        </Show>
-
-        <Show when={emojiStore.emojis.length > 0}>
-          <ul class="emoji-settings-list">
-            <For each={emojiStore.emojis}>
-              {(emoji) => (
-                <li class="emoji-settings-item">
-                  <div class="emoji-settings-item-main">
-                    <img src={emoji.url} alt={`:${emoji.shortcode}:`} loading="lazy" />
-                    <div>
-                      <p class="emoji-settings-shortcode">:{emoji.shortcode}:</p>
-                      <p class="emoji-settings-name">{emoji.name}</p>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    class="settings-secondary"
-                    onClick={() => void handleDeleteEmoji(emoji.id)}
-                    disabled={deletingEmojiId() === emoji.id}
-                  >
-                    {deletingEmojiId() === emoji.id ? "Deleting..." : "Delete"}
-                  </button>
-                </li>
-              )}
-            </For>
-          </ul>
         </Show>
       </Show>
     </section>

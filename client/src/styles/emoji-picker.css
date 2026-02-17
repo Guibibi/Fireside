@@ -73,6 +73,11 @@
   align-content: start;
 }
 
+.emoji-grid-unicode {
+  grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
+  gap: 8px;
+}
+
 .emoji-item {
   aspect-ratio: 1;
   width: 100%;
@@ -90,6 +95,32 @@
 
 .emoji-item:hover {
   background: var(--surface-3);
+}
+
+.emoji-item-unicode {
+  aspect-ratio: auto;
+  min-height: 64px;
+  display: grid;
+  gap: 4px;
+  justify-items: center;
+  align-content: center;
+  padding: 8px 6px;
+}
+
+.emoji-item-unicode-emoji {
+  font-size: 21px;
+  line-height: 1;
+}
+
+.emoji-item-unicode-code {
+  font-size: 10px;
+  line-height: 1.2;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .emoji-item.custom {

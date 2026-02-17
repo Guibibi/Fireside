@@ -63,7 +63,7 @@ async fn list_emojis(
             id: e.id,
             shortcode: e.shortcode.clone(),
             name: e.name,
-            url: format!("/api/media/{}/display", e.media_id),
+            url: format!("/api/media/{}/original", e.media_id),
             created_by: e.created_by,
         })
         .collect();
@@ -193,7 +193,7 @@ async fn create_emoji(
         shortcode,
         name,
         media_id: media_result.id,
-        url: format!("/api/media/{}/display", media_result.id),
+        url: format!("/api/media/{}/original", media_result.id),
     }))
 }
 
