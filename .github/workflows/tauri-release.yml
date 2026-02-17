@@ -39,8 +39,8 @@ jobs:
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
       TAURI_UPDATER_PUBLIC_KEY: ${{ secrets.TAURI_UPDATER_PUBLIC_KEY }}
       TAURI_UPDATER_ENDPOINT: https://github.com/${{ github.repository }}/releases/latest/download/latest.json
-      CUDA_PATH: ${{ vars.CUDA_PATH }}
-      NVIDIA_VIDEO_CODEC_SDK_PATH: ${{ vars.NVIDIA_VIDEO_CODEC_SDK_PATH }}
+      WORKFLOW_CUDA_PATH: ${{ vars.CUDA_PATH }}
+      WORKFLOW_NVIDIA_VIDEO_CODEC_SDK_PATH: ${{ vars.NVIDIA_VIDEO_CODEC_SDK_PATH }}
 
     steps:
       - name: Checkout repository
@@ -77,22 +77,27 @@ jobs:
         if: matrix.enable_nvenc
         shell: powershell
         run: |
-          if (-not $env:CUDA_PATH) {
-            throw "CUDA_PATH is not set. Configure repository variable CUDA_PATH for the self-hosted runner."
+          $cudaPath = if ($env:WORKFLOW_CUDA_PATH) { $env:WORKFLOW_CUDA_PATH } else { $env:CUDA_PATH }
+          $nvCodecPath = if ($env:WORKFLOW_NVIDIA_VIDEO_CODEC_SDK_PATH) { $env:WORKFLOW_NVIDIA_VIDEO_CODEC_SDK_PATH } else { $env:NVIDIA_VIDEO_CODEC_SDK_PATH }
+
+          if (-not $cudaPath) {
+            throw "CUDA_PATH is not set. Define it on the runner host or set repository variable CUDA_PATH."
           }
-          if (-not (Test-Path $env:CUDA_PATH)) {
-            throw "CUDA_PATH does not exist: $env:CUDA_PATH"
+          if (-not (Test-Path $cudaPath)) {
+            throw "CUDA_PATH does not exist: $cudaPath"
           }
-          if (-not $env:NVIDIA_VIDEO_CODEC_SDK_PATH) {
-            throw "NVIDIA_VIDEO_CODEC_SDK_PATH is not set. Configure repository variable NVIDIA_VIDEO_CODEC_SDK_PATH."
+          if (-not $nvCodecPath) {
+            throw "NVIDIA_VIDEO_CODEC_SDK_PATH is not set. Define it on the runner host or set repository variable NVIDIA_VIDEO_CODEC_SDK_PATH."
           }
-          if (-not (Test-Path $env:NVIDIA_VIDEO_CODEC_SDK_PATH)) {
-            throw "NVIDIA_VIDEO_CODEC_SDK_PATH does not exist: $env:NVIDIA_VIDEO_CODEC_SDK_PATH"
+          if (-not (Test-Path $nvCodecPath)) {
+            throw "NVIDIA_VIDEO_CODEC_SDK_PATH does not exist: $nvCodecPath"
           }
-          $nvcc = Join-Path $env:CUDA_PATH "bin/nvcc.exe"
+          $nvcc = Join-Path $cudaPath "bin/nvcc.exe"
           if (-not (Test-Path $nvcc)) {
             throw "CUDA nvcc not found at $nvcc"
           }
+          Write-Host "Resolved CUDA_PATH: $cudaPath"
+          Write-Host "Resolved NVIDIA_VIDEO_CODEC_SDK_PATH: $nvCodecPath"
           & $nvcc --version
 
       - name: Inject updater config from secrets
