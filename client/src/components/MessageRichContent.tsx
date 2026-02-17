@@ -48,6 +48,7 @@ interface ImagePreview {
 interface InlineImageEntry {
   sourceUrl: string;
   imageUrl: string;
+  isGif: boolean;
 }
 
 const embedCache = new Map<string, EmbedLoadState>();
@@ -271,6 +272,15 @@ function isDirectImageUrl(rawUrl: string): boolean {
   }
 }
 
+function isGifImageUrl(rawUrl: string): boolean {
+  try {
+    const parsed = new URL(rawUrl);
+    return parsed.pathname.toLowerCase().endsWith(".gif");
+  } catch {
+    return false;
+  }
+}
+
 function normalizeComparableUrl(rawUrl: string): string | null {
   try {
     const parsed = new URL(rawUrl);
@@ -320,13 +330,13 @@ export default function MessageRichContent(props: MessageRichContentProps) {
 
     for (const url of previewUrls()) {
       if (isDirectImageUrl(url)) {
-        entries.push({ sourceUrl: url, imageUrl: url });
+        entries.push({ sourceUrl: url, imageUrl: url, isGif: isGifImageUrl(url) });
         continue;
       }
 
       const state = states[url];
       if (isDirectImageEmbed(state, url) && state?.embed?.image_url) {
-        entries.push({ sourceUrl: url, imageUrl: state.embed.image_url });
+        entries.push({ sourceUrl: url, imageUrl: state.embed.image_url, isGif: isGifImageUrl(state.embed.image_url) });
       }
     }
 
@@ -490,7 +500,7 @@ export default function MessageRichContent(props: MessageRichContentProps) {
         <div class="message-embeds">
           <For each={inlineImageEntries()}>
             {(entry) => (
-              <figure class="message-attachment" data-status="ready">
+              <figure class={`message-attachment${entry.isGif ? " message-attachment-gif" : ""}`} data-status="ready">
                 <div class="message-attachment-media">
                   <button
                     type="button"

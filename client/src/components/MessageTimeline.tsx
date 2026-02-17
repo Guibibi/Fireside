@@ -234,7 +234,10 @@ export default function MessageTimeline(props: MessageTimelineProps) {
                                 <div class="message-attachments">
                                   <For each={message.attachments}>
                                     {(attachment) => (
-                                      <figure class="message-attachment" data-status={attachment.status}>
+                                      <figure
+                                        class={`message-attachment${attachment.mime_type === "image/gif" ? " message-attachment-gif" : ""}`}
+                                        data-status={attachment.status}
+                                      >
                                         <Show
                                           when={attachment.status === "ready" && (attachment.thumbnail_url || attachment.display_url)}
                                           fallback={<div class="message-attachment-placeholder">Image processing...</div>}
@@ -254,7 +257,9 @@ export default function MessageTimeline(props: MessageTimelineProps) {
                                             >
                                               <LazyAttachmentImage
                                                 src={props.toAbsoluteMediaUrl(
-                                                  attachment.thumbnail_url ?? attachment.display_url ?? attachment.original_url,
+                                                  attachment.mime_type === "image/gif"
+                                                    ? (attachment.display_url ?? attachment.original_url)
+                                                    : (attachment.thumbnail_url ?? attachment.display_url ?? attachment.original_url),
                                                 )}
                                                 alt="Shared attachment"
                                               />

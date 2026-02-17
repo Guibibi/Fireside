@@ -463,6 +463,10 @@
   object-fit: cover;
 }
 
+.message-attachment-gif img {
+  object-fit: contain;
+}
+
 .message-attachment-image-slot {
   min-height: 120px;
 }

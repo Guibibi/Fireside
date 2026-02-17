@@ -18,6 +18,7 @@ export default function GifPicker(props: GifPickerProps) {
 
   let searchTimeout: number | null = null;
   let pickerRef: HTMLDivElement | undefined;
+  let searchInputRef: HTMLInputElement | undefined;
 
   const updatePosition = () => {
     if (!props.anchorRef || !pickerRef) {
@@ -84,6 +85,12 @@ export default function GifPicker(props: GifPickerProps) {
     });
   });
 
+  createEffect(() => {
+    queueMicrotask(() => {
+      searchInputRef?.focus();
+    });
+  });
+
   const performSearch = async (searchQuery: string, cursor?: string) => {
     if (!searchQuery.trim()) {
       setResults([]);
@@ -141,6 +148,7 @@ export default function GifPicker(props: GifPickerProps) {
     >
       <div class="gif-picker-header">
         <input
+          ref={searchInputRef}
           type="text"
           class="gif-picker-search"
           placeholder="Search GIFs..."

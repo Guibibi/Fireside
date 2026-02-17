@@ -22,6 +22,7 @@ export default function EmojiPicker(props: EmojiPickerProps) {
   const [position, setPosition] = createSignal({ top: 0, left: 0 });
 
   let pickerRef: HTMLDivElement | undefined;
+  let searchInputRef: HTMLInputElement | undefined;
 
   const updatePosition = () => {
     if (!props.anchorRef || !pickerRef) {
@@ -46,6 +47,12 @@ export default function EmojiPicker(props: EmojiPickerProps) {
     if (!emojiStore.loaded && !emojiStore.loading) {
       void loadEmojis();
     }
+  });
+
+  createEffect(() => {
+    queueMicrotask(() => {
+      searchInputRef?.focus();
+    });
   });
 
   createEffect(() => {
@@ -134,6 +141,7 @@ export default function EmojiPicker(props: EmojiPickerProps) {
           </button>
         </div>
         <input
+          ref={searchInputRef}
           type="text"
           class="emoji-picker-search"
           placeholder="Search..."
