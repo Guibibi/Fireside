@@ -63,6 +63,11 @@ import { openSettings } from "../stores/settings";
 import UserAvatar from "./UserAvatar";
 import { displayNameFor, setUserAvatar, upsertUserProfile } from "../stores/userProfiles";
 import VoiceAudioPreferences from "./settings/VoiceAudioPreferences";
+import UpdaterSettings from "./settings/UpdaterSettings";
+import {
+  desktopNotificationsSupported,
+  requestDesktopNotificationPermission,
+} from "../utils/desktopNotifications";
 
 interface UpdateCurrentUserResponse {
   token: string;
@@ -333,17 +338,12 @@ export default function SettingsPage() {
       return;
     }
 
-    if (typeof Notification === "undefined") {
+    if (!desktopNotificationsSupported()) {
       setNotificationError("Desktop notifications are not supported in this browser.");
       return;
     }
 
-    if (Notification.permission === "granted") {
-      saveMentionDesktopNotificationsEnabled(true);
-      return;
-    }
-
-    const permission = await Notification.requestPermission();
+    const permission = await requestDesktopNotificationPermission();
     saveMentionDesktopNotificationsEnabled(permission === "granted");
     if (permission !== "granted") {
       setNotificationError("Desktop notification permission was not granted.");
@@ -678,13 +678,16 @@ export default function SettingsPage() {
           </Show>
 
           <Show when={activeSettingsSection() === "session"}>
-            <section class="settings-section">
-              <h5>Session</h5>
-              <p class="settings-help">Sign out from this server and return to connect screen.</p>
-              <div class="settings-actions">
-                <button type="button" class="settings-danger" onClick={handleLogout}>Log out</button>
-              </div>
-            </section>
+            <>
+              <UpdaterSettings />
+              <section class="settings-section">
+                <h5>Session</h5>
+                <p class="settings-help">Sign out from this server and return to connect screen.</p>
+                <div class="settings-actions">
+                  <button type="button" class="settings-danger" onClick={handleLogout}>Log out</button>
+                </div>
+              </section>
+            </>
           </Show>
         </div>
       </div>

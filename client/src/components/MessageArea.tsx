@@ -23,6 +23,7 @@ import {
 import { errorMessage } from "../utils/error";
 import { isMentioningUsername } from "../utils/mentions";
 import { mentionDesktopNotificationsEnabled } from "../stores/settings";
+import { sendDesktopNotification } from "../utils/desktopNotifications";
 import MessageComposer from "./MessageComposer";
 import MessageTimeline from "./MessageTimeline";
 import VideoStage from "./VideoStage";
@@ -427,7 +428,7 @@ export default function MessageArea() {
     setWsError("");
   }
 
-  function maybeShowMentionDesktopNotification(message: {
+  async function maybeShowMentionDesktopNotification(message: {
     id: string;
     author_username: string;
     author_display_name: string;
@@ -449,25 +450,17 @@ export default function MessageArea() {
       return;
     }
 
-    if (!mentionDesktopNotificationsEnabled() || typeof Notification === "undefined") {
-      return;
-    }
-
-    if (Notification.permission !== "granted") {
+    if (!mentionDesktopNotificationsEnabled()) {
       return;
     }
 
     const body = message.content.trim().length > 0
       ? message.content.trim()
       : "You were mentioned in a new message.";
-    const notification = new Notification(`@${currentUsername} mention from ${message.author_display_name}`, {
+    await sendDesktopNotification(`@${currentUsername} mention from ${message.author_display_name}`, {
       body,
       tag: `mention-${message.id}`,
     });
-
-    notification.onclick = () => {
-      window.focus();
-    };
   }
 
   function cancelEdit() {
@@ -970,7 +963,7 @@ export default function MessageArea() {
         const selfUsername = username();
         const isOwnMessage = selfUsername ? msg.author_username === selfUsername : false;
         if (!isOwnMessage) {
-          maybeShowMentionDesktopNotification(msg);
+          void maybeShowMentionDesktopNotification(msg);
         }
 
         if (msg.channel_id !== activeChannelId()) {
