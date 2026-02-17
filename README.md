@@ -1,6 +1,6 @@
-# Yankcord
+# Fireside
 
-Yankcord is a self-hosted Discord alternative for smaller groups of friends and people you trust.
+Fireside is a self-hosted Discord alternative for smaller groups of friends and people you trust.
 
 You run one private server for one community, share a URL and password with invited people, and chat without public discovery, email signup, or platform lock-in.
 
@@ -20,43 +20,44 @@ You run one private server for one community, share a URL and password with invi
 
 ## Quick Start
 
-### 1) Start PostgreSQL
+### 1) Prepare environment
 
 ```bash
-createdb yankcord
+cp server/.env.docker.example server/.env.docker
 ```
 
-Or run Postgres in Docker:
+Edit `server/.env.docker` and set at minimum:
+
+- `POSTGRES_PASSWORD`
+- `DATABASE_URL`
+- `JWT_SECRET`
+- `SITE_ADDRESS`
+
+### 2) Start the full stack with Docker Compose
 
 ```bash
-docker run -d --name yankcord-db \
-  -e POSTGRES_USER=yankcord \
-  -e POSTGRES_PASSWORD=password \
-  -e POSTGRES_DB=yankcord \
-  -p 5432:5432 postgres:15
+docker compose --env-file server/.env.docker -f docker-compose.prod.yml up -d --build
 ```
 
-### 2) Start the server
+This starts `postgres`, `server`, and `web` together.
+
+### 3) Open Fireside
+
+- If `SITE_ADDRESS=:80`, open `http://<your-host-ip>`
+- If `SITE_ADDRESS` is a domain, open `https://<your-domain>`
+
+Check status/logs:
 
 ```bash
-cp server/.env.example server/.env
-# set DATABASE_URL, JWT_SECRET, SERVER_PASSWORD
-cargo run --manifest-path server/Cargo.toml
+docker compose --env-file server/.env.docker -f docker-compose.prod.yml ps
+docker compose --env-file server/.env.docker -f docker-compose.prod.yml logs --tail=100 server
+docker compose --env-file server/.env.docker -f docker-compose.prod.yml logs --tail=100 web
 ```
 
-By default the server runs on `http://localhost:3000`.
-
-### 3) Start the client
+Stop the stack:
 
 ```bash
-npm --prefix client install
-npm --prefix client run tauri dev
-```
-
-Web-only dev mode:
-
-```bash
-npm --prefix client run dev
+docker compose --env-file server/.env.docker -f docker-compose.prod.yml down
 ```
 
 ## Deployment
