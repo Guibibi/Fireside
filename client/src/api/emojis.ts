@@ -17,8 +17,41 @@ export interface CreateEmojiResponse {
   url: string;
 }
 
+function toAbsoluteEmojiUrl(path: string): string {
+  const normalizedPath = path.replace(/\/display(\?.*)?$/i, (_match, query: string | undefined) => `/original${query ?? ""}`);
+
+  if (/^https?:\/\//i.test(path)) {
+    return normalizedPath;
+  }
+
+  const apiBaseUrl = getApiBaseUrl().replace(/\/+$/, "");
+  const serverBaseUrl = apiBaseUrl.replace(/\/api$/i, "");
+
+  if (/^\/api(\/|$)/i.test(normalizedPath)) {
+    return `${serverBaseUrl}${normalizedPath}`;
+  }
+
+  if (normalizedPath.startsWith("/")) {
+    return `${apiBaseUrl}${normalizedPath}`;
+  }
+
+  if (/^api(\/|$)/i.test(normalizedPath)) {
+    return `${serverBaseUrl}/${normalizedPath}`;
+  }
+
+  return `${apiBaseUrl}/${normalizedPath}`;
+}
+
+function normalizeEmojiUrls<T extends { url: string }>(emoji: T): T {
+  return {
+    ...emoji,
+    url: toAbsoluteEmojiUrl(emoji.url),
+  };
+}
+
 export async function listEmojis(): Promise<Emoji[]> {
-  return get<Emoji[]>("/emojis");
+  const emojis = await get<Emoji[]>("/emojis");
+  return emojis.map((emoji) => normalizeEmojiUrls(emoji));
 }
 
 export async function createEmoji(
@@ -48,7 +81,8 @@ export async function createEmoji(
     throw new Error(body.error || res.statusText);
   }
 
-  return res.json();
+  const created = await res.json() as CreateEmojiResponse;
+  return normalizeEmojiUrls(created);
 }
 
 export async function deleteEmoji(emojiId: string): Promise<void> {
