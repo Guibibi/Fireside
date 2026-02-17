@@ -53,8 +53,18 @@ jobs:
           cache: npm
           cache-dependency-path: client/package-lock.json
 
-      - name: Setup Rust toolchain
+      - name: Setup Rust toolchain (non-Windows)
+        if: runner.os != 'Windows'
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Rust toolchain (Windows self-hosted)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          rustup toolchain install stable
+          rustup default stable
+          rustc --version
+          cargo --version
 
       - name: Install Linux system dependencies
         if: runner.os == 'Linux'
