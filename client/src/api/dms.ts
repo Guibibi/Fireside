@@ -1,4 +1,5 @@
 import { del, get, patch, post } from "./http";
+import type { ReactionSummary } from "./reactions";
 
 export interface DmThreadSummary {
   thread_id: string;
@@ -20,6 +21,7 @@ export interface DmMessage {
   content: string;
   created_at: string;
   edited_at?: string | null;
+  reactions?: ReactionSummary[];
 }
 
 export function openDmWithUser(username: string) {

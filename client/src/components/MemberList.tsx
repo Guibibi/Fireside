@@ -6,7 +6,7 @@ import { activeChannelId, setActiveDmThread } from "../stores/chat";
 import { participantsInChannel } from "../stores/voice";
 import { openContextMenu, registerContextMenuHandlers, handleLongPressStart, handleLongPressEnd, setContextMenuTarget } from "../stores/contextMenu";
 import UserAvatar from "./UserAvatar";
-import { displayNameFor, setUserProfiles, upsertUserProfile } from "../stores/userProfiles";
+import { displayNameFor, profileFor, setUserProfiles, upsertUserProfile } from "../stores/userProfiles";
 import { openProfileModal } from "../stores/profileModal";
 import { upsertDmThread } from "../stores/dms";
 import { errorMessage } from "../utils/error";
@@ -34,6 +34,11 @@ export default function MemberList() {
     return allMembers().filter((member) => !connected.has(member));
   });
   const [actionError, setActionError] = createSignal("");
+
+  function profileStatusFor(username: string): string | null {
+    const status = profileFor(username)?.profile_status?.trim();
+    return status && status.length > 0 ? status : null;
+  }
 
   async function startDmWithMember(memberUsername: string) {
     try {
@@ -165,13 +170,18 @@ export default function MemberList() {
                   }}
                   onTouchEnd={handleLongPressEnd}
                 >
-                  <UserAvatar username={member} class="member-avatar" size={28} />
-                  <span class="member-name">
-                    <span>{displayNameFor(member)}</span>
+                  <span class="member-avatar-wrap">
+                    <UserAvatar username={member} class="member-avatar" size={28} />
                     <span
                       class={`member-status-dot ${idleSet().has(member) ? "member-status-dot-idle" : "member-status-dot-online"}`}
                       aria-hidden="true"
                     />
+                  </span>
+                  <span class="member-name">
+                    <span class="member-display-name">{displayNameFor(member)}</span>
+                    <Show when={profileStatusFor(member)}>
+                      {(status) => <span class="member-profile-status">{status()}</span>}
+                    </Show>
                   </span>
                   <Show when={activeVoiceParticipants().has(member)}>
                     <span class="member-voice-indicator">in voice</span>
@@ -200,10 +210,15 @@ export default function MemberList() {
                   }}
                   onTouchEnd={handleLongPressEnd}
                 >
-                  <UserAvatar username={member} class="member-avatar" size={28} />
-                  <span class="member-name">
-                    <span>{displayNameFor(member)}</span>
+                  <span class="member-avatar-wrap">
+                    <UserAvatar username={member} class="member-avatar" size={28} />
                     <span class="member-status-dot member-status-dot-offline" aria-hidden="true" />
+                  </span>
+                  <span class="member-name">
+                    <span class="member-display-name">{displayNameFor(member)}</span>
+                    <Show when={profileStatusFor(member)}>
+                      {(status) => <span class="member-profile-status">{status()}</span>}
+                    </Show>
                   </span>
                 </li>
               )}

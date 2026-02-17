@@ -2,7 +2,14 @@ import { Show, createEffect, createMemo, createResource, createSignal, onCleanup
 import { del, get, patch } from "../api/http";
 import { deleteDmMessage, editDmMessage, fetchDmMessages, markDmRead } from "../api/dms";
 import { connect, onMessage, send } from "../api/ws";
-import { addReaction, removeCustomReaction, removeUnicodeReaction } from "../api/reactions";
+import {
+  addDmReaction,
+  addReaction,
+  removeCustomReaction,
+  removeDmCustomReaction,
+  removeDmUnicodeReaction,
+  removeUnicodeReaction,
+} from "../api/reactions";
 import type { GifResult } from "../api/gifs";
 import { getApiBaseUrl, token, userId, username } from "../stores/auth";
 import { activeChannelId, activeDmThreadId, type Channel } from "../stores/chat";
@@ -181,7 +188,7 @@ async function fetchMessagesPage(
     ...message,
     channel_id: message.thread_id,
     attachments: [],
-    reactions: [],
+    reactions: message.reactions ?? [],
   }));
 }
 
@@ -329,6 +336,36 @@ export default function MessageArea() {
 
   async function handleAddReaction(messageId: string, reaction: { emoji_id?: string; unicode_emoji?: string }) {
     try {
+      const target = activeTarget();
+      if (target?.kind === "dm") {
+        await addDmReaction(messageId, reaction);
+        updateMessageReactionState(messageId, (reactions) => {
+          const matchIndex = reactions.findIndex((entry) => reactionMatches(entry, reaction.emoji_id, reaction.unicode_emoji));
+          if (matchIndex === -1) {
+            return [
+              ...reactions,
+              {
+                emoji_id: reaction.emoji_id ?? null,
+                unicode_emoji: reaction.unicode_emoji ?? null,
+                shortcode: null,
+                count: 1,
+                user_reacted: true,
+              },
+            ];
+          }
+
+          const next = [...reactions];
+          const current = next[matchIndex];
+          next[matchIndex] = {
+            ...current,
+            count: current.user_reacted ? current.count : current.count + 1,
+            user_reacted: true,
+          };
+          return next;
+        });
+        return;
+      }
+
       await addReaction(messageId, reaction);
     } catch (error) {
       setWsError(errorMessage(error, "Failed to add reaction"));
@@ -337,6 +374,37 @@ export default function MessageArea() {
 
   async function handleRemoveReaction(messageId: string, reaction: MessageReaction) {
     try {
+      const target = activeTarget();
+      if (target?.kind === "dm") {
+        if (reaction.emoji_id) {
+          await removeDmCustomReaction(messageId, reaction.emoji_id);
+        } else if (reaction.unicode_emoji) {
+          await removeDmUnicodeReaction(messageId, reaction.unicode_emoji);
+        }
+
+        updateMessageReactionState(messageId, (reactions) => {
+          const matchIndex = reactions.findIndex((entry) => reactionMatches(entry, reaction.emoji_id, reaction.unicode_emoji));
+          if (matchIndex === -1) {
+            return reactions;
+          }
+
+          const next = [...reactions];
+          const current = next[matchIndex];
+          const nextCount = Math.max(current.count - 1, 0);
+          if (nextCount === 0) {
+            return reactions.filter((_, index) => index !== matchIndex);
+          }
+
+          next[matchIndex] = {
+            ...current,
+            count: nextCount,
+            user_reacted: false,
+          };
+          return next;
+        });
+        return;
+      }
+
       if (reaction.emoji_id) {
         await removeCustomReaction(messageId, reaction.emoji_id);
       } else if (reaction.unicode_emoji) {

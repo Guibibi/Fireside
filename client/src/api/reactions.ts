@@ -41,3 +41,24 @@ export async function removeUnicodeReaction(
 ): Promise<void> {
   return del(`/messages/${messageId}/reactions/unicode/${encodeURIComponent(unicodeEmoji)}`);
 }
+
+export async function addDmReaction(
+  messageId: string,
+  request: AddReactionRequest
+): Promise<Reaction> {
+  return post<Reaction>(`/dm-messages/${messageId}/reactions`, request);
+}
+
+export async function removeDmCustomReaction(
+  messageId: string,
+  emojiId: string
+): Promise<void> {
+  return del(`/dm-messages/${messageId}/reactions/${emojiId}`);
+}
+
+export async function removeDmUnicodeReaction(
+  messageId: string,
+  unicodeEmoji: string
+): Promise<void> {
+  return del(`/dm-messages/${messageId}/reactions/unicode/${encodeURIComponent(unicodeEmoji)}`);
+}

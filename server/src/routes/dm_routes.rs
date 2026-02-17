@@ -8,6 +8,7 @@ use uuid::Uuid;
 
 use crate::auth::extract_claims;
 use crate::errors::AppError;
+use crate::routes::reaction_routes::{get_reactions_for_dm_messages, ReactionSummaryResponse};
 use crate::ws::broadcast::{broadcast_dm_thread_message, broadcast_user_ids_message};
 use crate::ws::messages::ServerMessage;
 use crate::AppState;
@@ -24,7 +25,7 @@ pub struct DmThreadSummary {
     pub unread_count: i64,
 }
 
-#[derive(Debug, Serialize, sqlx::FromRow)]
+#[derive(Debug, Serialize)]
 pub struct DmMessageWithAuthor {
     pub id: Uuid,
     pub thread_id: Uuid,
@@ -34,6 +35,36 @@ pub struct DmMessageWithAuthor {
     pub content: String,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub edited_at: Option<chrono::DateTime<chrono::Utc>>,
+    #[serde(default)]
+    pub reactions: Vec<ReactionSummaryResponse>,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct DmMessageWithAuthorRow {
+    id: Uuid,
+    thread_id: Uuid,
+    author_id: Uuid,
+    author_username: String,
+    author_display_name: String,
+    content: String,
+    created_at: chrono::DateTime<chrono::Utc>,
+    edited_at: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+impl From<DmMessageWithAuthorRow> for DmMessageWithAuthor {
+    fn from(value: DmMessageWithAuthorRow) -> Self {
+        Self {
+            id: value.id,
+            thread_id: value.thread_id,
+            author_id: value.author_id,
+            author_username: value.author_username,
+            author_display_name: value.author_display_name,
+            content: value.content,
+            created_at: value.created_at,
+            edited_at: value.edited_at,
+            reactions: Vec::new(),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -390,8 +421,8 @@ async fn get_dm_messages(
 
     let limit = query.limit.unwrap_or(50).clamp(1, 100);
 
-    let messages = if let Some(before) = query.before {
-        sqlx::query_as::<_, DmMessageWithAuthor>(
+    let rows: Vec<DmMessageWithAuthorRow> = if let Some(before) = query.before {
+        sqlx::query_as::<_, DmMessageWithAuthorRow>(
             "SELECT
                m.id,
                m.thread_id,
@@ -414,7 +445,7 @@ async fn get_dm_messages(
         .fetch_all(&state.db)
         .await?
     } else {
-        sqlx::query_as::<_, DmMessageWithAuthor>(
+        sqlx::query_as::<_, DmMessageWithAuthorRow>(
             "SELECT
                m.id,
                m.thread_id,
@@ -435,6 +466,21 @@ async fn get_dm_messages(
         .fetch_all(&state.db)
         .await?
     };
+
+    let mut messages = rows
+        .into_iter()
+        .map(DmMessageWithAuthor::from)
+        .collect::<Vec<_>>();
+
+    let message_ids = messages
+        .iter()
+        .map(|message| message.id)
+        .collect::<Vec<_>>();
+    let mut reactions_by_message =
+        get_reactions_for_dm_messages(&state, &message_ids, Some(claims.user_id)).await?;
+    for message in &mut messages {
+        message.reactions = reactions_by_message.remove(&message.id).unwrap_or_default();
+    }
 
     Ok(Json(messages))
 }
@@ -458,7 +504,7 @@ async fn send_dm_message(
         ));
     }
 
-    let message = sqlx::query_as::<_, DmMessageWithAuthor>(
+    let message = sqlx::query_as::<_, DmMessageWithAuthorRow>(
         "INSERT INTO dm_messages (id, thread_id, author_id, content)
          VALUES ($1, $2, $3, $4)
          RETURNING
@@ -477,6 +523,8 @@ async fn send_dm_message(
     .bind(trimmed_content)
     .fetch_one(&state.db)
     .await?;
+
+    let message = DmMessageWithAuthor::from(message);
 
     let _ = sqlx::query(
         "INSERT INTO dm_read_state (thread_id, user_id, last_read_message_id, updated_at)
@@ -577,7 +625,7 @@ async fn edit_dm_message(
         ));
     }
 
-    let edited = sqlx::query_as::<_, DmMessageWithAuthor>(
+    let edited = sqlx::query_as::<_, DmMessageWithAuthorRow>(
         "UPDATE dm_messages
          SET content = $1,
              edited_at = now()
@@ -596,6 +644,8 @@ async fn edit_dm_message(
     .bind(message_id)
     .fetch_one(&state.db)
     .await?;
+
+    let edited = DmMessageWithAuthor::from(edited);
 
     let Some(edited_at) = edited.edited_at else {
         return Err(AppError::Internal("Missing edited timestamp".into()));
