@@ -4,6 +4,10 @@ Fireside is a self-hosted Discord alternative for smaller groups of friends and 
 
 You run one private server for one community, share a URL and password with invited people, and chat without public discovery, email signup, or platform lock-in.
 
+## Screenshot
+
+![Fireside homepage screenshot](screenshots/homepage-screenshot.png)
+
 ## Who It Is For
 
 - Friend groups and gaming communities
@@ -14,6 +18,7 @@ You run one private server for one community, share a URL and password with invi
 
 - Real-time text channels
 - Voice, video, and screen share
+- NVENC-powered screen streaming on Windows
 - Presence and typing indicators
 - Lightweight join flow (server URL + password + username)
 - Self-hosted deployment on infrastructure you control
