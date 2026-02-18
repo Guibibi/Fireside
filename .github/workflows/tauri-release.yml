@@ -108,6 +108,8 @@ jobs:
 
       - name: Upload release assets artifact
         uses: actions/upload-artifact@v4
+        env:
+          PATH: C:\Windows\System32;${{ env.PATH }}
         with:
           name: release-assets-${{ matrix.name }}
           if-no-files-found: error
@@ -141,11 +143,17 @@ jobs:
         run: node scripts/build-latest-json.mjs --assets-dir release-assets --output release-assets/latest.json
 
       - name: Publish GitHub release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ github.ref_name }}
-          generate_release_notes: true
-          fail_on_unmatched_files: true
-          make_latest: true
-          files: |
-            release-assets/**
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mapfile -t files < <(find release-assets -type f)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "No release assets found in release-assets"
+            exit 1
+          fi
+
+          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            gh release upload "${GITHUB_REF_NAME}" "${files[@]}" --clobber
+          else
+            gh release create "${GITHUB_REF_NAME}" "${files[@]}" --generate-notes --latest
+          fi
