@@ -90,6 +90,8 @@ fn default_storage_backend() -> String {
 
 fn default_cors_allowed_origins() -> Vec<String> {
     vec![
+        "tauri://localhost".to_string(),
+        "http://tauri.localhost".to_string(),
         "http://localhost:5173".to_string(),
         "http://127.0.0.1:5173".to_string(),
         "http://localhost:4173".to_string(),
