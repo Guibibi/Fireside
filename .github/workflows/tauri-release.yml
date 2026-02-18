@@ -6,7 +6,7 @@ on:
       - "v*"
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: tauri-release-${{ github.ref }}
@@ -15,6 +15,7 @@ concurrency:
 jobs:
   build:
     name: Build (${{ matrix.name }})
+    if: github.event.repository.fork == false
     strategy:
       fail-fast: false
       matrix:
@@ -33,6 +34,7 @@ jobs:
             enable_nvenc: true
 
     runs-on: ${{ fromJSON(matrix.runs_on_json) }}
+    timeout-minutes: 90
 
     env:
       TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -45,6 +47,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -130,10 +134,16 @@ jobs:
     name: Publish release assets
     needs: build
     runs-on: ubuntu-latest
+    if: github.event.repository.fork == false
+    timeout-minutes: 20
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Download built assets
         uses: actions/download-artifact@v4
