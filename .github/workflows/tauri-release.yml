@@ -74,7 +74,7 @@ jobs:
         run: npm --prefix client ci
 
       - name: Sync app version from git tag
-        run: node scripts/sync-client-version-from-tag.mjs --tag "${GITHUB_REF_NAME}"
+        run: node scripts/sync-client-version-from-tag.mjs --tag "${{ github.ref_name }}"
 
       - name: Validate NVENC build environment
         if: matrix.enable_nvenc
