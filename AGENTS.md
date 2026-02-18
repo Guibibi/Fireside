@@ -31,6 +31,12 @@ Run commands from repo root unless noted.
 ## Git Commits
 - Use conventional commit messages
 
+## Git Tags
+- Do not create tags by default.
+- Only create/push a tag when explicitly requested by the user.
+- When asked to "tag" or "bump tag", inspect existing tags first and base the new version on the latest version tag (for example, `v0.1.5` -> `v0.1.6`) instead of guessing.
+- Prefer version tags in the `vMAJOR.MINOR.PATCH` format unless the user asks for a different naming scheme.
+
 ### Backend (`server/`)
 
 - Dev run: `cargo run --manifest-path server/Cargo.toml`

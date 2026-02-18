@@ -67,9 +67,12 @@ impl StorageBackend for LocalStorage {
 
     async fn read(&self, key: &str) -> Result<Vec<u8>, AppError> {
         let path = self.resolve_path(key)?;
-        tokio::fs::read(&path)
-            .await
-            .map_err(|error| AppError::Internal(format!("Failed to read storage object: {error}")))
+        tokio::fs::read(&path).await.map_err(|error| {
+            AppError::Internal(format!(
+                "Failed to read storage object (key: '{key}', path: '{}'): {error}",
+                path.display(),
+            ))
+        })
     }
 
     async fn delete(&self, key: &str) -> Result<(), AppError> {
