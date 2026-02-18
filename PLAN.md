@@ -59,17 +59,11 @@ Yankcord is a self-hosted, minimal chat app. One server instance = one community
 - **Network quality indicator**: Display real-time connection quality metrics in voice UI (packet loss, jitter, latency) with visual bars/colors and detailed stats tooltip.
 - **Add audio to streaming**: Capture and send audio when streaming a window.
 
-### 5.4 User profiles and DMs
-
-- **Profile customization**: Add profile description and status.
-- **Private messages (DMs)**: Enable one-to-one messaging outside of channels. Add a DM list to the sidebar. Support initiating DMs from user profiles or member lists.
-- **Add Profile Viewing**: Add option to see other user profile.
-
-### 5.5 Notifications
+### 5.4 Notifications
 
 - **Native desktop notifications**: Integrate with the OS notification system for message alerts, mentions, and calls. Include notification preferences (sounds, badges, quiet hours). Deep link notifications to the relevant channel or conversation. Use tauri plugin if possible
 
-5.6 Deep Link
+### 5.5 Deep Link
 
 - **Deep Linking**: Implement deep linking using the tauri plugin to specific channels, messages, and users within the app. Ensure that deep links work correctly across different platforms and devices.
 - Implement deep linking for invites too
