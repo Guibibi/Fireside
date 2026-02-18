@@ -46,7 +46,7 @@ export async function checkForAppUpdate(): Promise<AvailableAppUpdate | null> {
     currentVersion: result.currentVersion,
     publishedAt: typeof result.date === "string" ? result.date : null,
     changelog: typeof result.body === "string" ? result.body : "",
-    downloadAndInstall: result.downloadAndInstall,
+    downloadAndInstall: () => result.downloadAndInstall(),
   };
 }
 
