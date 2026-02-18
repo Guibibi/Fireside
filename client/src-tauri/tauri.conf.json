@@ -19,7 +19,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; connect-src 'self' https: http: wss: ws:; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'"
+      "csp": "default-src 'self'; connect-src 'self' https: http: wss: ws:; img-src 'self' data: blob: https: http:; style-src 'self' 'unsafe-inline'"
     }
   },
   "bundle": {

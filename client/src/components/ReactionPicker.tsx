@@ -17,10 +17,28 @@ interface ReactionPickerProps {
 export default function ReactionPicker(props: ReactionPickerProps) {
   const emojiStore = useEmojiStore();
   const [showCustom, setShowCustom] = createSignal(false);
+  const [position, setPosition] = createSignal({ top: 0, left: 0 });
+
+  let pickerRef: HTMLDivElement | undefined;
 
   createEffect(() => {
     void loadEmojis();
   });
+
+  const updatePosition = () => {
+    if (!props.anchorRef || !pickerRef) {
+      return;
+    }
+
+    const anchorRect = props.anchorRef.getBoundingClientRect();
+    const pickerRect = pickerRef.getBoundingClientRect();
+    const spacing = 8;
+    const maxLeft = Math.max(spacing, window.innerWidth - pickerRect.width - spacing);
+    const left = Math.min(Math.max(anchorRect.left, spacing), maxLeft);
+    const top = Math.max(spacing, anchorRect.top - pickerRect.height - spacing);
+
+    setPosition({ top, left });
+  };
 
   createEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -29,37 +47,49 @@ export default function ReactionPicker(props: ReactionPickerProps) {
       }
     };
 
-    const onClickOutside = (event: MouseEvent) => {
-      const target = event.target as HTMLElement;
-      if (!target.closest(".reaction-picker")) {
-        props.onClose();
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) {
+        return;
       }
+
+      if (pickerRef?.contains(target)) {
+        return;
+      }
+
+      if (props.anchorRef?.contains(target)) {
+        return;
+      }
+
+      props.onClose();
+    };
+
+    const onReposition = () => {
+      updatePosition();
     };
 
     window.addEventListener("keydown", onKeyDown);
-    document.addEventListener("click", onClickOutside);
+    window.addEventListener("pointerdown", onPointerDown);
+    window.addEventListener("resize", onReposition);
+    window.addEventListener("scroll", onReposition, true);
+    queueMicrotask(updatePosition);
 
     onCleanup(() => {
       window.removeEventListener("keydown", onKeyDown);
-      document.removeEventListener("click", onClickOutside);
+      window.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("resize", onReposition);
+      window.removeEventListener("scroll", onReposition, true);
     });
   });
 
-  const getAnchorPosition = () => {
-    if (!props.anchorRef) return {};
-    const rect = props.anchorRef.getBoundingClientRect();
-    return {
-      top: `${rect.bottom + 8}px`,
-      left: `${rect.left}px`,
-    };
-  };
-
   return (
     <div
+      ref={pickerRef}
       class="reaction-picker"
       style={{
         position: "fixed",
-        ...getAnchorPosition(),
+        top: `${position().top}px`,
+        left: `${position().left}px`,
         "z-index": "1000",
       }}
     >

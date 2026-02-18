@@ -3,24 +3,25 @@
   border: 1px solid var(--border-color);
   border-radius: var(--radius-lg);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-  padding: 8px;
-  min-width: 200px;
+  padding: 6px;
+  min-width: 176px;
 }
 
 .reaction-picker-content {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 
 .reaction-grid {
   display: grid;
   grid-template-columns: repeat(8, 1fr);
-  gap: 4px;
+  gap: 3px;
 }
 
 .reaction-item {
-  aspect-ratio: 1;
+  width: 20px;
+  height: 20px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -28,18 +29,17 @@
   border: none;
   border-radius: var(--radius-sm);
   cursor: pointer;
-  font-size: 20px;
-  padding: 4px;
-  transition: background 0.15s ease, transform 0.15s ease;
+  font-size: 15px;
+  padding: 0;
+  transition: background 0.15s ease;
 }
 
 .reaction-item:hover {
   background: var(--surface-3);
-  transform: scale(1.1);
 }
 
 .reaction-item.custom {
-  padding: 2px;
+  padding: 1px;
 }
 
 .reaction-item.custom img {
@@ -51,21 +51,21 @@
 .reaction-picker-divider {
   height: 1px;
   background: var(--border-color);
-  margin: 4px 0;
+  margin: 2px 0;
 }
 
 .reaction-custom-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0 4px;
+  padding: 0 2px;
 }
 
 .reaction-custom-header span {
-  font-size: 12px;
+  font-size: 10px;
   color: var(--text-secondary);
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.4px;
 }
 
 .reaction-show-more,
@@ -74,8 +74,8 @@
   border: none;
   color: var(--primary);
   cursor: pointer;
-  font-size: 12px;
-  padding: 2px 6px;
+  font-size: 10px;
+  padding: 1px 4px;
   border-radius: var(--radius-sm);
   transition: background 0.15s ease;
 }
