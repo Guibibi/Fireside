@@ -1,7 +1,16 @@
-import { Show, createSignal, onMount } from "solid-js";
-import { checkForAppUpdate, type AvailableAppUpdate } from "../../api/updater";
-import { errorMessage } from "../../utils/error";
+import { Show, createSignal, onCleanup, onMount } from "solid-js";
+import { getCurrentAppVersion } from "../../api/updater";
 import { isTauriRuntime } from "../../utils/platform";
+import {
+  availableAppUpdate,
+  checkForUpdates,
+  installAvailableUpdate,
+  isCheckingForUpdate,
+  isInstallingUpdate,
+  startUpdaterPolling,
+  updaterErrorMessage,
+  updaterStatusMessage,
+} from "../../stores/updater";
 import UpdateChangelog from "./UpdateChangelog";
 
 function formatPublishedAt(isoDate: string | null): string {
@@ -18,58 +27,22 @@ function formatPublishedAt(isoDate: string | null): string {
 }
 
 export default function UpdaterSettings() {
-  const [availableUpdate, setAvailableUpdate] = createSignal<AvailableAppUpdate | null>(null);
-  const [isChecking, setIsChecking] = createSignal(false);
-  const [isInstalling, setIsInstalling] = createSignal(false);
-  const [statusMessage, setStatusMessage] = createSignal("");
-  const [updateError, setUpdateError] = createSignal("");
   const tauriRuntime = isTauriRuntime();
-
-  async function checkForUpdates(showUpToDateMessage: boolean) {
-    if (!tauriRuntime || isChecking()) {
-      return;
-    }
-
-    setIsChecking(true);
-    setUpdateError("");
-    try {
-      const update = await checkForAppUpdate();
-      setAvailableUpdate(update);
-      if (update) {
-        setStatusMessage(`Version ${update.version} is available.`);
-      } else if (showUpToDateMessage) {
-        setStatusMessage("You are already on the latest version.");
-      } else {
-        setStatusMessage("");
-      }
-    } catch (error) {
-      setUpdateError(errorMessage(error, "Unable to check for updates"));
-    } finally {
-      setIsChecking(false);
-    }
-  }
-
-  async function installUpdate() {
-    const update = availableUpdate();
-    if (!update || isInstalling()) {
-      return;
-    }
-
-    setIsInstalling(true);
-    setUpdateError("");
-    try {
-      await update.downloadAndInstall();
-      setStatusMessage("Update downloaded. Restart Yankcord to finish installing.");
-      setAvailableUpdate(null);
-    } catch (error) {
-      setUpdateError(errorMessage(error, "Failed to download and install update"));
-    } finally {
-      setIsInstalling(false);
-    }
-  }
+  const [currentVersion, setCurrentVersion] = createSignal<string | null>(null);
 
   onMount(() => {
-    void checkForUpdates(false);
+    if (tauriRuntime) {
+      void getCurrentAppVersion()
+        .then((version) => {
+          setCurrentVersion(version);
+        })
+        .catch(() => {
+          setCurrentVersion(null);
+        });
+    }
+
+    const stopPolling = startUpdaterPolling();
+    onCleanup(stopPolling);
   });
 
   return (
@@ -81,6 +54,9 @@ export default function UpdaterSettings() {
           fallback={<p class="settings-help">Updates are only available in the Tauri desktop build.</p>}
         >
           <p class="settings-help">Yankcord checks for updates and can install a new release in-app.</p>
+          <p class="settings-help settings-update-current-version">
+            Current version: <strong>{currentVersion() ?? "Unknown"}</strong>
+          </p>
         </Show>
       </div>
 
@@ -90,21 +66,21 @@ export default function UpdaterSettings() {
             type="button"
             class="settings-secondary"
             onClick={() => void checkForUpdates(true)}
-            disabled={isChecking() || isInstalling()}
+            disabled={isCheckingForUpdate() || isInstallingUpdate()}
           >
-            {isChecking() ? "Checking..." : "Check for updates"}
+            {isCheckingForUpdate() ? "Checking..." : "Check for updates"}
           </button>
           <button
             type="button"
             class="settings-secondary"
-            onClick={() => void installUpdate()}
-            disabled={!availableUpdate() || isInstalling() || isChecking()}
+            onClick={() => void installAvailableUpdate()}
+            disabled={!availableAppUpdate() || isInstallingUpdate() || isCheckingForUpdate()}
           >
-            {isInstalling() ? "Installing..." : "Download and install"}
+            {isInstallingUpdate() ? "Installing..." : "Download and install"}
           </button>
         </div>
 
-        <Show when={availableUpdate()}>
+        <Show when={availableAppUpdate()}>
           {(update) => (
             <div class="settings-update-release">
               <p class="settings-help settings-update-meta">
@@ -115,13 +91,13 @@ export default function UpdaterSettings() {
           )}
         </Show>
 
-        <Show when={statusMessage()}>
-          <p class="settings-help settings-update-status">{statusMessage()}</p>
+        <Show when={updaterStatusMessage()}>
+          <p class="settings-help settings-update-status">{updaterStatusMessage()}</p>
         </Show>
       </Show>
 
-      <Show when={updateError()}>
-        <p class="error">{updateError()}</p>
+      <Show when={updaterErrorMessage()}>
+        <p class="error">{updaterErrorMessage()}</p>
       </Show>
     </section>
   );

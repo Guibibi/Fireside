@@ -61,7 +61,9 @@
 }
 
 .settings-nav-item {
-  display: block;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   width: 100%;
   padding: var(--space-sm) var(--space-md);
   border: 1px solid transparent;
@@ -74,6 +76,15 @@
   cursor: pointer;
   transition: background 0.15s var(--ease-soft), color 0.15s var(--ease-soft), border-color 0.15s var(--ease-soft);
   box-shadow: none;
+}
+
+.settings-nav-update-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full);
+  background: var(--accent);
+  box-shadow: 0 0 0 2px rgba(201, 149, 107, 0.2);
+  flex-shrink: 0;
 }
 
 .settings-nav-item:hover:not(:disabled) {
@@ -259,6 +270,10 @@
 }
 
 .settings-update-meta {
+  margin: 0;
+}
+
+.settings-update-current-version {
   margin: 0;
 }
 

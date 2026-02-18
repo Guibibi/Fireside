@@ -1,9 +1,10 @@
-import { onMount } from "solid-js";
+import { onCleanup, onMount } from "solid-js";
 import { username as currentUsername } from "../stores/auth";
 import { openSettings } from "../stores/settings";
 import UserAvatar from "./UserAvatar";
 import { displayNameFor, upsertUserProfile } from "../stores/userProfiles";
 import { getApiBaseUrl, token } from "../stores/auth";
+import { hasPendingAppUpdate, startUpdaterPolling } from "../stores/updater";
 import { SettingsIcon } from "./icons";
 
 interface CurrentUserResponse {
@@ -48,6 +49,8 @@ export default function UserSettingsDock() {
 
   onMount(() => {
     void refreshCurrentUserProfile();
+    const stopUpdaterPolling = startUpdaterPolling();
+    onCleanup(stopUpdaterPolling);
   });
 
   return (
@@ -64,9 +67,9 @@ export default function UserSettingsDock() {
       </div>
       <button
         type="button"
-        class="user-dock-settings"
+        class={`user-dock-settings${hasPendingAppUpdate() ? " user-dock-settings-has-update" : ""}`}
         onClick={() => openSettings()}
-        aria-label="Open settings"
+        aria-label={hasPendingAppUpdate() ? "Open settings, update available" : "Open settings"}
         title="Settings"
       >
         <SettingsIcon />

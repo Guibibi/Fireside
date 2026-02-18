@@ -73,6 +73,9 @@ jobs:
       - name: Install frontend dependencies
         run: npm --prefix client ci
 
+      - name: Sync app version from git tag
+        run: node scripts/sync-client-version-from-tag.mjs --tag "${GITHUB_REF_NAME}"
+
       - name: Validate NVENC build environment
         if: matrix.enable_nvenc
         shell: powershell

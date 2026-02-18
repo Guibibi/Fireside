@@ -68,6 +68,7 @@ import {
   desktopNotificationsSupported,
   requestDesktopNotificationPermission,
 } from "../utils/desktopNotifications";
+import { hasPendingAppUpdate, startUpdaterPolling } from "../stores/updater";
 
 interface UpdateCurrentUserResponse {
   token: string;
@@ -137,6 +138,9 @@ export default function SettingsPage() {
     setDraftDisplayName(usernameValue ? displayNameFor(usernameValue) : "");
     void refreshMediaDevices();
     void refreshCurrentUserProfile();
+
+    const stopUpdaterPolling = startUpdaterPolling();
+    onCleanup(stopUpdaterPolling);
   });
 
   function avatarFallbackLabel() {
@@ -425,7 +429,10 @@ export default function SettingsPage() {
                 class={`settings-nav-item${activeSettingsSection() === item.key ? " settings-nav-item-active" : ""}`}
                 onClick={() => openSettings(item.key)}
               >
-                {item.label}
+                <span>{item.label}</span>
+                <Show when={item.key === "session" && hasPendingAppUpdate()}>
+                  <span class="settings-nav-update-dot" aria-hidden="true" />
+                </Show>
               </button>
             )}
           </For>

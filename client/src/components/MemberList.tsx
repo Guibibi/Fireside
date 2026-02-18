@@ -23,6 +23,11 @@ interface UsersResponse {
 }
 
 export default function MemberList() {
+  const MEMBER_PREVIEW_HOVER_DELAY_MS = 1000;
+  const MEMBER_PREVIEW_WIDTH_PX = 250;
+  const MEMBER_PREVIEW_OFFSET_PX = 12;
+  const MEMBER_PREVIEW_VIEWPORT_PADDING_PX = 12;
+
   const [allMembers, setAllMembers] = createSignal<string[]>([]);
   const [onlineMembers, setOnlineMembers] = createSignal<string[]>([]);
   const [idleMembers, setIdleMembers] = createSignal<string[]>([]);
@@ -34,10 +39,60 @@ export default function MemberList() {
     return allMembers().filter((member) => !connected.has(member));
   });
   const [actionError, setActionError] = createSignal("");
+  const [hoverPreviewUsername, setHoverPreviewUsername] = createSignal<string | null>(null);
+  const [hoverPreviewPosition, setHoverPreviewPosition] = createSignal({ top: 0, left: 0 });
+  let hoverPreviewTimer: ReturnType<typeof setTimeout> | null = null;
 
   function profileStatusFor(username: string): string | null {
     const status = profileFor(username)?.profile_status?.trim();
     return status && status.length > 0 ? status : null;
+  }
+
+  function profileDescriptionFor(username: string): string | null {
+    const description = profileFor(username)?.profile_description?.trim();
+    return description && description.length > 0 ? description : null;
+  }
+
+  function clearHoverPreviewTimer() {
+    if (!hoverPreviewTimer) {
+      return;
+    }
+    clearTimeout(hoverPreviewTimer);
+    hoverPreviewTimer = null;
+  }
+
+  function hideHoverPreview() {
+    clearHoverPreviewTimer();
+    setHoverPreviewUsername(null);
+  }
+
+  function previewPositionFor(anchorElement: HTMLElement) {
+    const rect = anchorElement.getBoundingClientRect();
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+
+    const preferLeft = rect.left >= MEMBER_PREVIEW_WIDTH_PX + MEMBER_PREVIEW_OFFSET_PX + MEMBER_PREVIEW_VIEWPORT_PADDING_PX;
+    const left = preferLeft
+      ? rect.left - MEMBER_PREVIEW_WIDTH_PX - MEMBER_PREVIEW_OFFSET_PX
+      : rect.right + MEMBER_PREVIEW_OFFSET_PX;
+    const maxTop = viewportHeight - MEMBER_PREVIEW_VIEWPORT_PADDING_PX - 160;
+    const top = Math.min(
+      Math.max(MEMBER_PREVIEW_VIEWPORT_PADDING_PX, rect.top),
+      Math.max(MEMBER_PREVIEW_VIEWPORT_PADDING_PX, maxTop),
+    );
+
+    return {
+      top,
+      left: Math.max(MEMBER_PREVIEW_VIEWPORT_PADDING_PX, Math.min(left, viewportWidth - MEMBER_PREVIEW_WIDTH_PX - MEMBER_PREVIEW_VIEWPORT_PADDING_PX)),
+    };
+  }
+
+  function handleMemberHoverStart(member: string, anchorElement: HTMLElement) {
+    clearHoverPreviewTimer();
+    hoverPreviewTimer = setTimeout(() => {
+      setHoverPreviewPosition(previewPositionFor(anchorElement));
+      setHoverPreviewUsername(member);
+    }, MEMBER_PREVIEW_HOVER_DELAY_MS);
   }
 
   async function startDmWithMember(memberUsername: string) {
@@ -48,6 +103,18 @@ export default function MemberList() {
       setActionError("");
     } catch (error) {
       setActionError(errorMessage(error, "Failed to open DM"));
+    }
+  }
+
+  function openMemberProfile(memberUsername: string) {
+    hideHoverPreview();
+    openProfileModal(memberUsername);
+  }
+
+  function handleMemberKeyDown(event: KeyboardEvent, memberUsername: string) {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      openMemberProfile(memberUsername);
     }
   }
 
@@ -145,8 +212,12 @@ export default function MemberList() {
     onCleanup(unsubscribe);
   });
 
+  onCleanup(() => {
+    hideHoverPreview();
+  });
+
   return (
-    <aside class="member-list">
+    <aside class="member-list" onScroll={hideHoverPreview}>
       <h3>Members</h3>
       <Show when={allMembers().length > 0} fallback={<p class="placeholder">No members found</p>}>
         <Show when={actionError()}>
@@ -159,13 +230,20 @@ export default function MemberList() {
               {(member) => (
                 <li
                   class={`member-item${idleSet().has(member) ? " member-item-idle" : ""}`}
+                  tabIndex={0}
+                  onClick={() => openMemberProfile(member)}
+                  onKeyDown={(event) => handleMemberKeyDown(event, member)}
+                  onMouseEnter={(event) => handleMemberHoverStart(member, event.currentTarget)}
+                  onMouseLeave={hideHoverPreview}
                   onContextMenu={(e) => {
                     e.preventDefault();
+                    hideHoverPreview();
                     openContextMenu(e.clientX, e.clientY, "member", member, { username: member });
                   }}
                   onFocus={() => setContextMenuTarget("member", member, { username: member })}
                   onTouchStart={(e) => {
                     const touch = e.touches[0];
+                    hideHoverPreview();
                     handleLongPressStart(touch.clientX, touch.clientY, "member", member, { username: member });
                   }}
                   onTouchEnd={handleLongPressEnd}
@@ -199,13 +277,20 @@ export default function MemberList() {
               {(member) => (
                 <li
                   class="member-item member-item-offline"
+                  tabIndex={0}
+                  onClick={() => openMemberProfile(member)}
+                  onKeyDown={(event) => handleMemberKeyDown(event, member)}
+                  onMouseEnter={(event) => handleMemberHoverStart(member, event.currentTarget)}
+                  onMouseLeave={hideHoverPreview}
                   onContextMenu={(e) => {
                     e.preventDefault();
+                    hideHoverPreview();
                     openContextMenu(e.clientX, e.clientY, "member", member, { username: member });
                   }}
                   onFocus={() => setContextMenuTarget("member", member, { username: member })}
                   onTouchStart={(e) => {
                     const touch = e.touches[0];
+                    hideHoverPreview();
                     handleLongPressStart(touch.clientX, touch.clientY, "member", member, { username: member });
                   }}
                   onTouchEnd={handleLongPressEnd}
@@ -225,6 +310,35 @@ export default function MemberList() {
             </For>
           </ul>
         </Show>
+      </Show>
+
+      <Show when={hoverPreviewUsername()}>
+        {(member) => (
+          <div
+            class="member-hover-preview"
+            style={{
+              top: `${hoverPreviewPosition().top}px`,
+              left: `${hoverPreviewPosition().left}px`,
+              width: `${MEMBER_PREVIEW_WIDTH_PX}px`,
+            }}
+            role="status"
+            aria-live="polite"
+          >
+            <div class="member-hover-preview-head">
+              <UserAvatar username={member()} size={40} />
+              <div class="member-hover-preview-identity">
+                <p class="member-hover-preview-name">{displayNameFor(member())}</p>
+                <p class="member-hover-preview-username">@{member()}</p>
+              </div>
+            </div>
+            <Show when={profileStatusFor(member())}>
+              {(status) => <p class="member-hover-preview-status">{status()}</p>}
+            </Show>
+            <Show when={profileDescriptionFor(member())}>
+              {(description) => <p class="member-hover-preview-description">{description()}</p>}
+            </Show>
+          </div>
+        )}
       </Show>
     </aside>
   );

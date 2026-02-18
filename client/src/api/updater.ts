@@ -49,3 +49,12 @@ export async function checkForAppUpdate(): Promise<AvailableAppUpdate | null> {
     downloadAndInstall: result.downloadAndInstall,
   };
 }
+
+export async function getCurrentAppVersion(): Promise<string | null> {
+  if (!isTauriRuntime()) {
+    return null;
+  }
+
+  const { getVersion } = await import("@tauri-apps/api/app");
+  return getVersion();
+}
