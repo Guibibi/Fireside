@@ -39,7 +39,7 @@
         "updater": {
             "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDUyRDZBRjhCRjI3NjU0MUQKUldRZFZIYnlpNi9XVXBuR2xiVFQvbHgrVWtDdklDdGZxd3dpTEk5YUhySDE3TUZndDFmZElZcWEK",
             "endpoints": [
-                "https://github.com/user/repo/releases/latest/download/latest.json"
+                "https://github.com/Guibibi/Fireside/releases/latest/download/latest.json"
             ],
             "windows": {
                 "installMode": "passive"
