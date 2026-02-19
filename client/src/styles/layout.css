@@ -9,6 +9,131 @@
   animation: fadeIn 0.2s var(--ease-soft);
 }
 
+.app-content {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-root--tauri {
+  background: var(--gray-2);
+}
+
+.window-titlebar {
+  height: 40px;
+  display: flex;
+  align-items: stretch;
+  border-bottom: 1px solid var(--gray-5);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent),
+    var(--gray-3);
+  user-select: none;
+}
+
+.window-titlebar-drag-region {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: 0 var(--space-lg);
+}
+
+.window-titlebar-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: var(--radius-full);
+  background: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-dim);
+}
+
+.window-titlebar-title {
+  color: var(--gray-11);
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.window-titlebar-controls {
+  display: flex;
+  align-items: stretch;
+}
+
+.window-titlebar-button {
+  all: unset;
+  width: 46px;
+  display: grid;
+  place-items: center;
+  color: var(--gray-9);
+  cursor: pointer;
+  transition: background-color 0.16s var(--ease-soft), color 0.16s var(--ease-soft);
+}
+
+.window-titlebar-button:hover {
+  background: var(--gray-4);
+  color: var(--gray-12);
+}
+
+.window-titlebar-button:active {
+  background: var(--gray-5);
+}
+
+.window-titlebar-button:focus-visible {
+  outline: 2px solid var(--accent-border);
+  outline-offset: -2px;
+}
+
+.window-titlebar-button-close:hover {
+  background: var(--danger);
+  color: var(--gray-12);
+}
+
+.window-titlebar-icon {
+  position: relative;
+  width: 12px;
+  height: 12px;
+}
+
+.window-titlebar-icon-minimize::before {
+  content: "";
+  position: absolute;
+  left: 1px;
+  right: 1px;
+  bottom: 2px;
+  border-bottom: 1.5px solid currentColor;
+}
+
+.window-titlebar-icon-maximize::before {
+  content: "";
+  position: absolute;
+  inset: 1px;
+  border: 1.5px solid currentColor;
+}
+
+.window-titlebar-icon-close::before,
+.window-titlebar-icon-close::after {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 0;
+  width: 1.5px;
+  height: 12px;
+  background: currentColor;
+}
+
+.window-titlebar-icon-close::before {
+  transform: rotate(45deg);
+}
+
+.window-titlebar-icon-close::after {
+  transform: rotate(-45deg);
+}
+
 @keyframes fadeIn {
   from { opacity: 0; }
   to { opacity: 1; }
