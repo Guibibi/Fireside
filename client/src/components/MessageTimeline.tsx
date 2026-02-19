@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createSignal, onCleanup, onMount } from "solid-js";
+import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import { Portal } from "solid-js/web";
 import type { Channel } from "../stores/chat";
 import { username } from "../stores/auth";
@@ -16,6 +16,7 @@ import type { ChannelMessage, MessageDayGroup, MessageReaction } from "./message
 import { isMentioningUsername } from "../utils/mentions";
 import { ZoomIcon, CloseIcon, DownloadIcon, ExternalLinkIcon } from "./icons";
 import { displayNameFor } from "../stores/userProfiles";
+import { loadEmojis, useEmojiStore } from "../stores/emojis";
 
 interface MessageTimelineProps {
   activeChannel: Channel | null | undefined;
@@ -102,9 +103,21 @@ function LazyAttachmentImage(props: LazyAttachmentImageProps) {
 }
 
 export default function MessageTimeline(props: MessageTimelineProps) {
+  const emojiStore = useEmojiStore();
+  const customEmojiById = createMemo(() => {
+    const lookup = new Map<string, { url: string }>();
+    for (const emoji of emojiStore.emojis) {
+      lookup.set(emoji.id, { url: emoji.url });
+    }
+    return lookup;
+  });
   const [attachmentPreview, setAttachmentPreview] = createSignal<AttachmentPreview | null>(null);
   const [reactionPickerMessageId, setReactionPickerMessageId] = createSignal<string | null>(null);
   const [reactionPickerAnchor, setReactionPickerAnchor] = createSignal<HTMLElement | null>(null);
+
+  createEffect(() => {
+    void loadEmojis();
+  });
 
   function messageClassName(content: string): string {
     const currentUsername = username();
@@ -287,26 +300,54 @@ export default function MessageTimeline(props: MessageTimelineProps) {
                               </Show>
                               <div class="message-reactions">
                                 <For each={message.reactions}>
-                                  {(reaction) => (
-                                    <button
-                                      type="button"
-                                      class={`message-reaction-chip${reaction.user_reacted ? " is-active" : ""}`}
-                                      onClick={() => {
-                                        if (reaction.user_reacted) {
-                                          props.onRemoveReaction(message.id, reaction);
-                                        } else {
-                                          props.onAddReaction(message.id, {
-                                            ...(reaction.emoji_id ? { emoji_id: reaction.emoji_id } : {}),
-                                            ...(reaction.unicode_emoji ? { unicode_emoji: reaction.unicode_emoji } : {}),
-                                          });
-                                        }
-                                      }}
-                                      title={reaction.shortcode ? `:${reaction.shortcode}:` : (reaction.unicode_emoji ?? "Reaction")}
-                                    >
-                                      <span class="message-reaction-emoji">{reaction.unicode_emoji ?? `:${reaction.shortcode ?? "emoji"}:`}</span>
-                                      <span class="message-reaction-count">{reaction.count}</span>
-                                    </button>
-                                  )}
+                                  {(reaction) => {
+                                    const [emojiImageFailed, setEmojiImageFailed] = createSignal(false);
+                                    const customEmojiUrl = createMemo(() => {
+                                      if (!reaction.emoji_id) {
+                                        return null;
+                                      }
+                                      return customEmojiById().get(reaction.emoji_id)?.url ?? null;
+                                    });
+
+                                    return (
+                                      <button
+                                        type="button"
+                                        class={`message-reaction-chip${reaction.user_reacted ? " is-active" : ""}`}
+                                        onClick={() => {
+                                          if (reaction.user_reacted) {
+                                            props.onRemoveReaction(message.id, reaction);
+                                          } else {
+                                            props.onAddReaction(message.id, {
+                                              ...(reaction.emoji_id ? { emoji_id: reaction.emoji_id } : {}),
+                                              ...(reaction.unicode_emoji ? { unicode_emoji: reaction.unicode_emoji } : {}),
+                                            });
+                                          }
+                                        }}
+                                        title={reaction.shortcode ? `:${reaction.shortcode}:` : (reaction.unicode_emoji ?? "Reaction")}
+                                      >
+                                        <Show
+                                          when={reaction.unicode_emoji}
+                                          fallback={(
+                                            <Show
+                                              when={customEmojiUrl() && !emojiImageFailed()}
+                                              fallback={<span class="message-reaction-emoji">{`:${reaction.shortcode ?? "emoji"}:`}</span>}
+                                            >
+                                              <img
+                                                class="message-reaction-emoji-image"
+                                                src={customEmojiUrl() ?? ""}
+                                                alt={`:${reaction.shortcode ?? "emoji"}:`}
+                                                decoding="async"
+                                                onError={() => setEmojiImageFailed(true)}
+                                              />
+                                            </Show>
+                                          )}
+                                        >
+                                          <span class="message-reaction-emoji">{reaction.unicode_emoji}</span>
+                                        </Show>
+                                        <span class="message-reaction-count">{reaction.count}</span>
+                                      </button>
+                                    );
+                                  }}
                                 </For>
                                 <button
                                   type="button"

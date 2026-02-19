@@ -223,7 +223,7 @@ export default function EmojiPicker(props: EmojiPickerProps) {
                   }}
                   title={`:${emoji.shortcode}:`}
                 >
-                  <img src={emoji.url} alt={`:${emoji.shortcode}:`} loading="lazy" />
+                  <img src={emoji.url} alt={`:${emoji.shortcode}:`} decoding="async" />
                 </button>
               )}
             </For>

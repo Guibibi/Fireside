@@ -489,7 +489,7 @@ export default function MessageRichContent(props: MessageRichContentProps) {
                   </Show>
                 )
                 : segment.type === "emoji"
-                  ? <img class="message-inline-emoji" src={segment.url} alt={`:${segment.shortcode}:`} loading="lazy" decoding="async" />
+                  ? <img class="message-inline-emoji" src={segment.url} alt={`:${segment.shortcode}:`} decoding="async" />
                 : segment.text
             )}
           </For>

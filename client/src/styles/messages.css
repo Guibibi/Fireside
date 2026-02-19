@@ -424,6 +424,12 @@
   font-size: 0.85rem;
 }
 
+.message-reaction-emoji-image {
+  width: 1rem;
+  height: 1rem;
+  object-fit: contain;
+}
+
 .message-reaction-count {
   font-family: var(--font-mono);
   color: var(--mist);

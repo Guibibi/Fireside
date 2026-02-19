@@ -209,7 +209,7 @@ export default function EmojiSettings(props: EmojiSettingsProps) {
                   {(emoji) => (
                     <li class="emoji-settings-item">
                       <div class="emoji-settings-item-main">
-                        <img src={emoji.url} alt={`:${emoji.shortcode}:`} loading="lazy" />
+                        <img src={emoji.url} alt={`:${emoji.shortcode}:`} decoding="async" />
                         <div>
                           <p class="emoji-settings-shortcode">:{emoji.shortcode}:</p>
                           <p class="emoji-settings-name">{emoji.name}</p>
