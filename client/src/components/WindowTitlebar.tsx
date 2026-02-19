@@ -1,6 +1,14 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 export default function WindowTitlebar() {
+  function handleDragStart(event: MouseEvent) {
+    if (event.button !== 0) {
+      return;
+    }
+
+    void getCurrentWindow().startDragging();
+  }
+
   function handleMinimize() {
     void getCurrentWindow().minimize();
   }
@@ -18,6 +26,7 @@ export default function WindowTitlebar() {
       <div
         class="window-titlebar-drag-region"
         data-tauri-drag-region
+        onMouseDown={handleDragStart}
         onDblClick={handleToggleMaximize}
       >
         <span class="window-titlebar-dot" aria-hidden="true" />

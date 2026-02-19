@@ -21,7 +21,7 @@
 }
 
 .window-titlebar {
-  height: 40px;
+  height: 32px;
   display: flex;
   align-items: stretch;
   border-bottom: 1px solid var(--gray-5);
@@ -36,13 +36,13 @@
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: var(--space-md);
-  padding: 0 var(--space-lg);
+  gap: var(--space-sm);
+  padding: 0 var(--space-md);
 }
 
 .window-titlebar-dot {
-  width: 9px;
-  height: 9px;
+  width: 8px;
+  height: 8px;
   border-radius: var(--radius-full);
   background: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-dim);
@@ -50,7 +50,7 @@
 
 .window-titlebar-title {
   color: var(--gray-11);
-  font-size: 0.82rem;
+  font-size: 0.76rem;
   font-weight: 600;
   letter-spacing: 0.02em;
   text-transform: uppercase;
@@ -66,7 +66,7 @@
 
 .window-titlebar-button {
   all: unset;
-  width: 46px;
+  width: 40px;
   display: grid;
   place-items: center;
   color: var(--gray-9);
@@ -95,8 +95,8 @@
 
 .window-titlebar-icon {
   position: relative;
-  width: 12px;
-  height: 12px;
+  width: 10px;
+  height: 10px;
 }
 
 .window-titlebar-icon-minimize::before {
@@ -104,7 +104,7 @@
   position: absolute;
   left: 1px;
   right: 1px;
-  bottom: 2px;
+  bottom: 1px;
   border-bottom: 1.5px solid currentColor;
 }
 
@@ -119,10 +119,10 @@
 .window-titlebar-icon-close::after {
   content: "";
   position: absolute;
-  left: 5px;
+  left: 4px;
   top: 0;
   width: 1.5px;
-  height: 12px;
+  height: 10px;
   background: currentColor;
 }
 
