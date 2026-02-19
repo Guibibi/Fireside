@@ -41,12 +41,14 @@ export async function checkForAppUpdate(): Promise<AvailableAppUpdate | null> {
     return null;
   }
 
+  const downloadAndInstall = result.downloadAndInstall.bind(result);
+
   return {
     version: result.version,
     currentVersion: result.currentVersion,
     publishedAt: typeof result.date === "string" ? result.date : null,
     changelog: typeof result.body === "string" ? result.body : "",
-    downloadAndInstall: () => result.downloadAndInstall(),
+    downloadAndInstall: () => downloadAndInstall(),
   };
 }
 

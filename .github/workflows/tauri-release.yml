@@ -170,3 +170,44 @@ jobs:
           else
             gh release create "${GITHUB_REF_NAME}" "${files[@]}" --generate-notes --latest
           fi
+
+  sync-version:
+    name: Sync version back to repository
+    needs: publish
+    runs-on: ubuntu-latest
+    if: github.event.repository.fork == false
+    timeout-minutes: 10
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout default branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Sync app version from git tag
+        run: node scripts/sync-client-version-from-tag.mjs --tag "${{ github.ref_name }}"
+
+      - name: Commit and push version bump
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          if git diff --quiet; then
+            echo "No version changes to commit"
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add client/package.json client/package-lock.json client/src-tauri/Cargo.toml client/src-tauri/tauri.conf.json
+          git commit -m "chore: sync client version to ${GITHUB_REF_NAME}"
+          git pull --rebase origin "${DEFAULT_BRANCH}"
+          git push origin HEAD:"${DEFAULT_BRANCH}"
