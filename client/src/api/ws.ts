@@ -56,6 +56,7 @@ export type ServerMessage =
   }
   | { type: "message_deleted"; id: string; channel_id: string }
   | { type: "channel_created"; channel: Channel }
+  | { type: "channel_updated"; channel: Channel }
   | { type: "channel_deleted"; id: string }
   | { type: "channel_activity"; channel_id: string }
   | { type: "typing_start"; channel_id: string; username: string }

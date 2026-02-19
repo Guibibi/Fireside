@@ -163,6 +163,9 @@ pub enum ServerMessage {
     #[serde(rename = "channel_created")]
     ChannelCreated { channel: Channel },
 
+    #[serde(rename = "channel_updated")]
+    ChannelUpdated { channel: Channel },
+
     #[serde(rename = "channel_deleted")]
     ChannelDeleted { id: Uuid },
 

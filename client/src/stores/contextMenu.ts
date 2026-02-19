@@ -12,7 +12,8 @@ export interface ContextMenuState {
 
 export interface ContextMenuHandlers {
   channel?: {
-    onDelete: (channel: ChatChannel) => void;
+    onEdit?: (channel: ChatChannel) => void;
+    onDelete?: (channel: ChatChannel) => void;
   };
   message?: {
     onEdit: (message: MessageContextData) => void;

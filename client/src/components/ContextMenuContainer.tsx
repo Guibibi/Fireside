@@ -19,11 +19,21 @@ export default function ContextMenuContainer() {
     if (state.targetType === "channel") {
       const channelData = state.targetData as ChatChannel;
       const items: ContextMenuItem[] = [];
+      const onEdit = handlers.channel?.onEdit;
+      const onDelete = handlers.channel?.onDelete;
 
-      if (handlers.channel?.onDelete) {
+      if (onEdit) {
+        items.push({
+          label: "Edit Channel",
+          onClick: () => onEdit(channelData),
+          dividerAfter: true,
+        });
+      }
+
+      if (onDelete) {
         items.push({
           label: "Delete Channel",
-          onClick: () => handlers.channel!.onDelete(channelData),
+          onClick: () => onDelete(channelData),
           danger: true,
         });
       }
