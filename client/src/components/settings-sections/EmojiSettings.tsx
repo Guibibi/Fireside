@@ -63,7 +63,12 @@ export default function EmojiSettings(props: EmojiSettingsProps) {
       return "Emoji must be 512 KB or smaller.";
     }
 
-    if (!["image/png", "image/webp", "image/gif"].includes(fileValue.type)) {
+    const mimeType = fileValue.type.toLowerCase();
+    const fileName = fileValue.name.toLowerCase();
+    const hasAllowedMimeType = ["image/png", "image/webp", "image/gif"].includes(mimeType);
+    const hasAllowedExtension = [".png", ".webp", ".gif"].some((extension) => fileName.endsWith(extension));
+
+    if (!hasAllowedMimeType && !hasAllowedExtension) {
       return "Emoji must be PNG, WebP, or GIF.";
     }
 

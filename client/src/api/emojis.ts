@@ -18,9 +18,11 @@ export interface CreateEmojiResponse {
 }
 
 function toAbsoluteEmojiUrl(path: string): string {
-  const normalizedPath = path.replace(/\/display(\?.*)?$/i, (_match, query: string | undefined) => `/original${query ?? ""}`);
+  const normalizedPath = path
+    .trim()
+    .replace(/\/display\/?(\?.*)?$/i, (_match, query: string | undefined) => `/original${query ?? ""}`);
 
-  if (/^https?:\/\//i.test(path)) {
+  if (/^https?:\/\//i.test(normalizedPath)) {
     return normalizedPath;
   }
 

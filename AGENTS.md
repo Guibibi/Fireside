@@ -105,6 +105,9 @@ Single-test quick reference:
 ## Code Rules (Important)
 - Keep the codebase in good shape by refactoring huge files into smaller modules
 - Try to keep files size under 500 lines
+- When multiple modules share similar validation, parsing, upload, or transformation logic, extract the shared part into a reusable helper/service instead of duplicating it.
+- If duplicated logic already exists, prefer a focused refactor that consolidates the common path while preserving existing behavior and API contracts.
+- Keep module-specific behavior at the edges (route/controller/UI layer) and centralize shared domain rules in one place.
 
 
 

@@ -5,9 +5,6 @@ use axum::{
     routing::{delete, get},
     Json, Router,
 };
-use image::codecs::gif::GifEncoder;
-use image::GenericImageView;
-use image::ImageFormat;
 use serde::Serialize;
 use uuid::Uuid;
 
@@ -15,9 +12,6 @@ use crate::auth::extract_claims;
 use crate::errors::AppError;
 use crate::models::{Emoji, UserRole};
 use crate::AppState;
-
-const MAX_EMOJI_BYTES: usize = 512 * 1024;
-const MAX_EMOJI_DIMENSION: u32 = 128;
 
 #[derive(Serialize)]
 pub struct CreateEmojiResponse {
@@ -140,31 +134,7 @@ async fn create_emoji(
         ));
     }
 
-    let mime_type = sniff_mime_type(&image_bytes)?;
-    validate_emoji_mime_type(mime_type)?;
-
-    if image_bytes.len() > MAX_EMOJI_BYTES {
-        return Err(AppError::BadRequest(format!(
-            "Emoji file exceeds maximum size of {} KB",
-            MAX_EMOJI_BYTES / 1024
-        )));
-    }
-
-    let image = image::load_from_memory(&image_bytes)
-        .map_err(|error| AppError::BadRequest(format!("Invalid image file: {error}")))?;
-
-    let (width, height) = image.dimensions();
-    let processed_image_bytes = if width > MAX_EMOJI_DIMENSION || height > MAX_EMOJI_DIMENSION {
-        let resized = image.thumbnail(MAX_EMOJI_DIMENSION, MAX_EMOJI_DIMENSION);
-        encode_resized_emoji(&resized, mime_type)?
-    } else {
-        image_bytes
-    };
-
-    let media_result = state
-        .uploads
-        .upload_emoji(user_id, mime_type, processed_image_bytes)
-        .await?;
+    let media_result = state.uploads.upload_emoji(user_id, image_bytes).await?;
 
     let emoji_id = Uuid::new_v4();
 
@@ -266,71 +236,4 @@ fn validate_shortcode(shortcode: &str) -> Result<(), AppError> {
     }
 
     Ok(())
-}
-
-fn validate_emoji_mime_type(mime_type: &str) -> Result<(), AppError> {
-    match mime_type {
-        "image/png" | "image/webp" | "image/gif" => Ok(()),
-        _ => Err(AppError::BadRequest(
-            "Unsupported emoji format. Allowed: PNG, WEBP, GIF".into(),
-        )),
-    }
-}
-
-fn sniff_mime_type(bytes: &[u8]) -> Result<&'static str, AppError> {
-    if bytes.len() >= 8
-        && bytes[0] == 0x89
-        && bytes[1] == b'P'
-        && bytes[2] == b'N'
-        && bytes[3] == b'G'
-        && bytes[4] == 0x0D
-        && bytes[5] == 0x0A
-        && bytes[6] == 0x1A
-        && bytes[7] == 0x0A
-    {
-        return Ok("image/png");
-    }
-
-    if bytes.len() >= 6 && (&bytes[..6] == b"GIF87a" || &bytes[..6] == b"GIF89a") {
-        return Ok("image/gif");
-    }
-
-    if bytes.len() >= 12 && &bytes[..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
-        return Ok("image/webp");
-    }
-
-    Err(AppError::BadRequest(
-        "Unsupported image format. Allowed: PNG, WEBP, GIF".into(),
-    ))
-}
-
-fn encode_resized_emoji(image: &image::DynamicImage, mime_type: &str) -> Result<Vec<u8>, AppError> {
-    let mut output = std::io::Cursor::new(Vec::new());
-
-    match mime_type {
-        "image/png" => image
-            .write_to(&mut output, ImageFormat::Png)
-            .map_err(|error| {
-                AppError::BadRequest(format!("Failed to resize PNG emoji: {error}"))
-            })?,
-        "image/webp" => image
-            .write_to(&mut output, ImageFormat::WebP)
-            .map_err(|error| {
-                AppError::BadRequest(format!("Failed to resize WebP emoji: {error}"))
-            })?,
-        "image/gif" => {
-            let mut encoder = GifEncoder::new(&mut output);
-            let frame = image::Frame::new(image.to_rgba8());
-            encoder.encode_frame(frame).map_err(|error| {
-                AppError::BadRequest(format!("Failed to resize GIF emoji: {error}"))
-            })?;
-        }
-        _ => {
-            return Err(AppError::BadRequest(
-                "Unsupported emoji format. Allowed: PNG, WEBP, GIF".into(),
-            ))
-        }
-    }
-
-    Ok(output.into_inner())
 }

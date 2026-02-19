@@ -1,4 +1,6 @@
+use image::codecs::gif::GifEncoder;
 use image::GenericImageView;
+use image::ImageFormat;
 use sha2::{Digest, Sha256};
 use sqlx::PgPool;
 use std::io::Cursor;
@@ -104,29 +106,61 @@ impl UploadService {
     pub async fn upload_emoji(
         &self,
         owner_id: Uuid,
-        declared_mime_type: &str,
         bytes: Vec<u8>,
     ) -> Result<UploadResult, AppError> {
+        if bytes.is_empty() {
+            return Err(AppError::BadRequest("Upload payload is empty".into()));
+        }
+
+        if bytes.len() > MAX_EMOJI_BYTES {
+            return Err(AppError::BadRequest(format!(
+                "Emoji file exceeds maximum size of {} KB",
+                MAX_EMOJI_BYTES / 1024
+            )));
+        }
+
+        let mime_type = sniff_mime_type(&bytes)?;
+        validate_emoji_mime_type(mime_type)?;
+
+        let image = image::load_from_memory(&bytes)
+            .map_err(|error| AppError::BadRequest(format!("Invalid image file: {error}")))?;
+        let (width, height) = image.dimensions();
+
+        let (processed_bytes, processed_width, processed_height) =
+            if width > MAX_EMOJI_DIMENSION || height > MAX_EMOJI_DIMENSION {
+                let resized = image.thumbnail(MAX_EMOJI_DIMENSION, MAX_EMOJI_DIMENSION);
+                let (resized_width, resized_height) = resized.dimensions();
+                (
+                    encode_emoji_in_source_format(&resized, mime_type)?,
+                    resized_width,
+                    resized_height,
+                )
+            } else {
+                (bytes, width, height)
+            };
+
         let media_id = Uuid::new_v4();
-        let storage_key = format!("original/{media_id}.emoji");
-        let checksum = sha256_hex(&bytes);
+        let storage_key = format!("original/{media_id}.{}", extension_for_mime(mime_type));
+        let checksum = sha256_hex(&processed_bytes);
 
         sqlx::query(
-            "INSERT INTO media_assets (id, owner_id, parent_id, derivative_kind, mime_type, bytes, checksum, storage_key, status)
-             VALUES ($1, $2, NULL, NULL, $3, $4, $5, $6, 'ready')",
+            "INSERT INTO media_assets (id, owner_id, parent_id, derivative_kind, mime_type, bytes, checksum, storage_key, status, width, height)
+             VALUES ($1, $2, NULL, NULL, $3, $4, $5, $6, 'ready', $7, $8)",
         )
         .bind(media_id)
         .bind(owner_id)
-        .bind(declared_mime_type)
-        .bind(bytes.len() as i64)
+        .bind(mime_type)
+        .bind(processed_bytes.len() as i64)
         .bind(&checksum)
         .bind(&storage_key)
+        .bind(processed_width as i32)
+        .bind(processed_height as i32)
         .execute(&self.db)
         .await?;
 
         if let Err(error) = self
             .storage
-            .put(&storage_key, bytes, declared_mime_type)
+            .put(&storage_key, processed_bytes, mime_type)
             .await
         {
             self.mark_failed(
@@ -538,6 +572,15 @@ impl UploadService {
     }
 }
 
+fn validate_emoji_mime_type(mime_type: &str) -> Result<(), AppError> {
+    match mime_type {
+        "image/png" | "image/webp" | "image/gif" => Ok(()),
+        _ => Err(AppError::BadRequest(
+            "Unsupported emoji format. Allowed: PNG, WEBP, GIF".into(),
+        )),
+    }
+}
+
 fn validate_mime_type(mime_type: &str) -> Result<(), AppError> {
     match mime_type {
         "image/jpeg" | "image/png" | "image/webp" | "image/gif" => Ok(()),
@@ -613,6 +656,40 @@ fn encode_webp(image: &image::DynamicImage) -> Result<Vec<u8>, AppError> {
     Ok(cursor.into_inner())
 }
 
+fn encode_emoji_in_source_format(
+    image: &image::DynamicImage,
+    mime_type: &str,
+) -> Result<Vec<u8>, AppError> {
+    let mut output = Cursor::new(Vec::new());
+
+    match mime_type {
+        "image/png" => image
+            .write_to(&mut output, ImageFormat::Png)
+            .map_err(|error| {
+                AppError::BadRequest(format!("Failed to resize PNG emoji: {error}"))
+            })?,
+        "image/webp" => image
+            .write_to(&mut output, ImageFormat::WebP)
+            .map_err(|error| {
+                AppError::BadRequest(format!("Failed to resize WebP emoji: {error}"))
+            })?,
+        "image/gif" => {
+            let mut encoder = GifEncoder::new(&mut output);
+            let frame = image::Frame::new(image.to_rgba8());
+            encoder.encode_frame(frame).map_err(|error| {
+                AppError::BadRequest(format!("Failed to resize GIF emoji: {error}"))
+            })?;
+        }
+        _ => {
+            return Err(AppError::BadRequest(
+                "Unsupported emoji format. Allowed: PNG, WEBP, GIF".into(),
+            ))
+        }
+    }
+
+    Ok(output.into_inner())
+}
+
 fn crop_square(image: &image::DynamicImage) -> image::DynamicImage {
     let (width, height) = image.dimensions();
     let size = width.min(height);
@@ -623,6 +700,8 @@ fn crop_square(image: &image::DynamicImage) -> image::DynamicImage {
 
 const MAX_IMAGE_UPLOAD_DIMENSION: u32 = 8192;
 const MAX_AVATAR_UPLOAD_DIMENSION: u32 = 4096;
+const MAX_EMOJI_DIMENSION: u32 = 128;
+const MAX_EMOJI_BYTES: usize = 512 * 1024;
 
 fn validate_image_dimensions(
     bytes: &[u8],
