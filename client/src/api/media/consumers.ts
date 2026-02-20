@@ -30,6 +30,12 @@ import {
 import { notifyVideoTilesSubscribers } from "./subscriptions";
 import type { MediaKind, MediaSource, RoutingMode, SinkableAudioElement } from "./types";
 
+const consumeInFlight = new Set<string>();
+
+function isConsumingProducer(producerId: string): boolean {
+  return consumerIdByProducerId.has(producerId) || consumeInFlight.has(producerId);
+}
+
 function clampVoiceVolume(volume: number): number {
   if (!Number.isFinite(volume)) {
     return 100;
@@ -66,14 +72,17 @@ function ensureAudioElement(consumerId: string): HTMLAudioElement {
   return audio;
 }
 
-function getOrCreateRemotePlaybackAudioContext(): AudioContext {
+async function getOrCreateRemotePlaybackAudioContext(): Promise<AudioContext> {
   if (remotePlaybackAudioContext && remotePlaybackAudioContext.state !== "closed") {
+    if (remotePlaybackAudioContext.state === "suspended") {
+      await remotePlaybackAudioContext.resume();
+    }
     return remotePlaybackAudioContext;
   }
 
   const nextContext = new AudioContext();
   setRemotePlaybackAudioContext(nextContext);
-  void nextContext.resume().catch(() => undefined);
+  await nextContext.resume();
   return nextContext;
 }
 
@@ -106,21 +115,6 @@ function configureNormalizationNode(node: DynamicsCompressorNode, enabled: boole
   node.ratio.value = 1;
   node.attack.value = 0.003;
   node.release.value = 0.25;
-}
-
-function logAudioPlaybackFailure(
-  consumerId: string,
-  producerId: string,
-  stage: "initial" | "processed",
-  error: unknown,
-) {
-  console.debug("[media] Remote audio playback start failed", {
-    consumerId,
-    producerId,
-    stage,
-    preferredOutputDeviceId: preferredAudioOutputDeviceId(),
-    error,
-  });
 }
 
 export function disposeRemoteConsumer(consumerId: string) {
@@ -180,75 +174,57 @@ export async function consumeRemoteProducer(channelId: string, producerId: strin
     return;
   }
 
-  if (consumerIdByProducerId.has(producerId)) {
+  if (isConsumingProducer(producerId)) {
     return;
   }
 
-  const response = await requestMediaSignal(channelId, "media_consume", {
-    producer_id: producerId,
-    rtp_capabilities: device.rtpCapabilities,
-  });
-
-  if (response.action !== "media_consumer_created" || !response.consumer) {
-    throw new Error("Unexpected media_consume response from server");
-  }
-
-  const description = response.consumer;
-
-  const consumer = await recvTransport.consume({
-    id: description.id,
-    producerId: description.producer_id,
-    kind: description.kind,
-    rtpParameters: description.rtp_parameters as Parameters<Transport["consume"]>[0]["rtpParameters"],
-  });
-
-  consumerIdByProducerId.set(description.producer_id, consumer.id);
-  remoteConsumers.set(consumer.id, consumer);
-
-  consumer.on("transportclose", () => {
-    disposeRemoteConsumer(consumer.id);
-  });
-
-  consumer.on("trackended", () => {
-    disposeRemoteConsumer(consumer.id);
-  });
-
-  if (description.kind === "audio") {
-    const audio = ensureAudioElement(consumer.id);
-    const username = producerUsernameById.get(description.producer_id);
-    if (username) {
-      consumerUsernameByConsumerId.set(consumer.id, username);
-    }
-
-    audio.srcObject = new MediaStream([consumer.track]);
-    void audio.play().catch((error) => {
-      logAudioPlaybackFailure(consumer.id, description.producer_id, "initial", error);
-    });
-  } else {
-    const username = producerUsernameById.get(description.producer_id) ?? "Unknown";
-    const source = producerSourceById.get(description.producer_id) === "screen" ? "screen" : "camera";
-    const routingMode = producerRoutingModeById.get(description.producer_id) ?? "sfu";
-    remoteVideoTilesByProducerId.set(description.producer_id, {
-      producerId: description.producer_id,
-      username,
-      stream: new MediaStream([consumer.track]),
-      source,
-      routingMode,
-    });
-    notifyVideoTilesSubscribers();
-  }
+  consumeInFlight.add(producerId);
 
   try {
-    await requestMediaSignal(channelId, "media_resume_consumer", {
-      consumer_id: consumer.id,
+    const response = await requestMediaSignal(channelId, "media_consume", {
+      producer_id: producerId,
+      rtp_capabilities: device.rtpCapabilities,
+    });
+
+    if (response.action !== "media_consumer_created" || !response.consumer) {
+      throw new Error("Unexpected media_consume response from server");
+    }
+
+    const description = response.consumer;
+
+    const consumer = await recvTransport.consume({
+      id: description.id,
+      producerId: description.producer_id,
+      kind: description.kind,
+      rtpParameters: description.rtp_parameters as Parameters<Transport["consume"]>[0]["rtpParameters"],
+    });
+
+    consumerIdByProducerId.set(description.producer_id, consumer.id);
+    remoteConsumers.set(consumer.id, consumer);
+
+    consumer.on("transportclose", () => {
+      disposeRemoteConsumer(consumer.id);
+    });
+
+    consumer.on("trackended", () => {
+      disposeRemoteConsumer(consumer.id);
     });
 
     if (description.kind === "audio") {
-      const audio = remoteAudioElements.get(consumer.id);
-      if (audio && audio.srcObject) {
-        const audioCtx = getOrCreateRemotePlaybackAudioContext();
-        const stream = audio.srcObject as MediaStream;
-        const source = audioCtx.createMediaStreamSource(stream);
+      const audio = ensureAudioElement(consumer.id);
+      const username = producerUsernameById.get(description.producer_id);
+      if (username) {
+        consumerUsernameByConsumerId.set(consumer.id, username);
+      }
+
+      try {
+        await requestMediaSignal(channelId, "media_resume_consumer", {
+          consumer_id: consumer.id,
+        });
+
+        const audioCtx = await getOrCreateRemotePlaybackAudioContext();
+        const rawStream = new MediaStream([consumer.track]);
+        const source = audioCtx.createMediaStreamSource(rawStream);
         consumerSourceNodes.set(consumer.id, source);
 
         const gainNode = audioCtx.createGain();
@@ -258,8 +234,8 @@ export async function consumeRemoteProducer(channelId: string, producerId: strin
         configureNormalizationNode(normalizationNode, voiceAutoLevelEnabled());
         consumerNormalizationNodes.set(consumer.id, normalizationNode);
 
-        const username = producerUsernameById.get(description.producer_id);
-        const volume = username ? getUserVolume(username) : 100;
+        const userVolUsername = producerUsernameById.get(description.producer_id);
+        const volume = userVolUsername ? getUserVolume(userVolUsername) : 100;
         gainNode.gain.value = gainValueForVolume(volume);
 
         const destination = audioCtx.createMediaStreamDestination();
@@ -268,14 +244,53 @@ export async function consumeRemoteProducer(channelId: string, producerId: strin
         gainNode.connect(destination);
 
         audio.srcObject = destination.stream;
-        void audio.play().catch((error) => {
-          logAudioPlaybackFailure(consumer.id, description.producer_id, "processed", error);
+        try {
+          await audio.play();
+        } catch (playError) {
+          console.warn("[media] Remote audio play() failed, retrying in 500ms", {
+            consumerId: consumer.id,
+            producerId: description.producer_id,
+            error: playError,
+          });
+          await new Promise((resolve) => setTimeout(resolve, 500));
+          try {
+            await audio.play();
+          } catch (retryError) {
+            console.warn("[media] Remote audio play() retry also failed", {
+              consumerId: consumer.id,
+              producerId: description.producer_id,
+              error: retryError,
+            });
+          }
+        }
+      } catch (error) {
+        disposeRemoteConsumer(consumer.id);
+        throw error;
+      }
+    } else {
+      const username = producerUsernameById.get(description.producer_id) ?? "Unknown";
+      const source = producerSourceById.get(description.producer_id) === "screen" ? "screen" : "camera";
+      const routingMode = producerRoutingModeById.get(description.producer_id) ?? "sfu";
+      remoteVideoTilesByProducerId.set(description.producer_id, {
+        producerId: description.producer_id,
+        username,
+        stream: new MediaStream([consumer.track]),
+        source,
+        routingMode,
+      });
+      notifyVideoTilesSubscribers();
+
+      try {
+        await requestMediaSignal(channelId, "media_resume_consumer", {
+          consumer_id: consumer.id,
         });
+      } catch (error) {
+        disposeRemoteConsumer(consumer.id);
+        throw error;
       }
     }
-  } catch (error) {
-    disposeRemoteConsumer(consumer.id);
-    throw error;
+  } finally {
+    consumeInFlight.delete(producerId);
   }
 }
 
@@ -323,7 +338,7 @@ export function queueOrConsumeProducer(
     producerRoutingModeById.set(producerId, routingMode);
   }
 
-  if (consumerIdByProducerId.has(producerId)) {
+  if (isConsumingProducer(producerId)) {
     return;
   }
 

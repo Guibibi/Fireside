@@ -8,6 +8,7 @@ import type {
   RemoteVideoTile,
   RoutingMode,
   ScreenShareStateSnapshot,
+  TransportHealthState,
 } from "./types";
 
 // Device and transport state
@@ -82,6 +83,11 @@ export const consumerSourceNodes = new Map<string, MediaStreamAudioSourceNode>()
 export const consumerNormalizationNodes = new Map<string, DynamicsCompressorNode>();
 export const consumerGainNodes = new Map<string, GainNode>();
 export const consumerUsernameByConsumerId = new Map<string, string>();
+
+// Transport health state
+export let transportHealthState: TransportHealthState = "new";
+export function setTransportHealthState(value: TransportHealthState) { transportHealthState = value; }
+export const transportHealthSubscribers = new Set<(state: TransportHealthState) => void>();
 
 // Subscribers
 export const videoTilesSubscribers = new Set<(tiles: RemoteVideoTile[]) => void>();

@@ -140,6 +140,7 @@ let pendingSends: string[] = [];
 let latestPresenceUsers: PresenceUser[] | null = null;
 let latestVoicePresenceChannels: { channel_id: string; usernames: string[] }[] | null = null;
 let manualDisconnect = false;
+let awaitingAuthentication = false;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 let reconnectAttempts = 0;
@@ -239,6 +240,15 @@ function attachPresenceActivityListeners() {
   });
 }
 
+function flushPendingSends(ws: WebSocket) {
+  while (pendingSends.length > 0) {
+    const payload = pendingSends.shift();
+    if (payload && ws.readyState === WebSocket.OPEN) {
+      ws.send(payload);
+    }
+  }
+}
+
 export function connect(url = getWsUrl(), reconnectAttempt = false) {
   attachPresenceActivityListeners();
 
@@ -274,20 +284,23 @@ export function connect(url = getWsUrl(), reconnectAttempt = false) {
 
     const t = token();
     if (t) {
+      awaitingAuthentication = true;
       ws.send(JSON.stringify({ type: "authenticate", token: t }));
-    }
-
-    while (pendingSends.length > 0) {
-      const payload = pendingSends.shift();
-      if (payload) {
-        ws.send(payload);
-      }
+    } else {
+      flushPendingSends(ws);
     }
   };
 
   ws.onmessage = (ev) => {
     try {
       const msg: ServerMessage = JSON.parse(ev.data);
+
+      if (msg.type === "authenticated" && awaitingAuthentication) {
+        awaitingAuthentication = false;
+        if (socket && socket.readyState === WebSocket.OPEN) {
+          flushPendingSends(socket);
+        }
+      }
 
       if (msg.type === "error" && shouldForceLogout(msg.message)) {
         if (msg.message === SESSION_REPLACED_MESSAGE) {
@@ -392,6 +405,7 @@ export function connect(url = getWsUrl(), reconnectAttempt = false) {
 
 export function disconnect() {
   manualDisconnect = true;
+  awaitingAuthentication = false;
   if (reconnectTimer) {
     clearTimeout(reconnectTimer);
     reconnectTimer = null;
@@ -414,14 +428,18 @@ export function send(data: unknown) {
     return;
   }
 
-  if (socket?.readyState === WebSocket.OPEN) {
+  if (socket.readyState === WebSocket.OPEN) {
     socket.send(payload);
     return;
   }
 
-  if (socket?.readyState === WebSocket.CONNECTING) {
+  if (socket.readyState === WebSocket.CONNECTING) {
     pendingSends.push(payload);
+    return;
   }
+
+  // CLOSING or CLOSED — queue for next reconnect so messages aren't lost
+  pendingSends.push(payload);
 }
 
 export function onMessage(handler: MessageHandler) {

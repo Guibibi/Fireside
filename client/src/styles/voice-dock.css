@@ -147,6 +147,31 @@
   color: var(--danger);
 }
 
+.voice-dock-status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  margin-top: var(--space-sm);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--gray-7);
+}
+
+.voice-dock-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-full);
+  flex-shrink: 0;
+  transition: background 0.2s var(--ease-soft);
+}
+
+.voice-dock-status-good .voice-dock-status-dot { background: var(--success); }
+.voice-dock-status-good { color: var(--success); }
+.voice-dock-status-degraded .voice-dock-status-dot { background: var(--warning); }
+.voice-dock-status-degraded { color: var(--warning); }
+.voice-dock-status-failed .voice-dock-status-dot { background: var(--danger); }
+.voice-dock-status-failed { color: var(--danger); }
+
 .voice-dock-error {
   margin-top: var(--space-xs);
   font-size: 0.75rem;

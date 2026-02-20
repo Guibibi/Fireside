@@ -166,6 +166,8 @@ export interface QueuedProducerAnnouncement {
   username?: string;
 }
 
+export type TransportHealthState = "new" | "connected" | "disconnected" | "failed" | "closed";
+
 export type SinkableAudioElement = HTMLAudioElement & {
   setSinkId?: (sinkId: string) => Promise<void>;
 };

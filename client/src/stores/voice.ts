@@ -3,8 +3,10 @@ import {
   type CameraStateSnapshot,
   type ScreenShareStateSnapshot,
   type RemoteVideoTile,
+  type TransportHealthState,
   subscribeCameraState,
   subscribeScreenState,
+  subscribeTransportHealth,
   subscribeVideoTiles,
 } from "../api/media";
 import { onConnectionStatus, type WsConnectionStatus } from "../api/ws";
@@ -36,10 +38,12 @@ const [voiceConnectionStatus, setVoiceConnectionStatus] = createSignal<WsConnect
 const [streamWatchMode, setStreamWatchMode] = createSignal<StreamWatchMode>("none");
 const [watchedStreamProducerId, setWatchedStreamProducerId] = createSignal<string | null>(null);
 const [streamWatchNotice, setStreamWatchNotice] = createSignal<string | null>(null);
+const [transportHealth, setTransportHealth] = createSignal<TransportHealthState>("new");
 let unsubscribeVideoTiles: (() => void) | null = null;
 let unsubscribeCameraState: (() => void) | null = null;
 let unsubscribeScreenState: (() => void) | null = null;
 let unsubscribeConnectionStatus: (() => void) | null = null;
+let unsubscribeTransportHealth: (() => void) | null = null;
 
 function sortUnique(usernames: string[]): string[] {
   return [...new Set(usernames)].sort((a, b) => a.localeCompare(b));
@@ -204,6 +208,43 @@ export function stopConnectionStatusSubscription() {
   }
 }
 
+export type VoiceHealthLevel = "good" | "degraded" | "failed";
+
+export function voiceHealthLevel(): VoiceHealthLevel {
+  const ws = voiceConnectionStatus();
+  const transport = transportHealth();
+
+  if (ws === "failed" || transport === "failed") {
+    return "failed";
+  }
+
+  if (
+    ws === "reconnecting" || ws === "connecting" || ws === "disconnected"
+    || transport === "disconnected" || transport === "closed"
+  ) {
+    return "degraded";
+  }
+
+  return "good";
+}
+
+export function startTransportHealthSubscription() {
+  if (unsubscribeTransportHealth) {
+    return;
+  }
+
+  unsubscribeTransportHealth = subscribeTransportHealth((state) => {
+    setTransportHealth(state);
+  });
+}
+
+export function stopTransportHealthSubscription() {
+  if (unsubscribeTransportHealth) {
+    unsubscribeTransportHealth();
+    unsubscribeTransportHealth = null;
+  }
+}
+
 function applyCameraStateSnapshot(snapshot: CameraStateSnapshot) {
   setCameraEnabled(snapshot.enabled);
   setCameraError(snapshot.error);
@@ -285,6 +326,8 @@ export function resetVoiceState() {
   setVoiceRejoinNotice(false);
   setVoiceConnectionStatus("disconnected");
   setStreamWatchNotice(null);
+  stopTransportHealthSubscription();
+  setTransportHealth("new");
   resetVoiceMediaState();
 }
 
@@ -355,6 +398,7 @@ export {
   screenShareError,
   screenShareRoutingMode,
   speakingByChannel,
+  transportHealth,
   videoTiles,
   voiceConnectionStatus,
   streamWatchMode,

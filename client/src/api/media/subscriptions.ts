@@ -9,9 +9,11 @@ import {
   screenRoutingMode,
   screenStateSubscribers,
   screenStream,
+  transportHealthState,
+  transportHealthSubscribers,
   videoTilesSubscribers,
 } from "./state";
-import type { CameraStateSnapshot, RemoteVideoTile, ScreenShareStateSnapshot } from "./types";
+import type { CameraStateSnapshot, RemoteVideoTile, ScreenShareStateSnapshot, TransportHealthState } from "./types";
 
 export function videoTilesSnapshot(): RemoteVideoTile[] {
   return Array.from(remoteVideoTilesByProducerId.values()).sort((left, right) => {
@@ -99,5 +101,21 @@ export function subscribeScreenState(subscriber: (snapshot: ScreenShareStateSnap
 
   return () => {
     screenStateSubscribers.delete(subscriber);
+  };
+}
+
+export function notifyTransportHealthSubscribers() {
+  const state = transportHealthState;
+  for (const subscriber of transportHealthSubscribers) {
+    subscriber(state);
+  }
+}
+
+export function subscribeTransportHealth(subscriber: (state: TransportHealthState) => void): () => void {
+  transportHealthSubscribers.add(subscriber);
+  subscriber(transportHealthState);
+
+  return () => {
+    transportHealthSubscribers.delete(subscriber);
   };
 }
