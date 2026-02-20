@@ -1,0 +1,36 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "42384bc05b2c",
+  "strategy": "manual-commit",
+  "branch": "refactor/voice-chat",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "client/src/api/media.ts",
+    "client/src/api/media/index.ts",
+    "client/src/api/media/state.ts",
+    "client/src/api/media/subscriptions.ts",
+    "client/src/api/media/transports.ts",
+    "client/src/api/media/types.ts",
+    "client/src/components/ChannelList.tsx",
+    "client/src/components/channel-list/VoiceDock.tsx",
+    "client/src/components/channel-list/helpers.ts",
+    "client/src/stores/voice.ts",
+    "client/src/styles/voice-dock.css"
+  ],
+  "sessions": [
+    {
+      "metadata": "/42/384bc05b2c/0/metadata.json",
+      "transcript": "/42/384bc05b2c/0/full.jsonl",
+      "context": "/42/384bc05b2c/0/context.md",
+      "content_hash": "/42/384bc05b2c/0/content_hash.txt",
+      "prompt": "/42/384bc05b2c/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 51,
+    "cache_creation_tokens": 65089,
+    "cache_read_tokens": 3350591,
+    "output_tokens": 8722,
+    "api_call_count": 49
+  }
+}
