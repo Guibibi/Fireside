@@ -6,6 +6,7 @@ import {
   preferredScreenShareCustomBitrateKbps,
   preferredScreenShareFps,
   preferredScreenShareResolution,
+  preferredScreenShareEncoderBackend,
   preferredScreenShareSourceKind,
 } from "../../../stores/settings";
 import { isTauriRuntime } from "../../../utils/platform";
@@ -146,6 +147,7 @@ export function useScreenShareModal(): UseScreenShareModalReturn {
       resolution: preferredScreenShareResolution(),
       fps: preferredScreenShareFps(),
       bitrateKbps: selectedScreenShareBitrateKbps(),
+      encoderBackend: preferredScreenShareEncoderBackend(),
       sourceKind,
       sourceId: selected?.id,
       sourceTitle: selected?.title,

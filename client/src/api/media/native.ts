@@ -65,6 +65,7 @@ export async function armNativeCapture(
     resolution: options.resolution,
     fps: options.fps,
     bitrate_kbps: options.bitrateKbps,
+    encoder_backend: options.encoderBackend,
     codec_mime_type: codecMimeType,
     rtp_target: rtpTarget,
     payload_type: payloadType,

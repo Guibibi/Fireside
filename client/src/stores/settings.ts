@@ -9,6 +9,7 @@ const SCREEN_SHARE_FPS_KEY = "yankcord_screen_share_fps";
 const SCREEN_SHARE_BITRATE_MODE_KEY = "yankcord_screen_share_bitrate_mode";
 const SCREEN_SHARE_CUSTOM_BITRATE_KEY = "yankcord_screen_share_custom_bitrate_kbps";
 const SCREEN_SHARE_SOURCE_KIND_KEY = "yankcord_screen_share_source_kind";
+const SCREEN_SHARE_ENCODER_BACKEND_KEY = "yankcord_screen_share_encoder_backend";
 const VOICE_JOIN_SOUND_ENABLED_KEY = "yankcord_voice_join_sound_enabled";
 const VOICE_LEAVE_SOUND_ENABLED_KEY = "yankcord_voice_leave_sound_enabled";
 const MESSAGE_NOTIFICATION_SOUND_ENABLED_KEY = "yankcord_message_notification_sound_enabled";
@@ -23,6 +24,7 @@ export type ScreenShareResolution = "720p" | "1080p" | "1440p" | "4k";
 export type ScreenShareFps = 30 | 60;
 export type ScreenShareBitrateMode = "auto" | "balanced" | "high" | "ultra" | "custom";
 export type ScreenShareSourceKind = "screen" | "window" | "application";
+export type ScreenShareEncoderBackend = "auto" | "openh264" | "nvenc" | "nvenc_sdk";
 
 function readBooleanPreference(key: string, defaultValue: boolean): boolean {
   const value = localStorage.getItem(key);
@@ -105,6 +107,15 @@ function readScreenShareSourceKind(): ScreenShareSourceKind {
   return "screen";
 }
 
+function readScreenShareEncoderBackend(): ScreenShareEncoderBackend {
+  const value = localStorage.getItem(SCREEN_SHARE_ENCODER_BACKEND_KEY);
+  if (value === "auto" || value === "openh264" || value === "nvenc" || value === "nvenc_sdk") {
+    return value;
+  }
+
+  return "auto";
+}
+
 const [preferredAudioInputDeviceId, setPreferredAudioInputDeviceId] = createSignal<string | null>(
   localStorage.getItem(AUDIO_INPUT_KEY),
 );
@@ -139,6 +150,10 @@ const [preferredScreenShareCustomBitrateKbps, setPreferredScreenShareCustomBitra
 
 const [preferredScreenShareSourceKind, setPreferredScreenShareSourceKind] = createSignal<ScreenShareSourceKind>(
   readScreenShareSourceKind(),
+);
+
+const [preferredScreenShareEncoderBackend, setPreferredScreenShareEncoderBackend] = createSignal<ScreenShareEncoderBackend>(
+  readScreenShareEncoderBackend(),
 );
 
 const [voiceJoinSoundEnabled, setVoiceJoinSoundEnabled] = createSignal<boolean>(
@@ -187,6 +202,7 @@ export {
   preferredScreenShareBitrateMode,
   preferredScreenShareCustomBitrateKbps,
   preferredScreenShareSourceKind,
+  preferredScreenShareEncoderBackend,
   voiceJoinSoundEnabled,
   voiceLeaveSoundEnabled,
   messageNotificationSoundEnabled,
@@ -262,6 +278,11 @@ export function savePreferredScreenShareCustomBitrateKbps(kbps: number) {
 export function savePreferredScreenShareSourceKind(kind: ScreenShareSourceKind) {
   localStorage.setItem(SCREEN_SHARE_SOURCE_KIND_KEY, kind);
   setPreferredScreenShareSourceKind(kind);
+}
+
+export function savePreferredScreenShareEncoderBackend(backend: ScreenShareEncoderBackend) {
+  localStorage.setItem(SCREEN_SHARE_ENCODER_BACKEND_KEY, backend);
+  setPreferredScreenShareEncoderBackend(backend);
 }
 
 export function saveVoiceJoinSoundEnabled(enabled: boolean) {

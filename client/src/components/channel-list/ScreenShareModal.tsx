@@ -8,10 +8,13 @@ import {
   savePreferredScreenShareBitrateMode,
   savePreferredScreenShareCustomBitrateKbps,
   savePreferredScreenShareFps,
+  savePreferredScreenShareEncoderBackend,
   savePreferredScreenShareResolution,
   savePreferredScreenShareSourceKind,
+  preferredScreenShareEncoderBackend,
   preferredScreenShareCustomBitrateKbps,
   type ScreenShareBitrateMode,
+  type ScreenShareEncoderBackend,
   type ScreenShareFps,
 } from "../../stores/settings";
 import { voiceActionState } from "../../stores/voice";
@@ -107,6 +110,13 @@ export default function ScreenShareModal(props: ScreenShareModalProps): JSX.Elem
     }
 
     savePreferredScreenShareCustomBitrateKbps(value);
+  }
+
+  function handleScreenShareEncoderBackendInput(event: Event) {
+    const value = (event.currentTarget as HTMLSelectElement).value;
+    if (value === "auto" || value === "openh264" || value === "nvenc" || value === "nvenc_sdk") {
+      savePreferredScreenShareEncoderBackend(value as ScreenShareEncoderBackend);
+    }
   }
 
   return (
@@ -239,6 +249,19 @@ export default function ScreenShareModal(props: ScreenShareModalProps): JSX.Elem
         </Show>
 
         <p class="settings-help">Estimated target bitrate: {effectiveScreenShareBitrateLabel(selectedScreenShareBitrateKbps())}</p>
+
+        <label class="settings-label" for="voice-share-encoder-backend">Encoder backend</label>
+        <select
+          id="voice-share-encoder-backend"
+          value={preferredScreenShareEncoderBackend()}
+          onInput={handleScreenShareEncoderBackendInput}
+        >
+          <option value="auto">Auto (recommended)</option>
+          <option value="nvenc">NVIDIA NVENC</option>
+          <option value="nvenc_sdk">NVIDIA NVENC SDK</option>
+          <option value="openh264">Software (OpenH264)</option>
+        </select>
+        <p class="settings-help">Auto tries hardware first, then falls back to software if unavailable.</p>
 
         <div class="settings-actions">
           <button
