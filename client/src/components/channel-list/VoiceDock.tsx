@@ -10,7 +10,7 @@ import {
   screenShareRoutingMode,
   speakerMuted,
   voiceActionState,
-  voiceConnectionStatus,
+  voiceHealthLevel,
 } from "../../stores/voice";
 import {
   DisconnectIcon,
@@ -19,7 +19,7 @@ import {
   CameraIcon,
   ScreenShareIcon,
 } from "../icons";
-import { connectionStatusLabel, formatNativeSenderRate } from "./helpers";
+import { formatNativeSenderRate, voiceHealthLabel } from "./helpers";
 
 export interface VoiceDockProps {
   connectedChannelName: string | null;
@@ -88,10 +88,11 @@ export default function VoiceDock(props: VoiceDockProps): JSX.Element {
         </button>
       </div>
       <p class="voice-dock-channel">Connected: {props.connectedChannelName}</p>
-      <p class={`voice-dock-channel${voiceConnectionStatus() === "failed" ? " voice-dock-channel-alert" : ""}`}>
-        {connectionStatusLabel(voiceConnectionStatus())}
+      <p class={`voice-dock-status voice-dock-status-${voiceHealthLevel()}`}>
+        <span class="voice-dock-status-dot" />
+        {voiceHealthLabel(voiceHealthLevel())}
       </p>
-      <Show when={voiceConnectionStatus() === "failed"}>
+      <Show when={voiceHealthLevel() === "failed"}>
         <button type="button" class="settings-secondary" onClick={() => connect()}>
           Retry connection
         </button>

@@ -1,5 +1,6 @@
 import { Device } from "mediasoup-client";
 import type { Transport } from "mediasoup-client/types";
+import type { TransportHealthState } from "./types";
 import { isObject } from "./codecs";
 import { flushQueuedProducerAnnouncements, disposeRemoteConsumer } from "./consumers";
 import { registerDeviceChangeListener, unregisterDeviceChangeListener } from "./devices";
@@ -51,10 +52,35 @@ import {
   setSendTransport,
   setMicrophoneMutedState,
   setSpeakersMutedState,
+  setTransportHealthState,
 } from "./state";
-import { clearRemoteVideoTiles, notifyCameraStateSubscribers, notifyScreenStateSubscribers } from "./subscriptions";
+import { clearRemoteVideoTiles, notifyCameraStateSubscribers, notifyScreenStateSubscribers, notifyTransportHealthSubscribers } from "./subscriptions";
 import { stopMicLevelMonitoring } from "./voiceActivity";
 import { disposeMicrophoneProcessing, updateOutgoingMicrophoneMuted } from "./microphoneProcessing";
+
+const transportStateSeverity: Record<string, number> = {
+  connected: 0,
+  new: 1,
+  closed: 2,
+  disconnected: 3,
+  failed: 4,
+};
+
+function worstTransportState(a: string | undefined, b: string | undefined): TransportHealthState {
+  const sa = transportStateSeverity[a ?? "new"] ?? 1;
+  const sb = transportStateSeverity[b ?? "new"] ?? 1;
+  const worst = sa >= sb ? (a ?? "new") : (b ?? "new");
+  return worst as TransportHealthState;
+}
+
+export function updateTransportHealthFromIce() {
+  const state = worstTransportState(
+    sendTransport?.connectionState,
+    recvTransport?.connectionState,
+  );
+  setTransportHealthState(state);
+  notifyTransportHealthSubscribers();
+}
 
 function wireTransportConnect(channelId: string, transport: Transport) {
   transport.on("connect", ({ dtlsParameters }, callback, errback) => {
@@ -67,6 +93,41 @@ function wireTransportConnect(channelId: string, transport: Transport) {
         const normalized = error instanceof Error ? error : new Error("Failed to connect transport");
         errback(normalized);
       });
+  });
+}
+
+let disconnectRecoveryTimer: ReturnType<typeof setTimeout> | null = null;
+
+function wireTransportConnectionStateMonitor(transport: Transport) {
+  transport.on("connectionstatechange", (state: string) => {
+    updateTransportHealthFromIce();
+
+    if (state === "failed") {
+      if (disconnectRecoveryTimer) {
+        clearTimeout(disconnectRecoveryTimer);
+        disconnectRecoveryTimer = null;
+      }
+      console.warn("[media] Transport ICE connection failed, closing transports");
+      closeTransports();
+      return;
+    }
+
+    if (state === "disconnected") {
+      if (disconnectRecoveryTimer) {
+        clearTimeout(disconnectRecoveryTimer);
+      }
+      disconnectRecoveryTimer = setTimeout(() => {
+        disconnectRecoveryTimer = null;
+        console.warn("[media] Transport ICE disconnected for 10s, closing transports");
+        closeTransports();
+      }, 10_000);
+      return;
+    }
+
+    if (state === "connected" && disconnectRecoveryTimer) {
+      clearTimeout(disconnectRecoveryTimer);
+      disconnectRecoveryTimer = null;
+    }
   });
 }
 
@@ -100,6 +161,10 @@ function wireSendTransportProduce(channelId: string, transport: Transport) {
 }
 
 export function closeTransports() {
+  if (disconnectRecoveryTimer) {
+    clearTimeout(disconnectRecoveryTimer);
+    disconnectRecoveryTimer = null;
+  }
   unregisterDeviceChangeListener();
   stopMicLevelMonitoring(initializedForChannelId);
 
@@ -166,6 +231,8 @@ export function closeTransports() {
   recvTransport?.close();
   setSendTransport(null);
   setRecvTransport(null);
+  setTransportHealthState("closed");
+  notifyTransportHealthSubscribers();
   setDevice(null);
   setInitializedForChannelId(null);
   setInitializingForChannelId(null);
@@ -245,10 +312,14 @@ export async function initializeMediaTransports(channelId: string) {
     wireTransportConnect(channelId, nextSendTransport);
     wireTransportConnect(channelId, nextRecvTransport);
     wireSendTransportProduce(channelId, nextSendTransport);
+    wireTransportConnectionStateMonitor(nextSendTransport);
+    wireTransportConnectionStateMonitor(nextRecvTransport);
 
     setDevice(nextDevice);
     setSendTransport(nextSendTransport);
     setRecvTransport(nextRecvTransport);
+    setTransportHealthState("new");
+    notifyTransportHealthSubscribers();
     setInitializedForChannelId(channelId);
     setInitializingForChannelId(null);
 

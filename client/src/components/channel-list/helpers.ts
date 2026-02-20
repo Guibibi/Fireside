@@ -138,6 +138,12 @@ export function connectionStatusLabel(status: string): string {
   return "Connection: Disconnected";
 }
 
+export function voiceHealthLabel(level: string): string {
+  if (level === "good") return "Voice: Connected";
+  if (level === "degraded") return "Voice: Reconnecting...";
+  return "Voice: Failed";
+}
+
 export function effectiveScreenShareBitrateLabel(kbps: number): string {
   const mbps = kbps / 1000;
   if (mbps >= 10) {

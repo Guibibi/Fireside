@@ -82,8 +82,10 @@ import {
     startCameraStateSubscription,
     startConnectionStatusSubscription,
     startScreenStateSubscription,
+    startTransportHealthSubscription,
     startVideoTilesSubscription,
     stopConnectionStatusSubscription,
+    stopTransportHealthSubscription,
     screenShareEnabled,
     showVoiceRejoinNotice,
     toggleMicMuted,
@@ -752,6 +754,7 @@ export default function ChannelList() {
         preloadMessageNotificationCue();
         connect();
         startConnectionStatusSubscription();
+        startTransportHealthSubscription();
         void loadInitialChannels();
         void loadInitialDms();
 
@@ -991,6 +994,7 @@ export default function ChannelList() {
             unsubscribe();
             unsubscribeClose();
             stopConnectionStatusSubscription();
+            stopTransportHealthSubscription();
             stopScreenSharePreview();
         });
     });

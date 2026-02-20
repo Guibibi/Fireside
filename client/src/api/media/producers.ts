@@ -29,6 +29,7 @@ import {
 import { voiceOutgoingVolume } from "../../stores/settings";
 import {
   cameraEnabled,
+  cameraError,
   cameraProducer,
   cameraStream,
   cameraTrack,
@@ -40,6 +41,7 @@ import {
   nativeCaptureAttempted,
   nativeScreenProducerId,
   screenEnabled,
+  screenError,
   screenProducer,
   screenStream,
   screenTrack,
@@ -229,7 +231,7 @@ export function localCameraEnabled(): boolean {
 }
 
 export function localCameraError(): string | null {
-  return cameraProducer ? null : (screenStream ? null : null);
+  return cameraError;
 }
 
 export async function startLocalCameraProducer(channelId: string): Promise<CameraActionResult> {
@@ -354,7 +356,7 @@ export function localScreenShareEnabled(): boolean {
 }
 
 export function localScreenShareError(): string | null {
-  return screenProducer ? null : null;
+  return screenError;
 }
 
 async function closeNativeScreenProducer(channelId: string): Promise<void> {

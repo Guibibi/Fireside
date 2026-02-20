@@ -9,6 +9,7 @@ export type {
   RoutingMode,
   ScreenShareStartOptions,
   ScreenShareStateSnapshot,
+  TransportHealthState,
 } from "./types";
 
 // Re-export device functions
@@ -41,6 +42,7 @@ export {
   remoteVideoTiles,
   subscribeCameraState,
   subscribeScreenState,
+  subscribeTransportHealth,
   subscribeVideoTiles,
 } from "./subscriptions";
 

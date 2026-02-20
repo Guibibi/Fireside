@@ -11,6 +11,7 @@ export type {
   RoutingMode,
   ScreenShareStartOptions,
   ScreenShareStateSnapshot,
+  TransportHealthState,
 } from "./media/index";
 
 export {
@@ -38,5 +39,6 @@ export {
   stopLocalScreenProducer,
   subscribeCameraState,
   subscribeScreenState,
+  subscribeTransportHealth,
   subscribeVideoTiles,
 } from "./media/index";
