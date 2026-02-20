@@ -28,3 +28,4 @@ src-tauri/target/
 # Local uploaded media
 data/media/
 server/data/media/
+client/src-tauri/bin/Video_Codec_SDK/*
