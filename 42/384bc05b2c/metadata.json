@@ -3,14 +3,17 @@
   "checkpoint_id": "42384bc05b2c",
   "strategy": "manual-commit",
   "branch": "refactor/voice-chat",
-  "checkpoints_count": 1,
+  "checkpoints_count": 2,
   "files_touched": [
     "client/src/api/media.ts",
+    "client/src/api/media/consumers.ts",
     "client/src/api/media/index.ts",
+    "client/src/api/media/producers.ts",
     "client/src/api/media/state.ts",
     "client/src/api/media/subscriptions.ts",
     "client/src/api/media/transports.ts",
     "client/src/api/media/types.ts",
+    "client/src/api/ws.ts",
     "client/src/components/ChannelList.tsx",
     "client/src/components/channel-list/VoiceDock.tsx",
     "client/src/components/channel-list/helpers.ts",
@@ -24,13 +27,20 @@
       "context": "/42/384bc05b2c/0/context.md",
       "content_hash": "/42/384bc05b2c/0/content_hash.txt",
       "prompt": "/42/384bc05b2c/0/prompt.txt"
+    },
+    {
+      "metadata": "/42/384bc05b2c/1/metadata.json",
+      "transcript": "/42/384bc05b2c/1/full.jsonl",
+      "context": "/42/384bc05b2c/1/context.md",
+      "content_hash": "/42/384bc05b2c/1/content_hash.txt",
+      "prompt": "/42/384bc05b2c/1/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 51,
-    "cache_creation_tokens": 65089,
-    "cache_read_tokens": 3350591,
-    "output_tokens": 8722,
-    "api_call_count": 49
+    "input_tokens": 100,
+    "cache_creation_tokens": 194788,
+    "cache_read_tokens": 5874793,
+    "output_tokens": 21340,
+    "api_call_count": 92
   }
 }

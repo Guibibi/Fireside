@@ -1,0 +1,79 @@
+Implement the following plan:
+
+# Voice Audio Reliability Fixes
+
+## Context
+Users frequently can't hear others in voice chat. Sometimes disconnect/reconnect fixes it, sometimes a browser restart is needed, sometimes nothing works. A deep audit of the voice subsystem revealed 6 bugs — 3 critical ones that directly cause silent audio failures, and 3 supporting issues that compound the problem.
+
+## Bug Fixes (in implementation order)
+
+### 1. Fix dead error getter functions
+**File:** `client/src/api/media/producers.ts`
+- `localCameraError()` (line 231) always returns `null` — both ternary branches evaluate to `null`
+- `localScreenShareError()` (line 356) always returns `null` — same pattern
+- **Fix:** Return `cameraError` and `screenError` from state. Add missing imports for these variables from `./state`.
+
+### 2. Fix messages silently dropped during WS CLOSING state
+**File:** `client/src/api/ws.ts`
+- `send()` (line 409) doesn't handle `CLOSING`/`CLOSED` readyState — messages are neither sent nor queued, just lost
+- Media signaling messages (`media_consume`, `media_resume_consumer`) can vanish during a WS close
+- **Fix:** Add a fallback at the end of `send()` that pushes to `pendingSends` when readyState is CLOSING or CLOSED
+
+### 3. Fix pendingSends flushed before server authenticates
+**File:** `client/src/api/ws.ts`
+- `onopen` (line 266) sends `authenticate` then immediately flushes `pendingSends` — server hasn't ACKed auth yet
+- Server rejects pre-auth messages with "Must authenticate first", which is in `AUTH_FAILURE_MESSAGES` — triggers force logout
+- **Fix:** Add `awaitingAuthentication` flag. Don't flush in `onopen`. Add `flushPendingSends()` helper. Flush after receiving `authenticated` message in `onmessage`. Reset flag in `disconnect()`.
+
+### 4. Fix double consumer creation race condition
+**File:** `client/src/api/media/consumers.ts`
+- `consumeRemoteProducer` checks `consumerIdByProducerId.has(producerId)` (line 183), then has async gaps before `set()` (line 205)
+- Same producerId can be consumed twice during the gap — first consumer leaks (audio element, graph nodes, memory)
+- **Fix:** Add `consumeInFlight` Set. Add `isConsumingProducer()` helper. Guard both `consumeRemoteProducer` (line 183) and `queueOrConsumeProducer` (line 326). Clean up the set on all completion/error paths.
+
+### 5. Add ICE/transport connection state monitoring
+**File:** `client/src/api/media/transports.ts`
+- After creating send/recv transports (line 242-243), no `connectionstatechange` listeners are registered
+- If ICE fails (network change, NAT timeout), there's zero detection — users sit in silence until server's 45s idle timeout
+- **Fix:** Add `wireTransportConnectionStateMonitor()` function. On `"failed"` state → immediately call `closeTransports()`. On `"disconnected"` state → set 10s recovery timeout, cancel if state recovers to `"connected"`. Wire it up after transport creation. The existing `onClose` handler in ChannelList already shows `showVoiceRejoinNotice()` when transports are cleaned up.
+
+### 6. Fix silent audio playback failure (PRIMARY "can't hear" bug)
+**File:** `client/src/api/media/consumers.ts`
+
+This is the main fix. Current flow in `consumeRemoteProducer`:
+1. Sets `audio.srcObject` to raw consumer track → calls `play()` (silently catches errors)
+2. Sends `media_resume_consumer` signal (async)
+3. Builds Web Audio graph → **replaces** `audio.srcObject` with processed stream → calls `play()` again (silently catches errors)
+
+Problems: double `srcObject` swap can break playback; `AudioContext.resume()` is fire-and-forget (suspended context = silent); `play()` failures are logged at `console.debug` only.
+
+**Fix:**
+- Make `getOrCreateRemotePlaybackAudioContext()` async — await `resume()` instead of fire-and-forget
+- Restructure audio path: send `media_resume_consumer` first, then await `audioCtx.resume()`, build the full Web Audio graph, set `srcObject` **once** with the processed stream, then call `play()`
+- Add retry on `play()` failure (500ms delayed retry for autoplay policy resolution)
+- Log `play()` failures at `console.warn` level for visibility
+- Split the `media_resume_consumer` call into audio/video branches since they now have different flows
+
+## Files Modified
+1. `client/src/api/media/producers.ts` — Fix #1
+2. `client/src/api/ws.ts` — Fixes #2, #3
+3. `client/src/api/media/consumers.ts` — Fixes #4, #6
+4. `client/src/api/media/transports.ts` — Fix #5
+
+## Verification
+- **Fix 6 (audio playback):** Open two browser tabs, join voice. Switch one tab to background for 30s (AudioContext suspends in Chrome), switch back — audio should resume. Test with DevTools console open to verify no silent `play()` failures.
+- **Fix 5 (ICE monitoring):** Use DevTools Network > Offline toggle while in voice. Verify rejoin notice appears within ~10s.
+- **Fixes 2-3 (WS):** Simulate WS reconnect by throttling network. Verify no force logout occurs and queued messages are delivered after re-auth.
+- **Fix 4 (race):** Verify no duplicate audio elements appear in the DOM after joining a busy voice channel.
+- **Fix 1 (error getters):** Enable camera, disconnect camera device — verify error is surfaced to UI.
+
+
+If you need specific details from before exiting plan mode (like exact code snippets, error messages, or content you generated), read the full transcript at: /home/guibibi/.REDACTED.jsonl
+
+---
+
+Could we add better network indicator? Like maybe something showing if we're connected to the audio, etc..
+
+---
+
+[Request interrupted by user for tool use]

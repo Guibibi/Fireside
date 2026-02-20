@@ -1,0 +1,33 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "42384bc05b2c",
+  "session_id": "f164f4cd-e8fa-4508-9641-4f0d5f14e729",
+  "strategy": "manual-commit",
+  "created_at": "2026-02-20T16:29:13.805340431Z",
+  "branch": "refactor/voice-chat",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "client/src/api/media/consumers.ts",
+    "client/src/api/media/producers.ts",
+    "client/src/api/media/transports.ts",
+    "client/src/api/ws.ts"
+  ],
+  "agent": "Claude Code",
+  "token_usage": {
+    "input_tokens": 49,
+    "cache_creation_tokens": 129699,
+    "cache_read_tokens": 2524202,
+    "output_tokens": 12618,
+    "api_call_count": 43
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-02-20T16:29:13.368584351Z",
+    "agent_lines": 198,
+    "human_added": 116,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 314,
+    "agent_percentage": 63.05732484076433
+  },
+  "transcript_path": ".claude/projects/-home-guibibi-projects-yankcord/f164f4cd-e8fa-4508-9641-4f0d5f14e729.jsonl"
+}
