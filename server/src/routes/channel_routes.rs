@@ -32,6 +32,13 @@ pub struct CreateChannelRequest {
 }
 
 #[derive(Deserialize)]
+pub struct UpdateChannelRequest {
+    pub name: String,
+    pub description: Option<String>,
+    pub opus_bitrate: Option<i32>,
+}
+
+#[derive(Deserialize)]
 pub struct SendMessageRequest {
     pub content: String,
     #[serde(default)]
@@ -80,7 +87,9 @@ pub fn router() -> Router<AppState> {
         .route("/channels", get(get_channels).post(create_channel))
         .route(
             "/channels/{channel_id}",
-            get(get_channel).delete(delete_channel),
+            get(get_channel)
+                .patch(update_channel)
+                .delete(delete_channel),
         )
         .route(
             "/channels/{channel_id}/messages",
@@ -210,6 +219,82 @@ async fn get_channel(
         .fetch_optional(&state.db)
         .await?
         .ok_or_else(|| AppError::NotFound("Channel not found".into()))?;
+
+    Ok(Json(channel))
+}
+
+async fn update_channel(
+    State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Path(channel_id): Path<Uuid>,
+    Json(body): Json<UpdateChannelRequest>,
+) -> Result<Json<Channel>, AppError> {
+    let claims = extract_claims(&headers, &state.config.jwt.secret)?;
+    require_admin_or_operator(&claims)?;
+
+    let trimmed_name = body.name.trim();
+    if trimmed_name.is_empty() || trimmed_name.len() > 100 {
+        return Err(AppError::BadRequest(
+            "Channel name must be between 1 and 100 characters".into(),
+        ));
+    }
+
+    let trimmed_description = body.description.as_deref().map(str::trim);
+    let description = match trimmed_description {
+        Some(value) if !value.is_empty() => {
+            if value.chars().count() > 280 {
+                return Err(AppError::BadRequest(
+                    "Channel description must be 280 characters or fewer".into(),
+                ));
+            }
+            Some(value)
+        }
+        _ => None,
+    };
+
+    let existing: Option<(ChannelKind,)> =
+        sqlx::query_as("SELECT kind FROM channels WHERE id = $1")
+            .bind(channel_id)
+            .fetch_optional(&state.db)
+            .await?;
+
+    let Some((channel_kind,)) = existing else {
+        return Err(AppError::NotFound("Channel not found".into()));
+    };
+
+    if channel_kind == ChannelKind::Text && body.opus_bitrate.is_some() {
+        return Err(AppError::BadRequest(
+            "opus_bitrate can only be set for voice channels".into(),
+        ));
+    }
+
+    if let Some(bitrate) = body.opus_bitrate {
+        if !(6000..=510000).contains(&bitrate) {
+            return Err(AppError::BadRequest(
+                "opus_bitrate must be between 6000 and 510000".into(),
+            ));
+        }
+    }
+
+    let channel: Channel = sqlx::query_as(
+        "UPDATE channels SET name = $1, description = $2, opus_bitrate = $3 WHERE id = $4 RETURNING *",
+    )
+    .bind(trimmed_name)
+    .bind(description)
+    .bind(body.opus_bitrate)
+    .bind(channel_id)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| AppError::NotFound("Channel not found".into()))?;
+
+    broadcast_global_message(
+        &state,
+        ServerMessage::ChannelUpdated {
+            channel: channel.clone(),
+        },
+        None,
+    )
+    .await;
 
     Ok(Json(channel))
 }

@@ -58,6 +58,18 @@
   gap: var(--space-md);
 }
 
+.channel-edit-modal-backdrop {
+  z-index: 1180;
+}
+
+.channel-edit-modal {
+  width: min(400px, calc(100vw - 2rem));
+}
+
+.channel-edit-form {
+  gap: var(--space-md);
+}
+
 .voice-share-modal-backdrop {
   z-index: 1190;
 }

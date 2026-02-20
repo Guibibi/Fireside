@@ -10,6 +10,22 @@ import Chat from "./pages/Chat";
 import { isAuthenticated, normalizeServerUrl, serverUrl } from "./stores/auth";
 import "./styles/global.css";
 
+function shouldAllowNativeContextMenu(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+
+  return !!target.closest("input, textarea, [contenteditable='true']");
+}
+
+document.addEventListener("contextmenu", (event) => {
+  if (shouldAllowNativeContextMenu(event.target)) {
+    return;
+  }
+
+  event.preventDefault();
+});
+
 async function checkSetupStatus(): Promise<boolean> {
   try {
     const base = normalizeServerUrl(serverUrl());

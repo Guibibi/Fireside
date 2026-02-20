@@ -9,7 +9,7 @@ import {
     untrack,
 } from "solid-js";
 import { username as currentUsername } from "../stores/auth";
-import { del, get, post } from "../api/http";
+import { del, get, patch as patchRequest, post } from "../api/http";
 import { listDmThreads } from "../api/dms";
 import {
     cleanupMediaTransports,
@@ -100,6 +100,7 @@ import { PlusIcon } from "./icons";
 import {
     ChannelRow,
     CreateChannelModal,
+    EditChannelModal,
     ScreenShareModal,
     VoiceDock,
     autoBitrateKbps,
@@ -142,6 +143,14 @@ export default function ChannelList() {
     >(undefined);
     const [channelCreateOpusDtx, setChannelCreateOpusDtx] = createSignal(false);
     const [channelCreateOpusFec, setChannelCreateOpusFec] = createSignal(false);
+    const [channelEditOpen, setChannelEditOpen] = createSignal<Channel | null>(
+        null,
+    );
+    const [channelEditName, setChannelEditName] = createSignal("");
+    const [channelEditDescription, setChannelEditDescription] = createSignal("");
+    const [channelEditOpusBitrate, setChannelEditOpusBitrate] = createSignal<
+        number | undefined
+    >(undefined);
     const [loadError, setLoadError] = createSignal("");
     const [toastError, setToastError] = createSignal("");
     const [cameraActionPending, setCameraActionPending] = createSignal(false);
@@ -627,6 +636,24 @@ export default function ChannelList() {
         setChannelCreateOpusFec(false);
     }
 
+    function openEditChannel(channel: Channel) {
+        if (isSaving()) {
+            return;
+        }
+
+        setChannelEditOpen(channel);
+        setChannelEditName(channel.name);
+        setChannelEditDescription(channel.description ?? "");
+        setChannelEditOpusBitrate(channel.opus_bitrate ?? undefined);
+    }
+
+    function closeEditChannel() {
+        setChannelEditOpen(null);
+        setChannelEditName("");
+        setChannelEditDescription("");
+        setChannelEditOpusBitrate(undefined);
+    }
+
     async function handleCreateChannel(
         kind: Channel["kind"],
         rawName: string,
@@ -686,6 +713,40 @@ export default function ChannelList() {
         }
     }
 
+    async function handleUpdateChannel(
+        channel: Channel,
+        rawName: string,
+        rawDescription: string,
+        opusBitrate?: number,
+    ) {
+        if (isSaving()) {
+            return;
+        }
+
+        const trimmedName = rawName.trim();
+        const trimmedDescription = rawDescription.trim();
+
+        if (!trimmedName) {
+            showErrorToast("Channel name is required");
+            return;
+        }
+
+        setIsSaving(true);
+        try {
+            await patchRequest<Channel>(`/channels/${channel.id}`, {
+                name: trimmedName,
+                description:
+                    trimmedDescription.length > 0 ? trimmedDescription : null,
+                opus_bitrate: channel.kind === "voice" ? opusBitrate : null,
+            });
+            closeEditChannel();
+        } catch (error) {
+            showErrorToast(errorMessage(error, "Failed to update channel"));
+        } finally {
+            setIsSaving(false);
+        }
+    }
+
     onMount(() => {
         preloadVoiceCues();
         preloadMessageNotificationCue();
@@ -696,6 +757,7 @@ export default function ChannelList() {
 
         registerContextMenuHandlers({
             channel: {
+                onEdit: (channel) => openEditChannel(channel),
                 onDelete: (channel) => void handleDeleteChannel(channel),
             },
         });
@@ -725,6 +787,18 @@ export default function ChannelList() {
                                   : channel,
                           )
                         : [...current, msg.channel];
+                    const sorted = next.sort((a, b) => a.position - b.position);
+                    ensureValidActiveChannel(sorted);
+                    return sorted;
+                });
+                return;
+            }
+
+            if (msg.type === "channel_updated") {
+                setChannels((current) => {
+                    const next = current.map((channel) =>
+                        channel.id === msg.channel.id ? msg.channel : channel,
+                    );
                     const sorted = next.sort((a, b) => a.position - b.position);
                     ensureValidActiveChannel(sorted);
                     return sorted;
@@ -1390,6 +1464,26 @@ export default function ChannelList() {
                     setOpusFec={setChannelCreateOpusFec}
                     onSubmit={(kind, name, description, opusBitrate, opusDtx, opusFec) =>
                         void handleCreateChannel(kind, name, description, opusBitrate, opusDtx, opusFec)
+                    }
+                />
+
+                <EditChannelModal
+                    channel={channelEditOpen}
+                    onClose={closeEditChannel}
+                    name={channelEditName}
+                    setName={setChannelEditName}
+                    description={channelEditDescription}
+                    setDescription={setChannelEditDescription}
+                    opusBitrate={channelEditOpusBitrate}
+                    setOpusBitrate={setChannelEditOpusBitrate}
+                    isSaving={isSaving()}
+                    onSubmit={(channel, name, description, opusBitrate) =>
+                        void handleUpdateChannel(
+                            channel,
+                            name,
+                            description,
+                            opusBitrate,
+                        )
                     }
                 />
 
