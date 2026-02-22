@@ -7,7 +7,6 @@
   position: sticky;
   bottom: calc(var(--space-xl) * -1);
   padding-top: var(--space-xl);
-  background: linear-gradient(to bottom, transparent, var(--gray-3) 40%);
 }
 
 .channel-footer-banner {
