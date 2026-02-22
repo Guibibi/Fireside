@@ -1172,6 +1172,36 @@ async fn handle_send_message(
         return;
     }
 
+    if let Err(error) = sqlx::query(
+        "INSERT INTO channel_read_state (channel_id, user_id, last_read_message_id, updated_at)
+         VALUES ($1, $2, $3, now())
+         ON CONFLICT (channel_id, user_id)
+         DO UPDATE SET
+           last_read_message_id = EXCLUDED.last_read_message_id,
+           updated_at = now()",
+    )
+    .bind(channel_id)
+    .bind(user_id)
+    .bind(message_id)
+    .execute(&mut *tx)
+    .await
+    {
+        tracing::error!(
+            message_id = %message_id,
+            channel_id = %channel_id,
+            username = %claims.username,
+            error = ?error,
+            "Failed to upsert channel read marker"
+        );
+        send_server_message(
+            out_tx,
+            ServerMessage::Error {
+                message: "Failed to save message".into(),
+            },
+        );
+        return;
+    }
+
     if let Err(error) = tx.commit().await {
         tracing::error!(
             message_id = %message_id,

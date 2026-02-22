@@ -13,7 +13,7 @@ use crate::message_attachments::{
     load_message_attachments_by_message, persist_message_attachments_in_tx,
     resolve_uploads_for_message, MessageAttachmentPayload,
 };
-use crate::models::{Channel, ChannelKind, Message};
+use crate::models::{Channel, ChannelKind, ChannelWithUnread, Message};
 use crate::routes::reaction_routes::{get_reactions_for_messages, ReactionSummaryResponse};
 use crate::ws::broadcast::{
     broadcast_channel_message, broadcast_global_message, remove_channel_subscribers,
@@ -56,6 +56,11 @@ pub struct MessageQuery {
     pub limit: Option<i64>,
 }
 
+#[derive(Deserialize)]
+pub struct UpdateChannelReadRequest {
+    pub last_read_message_id: Option<Uuid>,
+}
+
 #[derive(sqlx::FromRow)]
 pub struct MessageWithAuthorRow {
     pub id: Uuid,
@@ -94,6 +99,10 @@ pub fn router() -> Router<AppState> {
         .route(
             "/channels/{channel_id}/messages",
             get(get_messages).post(send_message),
+        )
+        .route(
+            "/channels/{channel_id}/read",
+            axum::routing::post(update_channel_read_marker),
         )
         .route(
             "/messages/{message_id}",
@@ -197,14 +206,68 @@ async fn create_channel(
 async fn get_channels(
     State(state): State<AppState>,
     headers: axum::http::HeaderMap,
-) -> Result<Json<Vec<Channel>>, AppError> {
-    let _claims = extract_claims(&headers, &state.config.jwt.secret)?;
+) -> Result<Json<Vec<ChannelWithUnread>>, AppError> {
+    let claims = extract_claims(&headers, &state.config.jwt.secret)?;
 
-    let channels: Vec<Channel> = sqlx::query_as("SELECT * FROM channels ORDER BY position ASC")
-        .fetch_all(&state.db)
-        .await?;
+    let channels: Vec<ChannelWithUnread> = sqlx::query_as(
+        "SELECT
+           c.id,
+           c.name,
+           c.description,
+           c.kind,
+           c.position,
+           c.created_at,
+           c.opus_bitrate,
+           c.opus_dtx,
+           c.opus_fec,
+           COALESCE(unread.unread_count, 0)::BIGINT AS unread_count
+         FROM channels c
+         LEFT JOIN LATERAL (
+           SELECT COUNT(*) AS unread_count
+           FROM messages m
+           LEFT JOIN channel_read_state rs
+             ON rs.channel_id = c.id
+            AND rs.user_id = $1
+           LEFT JOIN messages lr
+             ON lr.id = rs.last_read_message_id
+           WHERE m.channel_id = c.id
+             AND m.author_id <> $1
+             AND (
+               rs.last_read_message_id IS NULL
+               OR (m.created_at, m.id) > (lr.created_at, lr.id)
+             )
+         ) unread ON true
+         ORDER BY c.position ASC",
+    )
+    .bind(claims.user_id)
+    .fetch_all(&state.db)
+    .await?;
 
     Ok(Json(channels))
+}
+
+async fn current_channel_read_marker_for_user(
+    state: &AppState,
+    channel_id: Uuid,
+    user_id: Uuid,
+) -> Result<Option<(Uuid, chrono::DateTime<chrono::Utc>)>, AppError> {
+    let row: Option<(Option<Uuid>, Option<chrono::DateTime<chrono::Utc>>)> = sqlx::query_as(
+        "SELECT rs.last_read_message_id, m.created_at
+         FROM channel_read_state rs
+         LEFT JOIN messages m
+           ON m.id = rs.last_read_message_id
+         WHERE rs.channel_id = $1
+           AND rs.user_id = $2",
+    )
+    .bind(channel_id)
+    .bind(user_id)
+    .fetch_optional(&state.db)
+    .await?;
+
+    Ok(match row {
+        Some((Some(message_id), Some(created_at))) => Some((message_id, created_at)),
+        _ => None,
+    })
 }
 
 async fn get_channel(
@@ -534,9 +597,98 @@ async fn send_message(
         .observe_db_query("channel.send_message.insert", insert_started.elapsed());
 
     persist_message_attachments_in_tx(&mut tx, message.id, &resolved_attachments).await?;
+
+    sqlx::query(
+        "INSERT INTO channel_read_state (channel_id, user_id, last_read_message_id, updated_at)
+         VALUES ($1, $2, $3, now())
+         ON CONFLICT (channel_id, user_id)
+         DO UPDATE SET
+           last_read_message_id = EXCLUDED.last_read_message_id,
+           updated_at = now()",
+    )
+    .bind(channel_id)
+    .bind(user_id)
+    .bind(message.id)
+    .execute(&mut *tx)
+    .await?;
+
     tx.commit().await?;
 
     Ok(Json(message))
+}
+
+async fn update_channel_read_marker(
+    State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Path(channel_id): Path<Uuid>,
+    Json(body): Json<UpdateChannelReadRequest>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let claims = extract_claims(&headers, &state.config.jwt.secret)?;
+
+    let channel_exists: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM channels WHERE id = $1)")
+            .bind(channel_id)
+            .fetch_one(&state.db)
+            .await?;
+
+    if !channel_exists {
+        return Err(AppError::NotFound("Channel not found".into()));
+    }
+
+    let requested_marker = if let Some(message_id) = body.last_read_message_id {
+        let created_at: Option<chrono::DateTime<chrono::Utc>> =
+            sqlx::query_scalar("SELECT created_at FROM messages WHERE id = $1 AND channel_id = $2")
+                .bind(message_id)
+                .bind(channel_id)
+                .fetch_optional(&state.db)
+                .await?;
+
+        let created_at =
+            created_at.ok_or_else(|| AppError::NotFound("Message not found in channel".into()))?;
+        Some((message_id, created_at))
+    } else {
+        sqlx::query_as::<_, (Uuid, chrono::DateTime<chrono::Utc>)>(
+            "SELECT id, created_at
+             FROM messages
+             WHERE channel_id = $1
+             ORDER BY created_at DESC, id DESC
+             LIMIT 1",
+        )
+        .bind(channel_id)
+        .fetch_optional(&state.db)
+        .await?
+    };
+
+    let current_marker =
+        current_channel_read_marker_for_user(&state, channel_id, claims.user_id).await?;
+    let next_marker = match (current_marker, requested_marker) {
+        (Some((current_id, current_at)), Some((requested_id, requested_at))) => {
+            if (requested_at, requested_id) >= (current_at, current_id) {
+                Some(requested_id)
+            } else {
+                Some(current_id)
+            }
+        }
+        (None, Some((requested_id, _))) => Some(requested_id),
+        (Some((current_id, _)), None) => Some(current_id),
+        (None, None) => None,
+    };
+
+    sqlx::query(
+        "INSERT INTO channel_read_state (channel_id, user_id, last_read_message_id, updated_at)
+         VALUES ($1, $2, $3, now())
+         ON CONFLICT (channel_id, user_id)
+         DO UPDATE SET
+           last_read_message_id = EXCLUDED.last_read_message_id,
+           updated_at = now()",
+    )
+    .bind(channel_id)
+    .bind(claims.user_id)
+    .bind(next_marker)
+    .execute(&state.db)
+    .await?;
+
+    Ok(Json(serde_json::json!({ "ok": true })))
 }
 
 async fn edit_message(

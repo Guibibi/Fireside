@@ -55,6 +55,20 @@ pub struct Channel {
     pub opus_fec: Option<bool>,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, sqlx::FromRow)]
+pub struct ChannelWithUnread {
+    pub id: Uuid,
+    pub name: String,
+    pub description: Option<String>,
+    pub kind: ChannelKind,
+    pub position: i32,
+    pub created_at: DateTime<Utc>,
+    pub opus_bitrate: Option<i32>,
+    pub opus_dtx: Option<bool>,
+    pub opus_fec: Option<bool>,
+    pub unread_count: i64,
+}
+
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
 pub struct Message {
     pub id: Uuid,
@@ -89,6 +103,15 @@ pub struct DmMessage {
 #[derive(Debug, Serialize, Deserialize, Clone, sqlx::FromRow)]
 pub struct DmReadState {
     pub thread_id: Uuid,
+    pub user_id: Uuid,
+    pub last_read_message_id: Option<Uuid>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Serialize, Deserialize, Clone, sqlx::FromRow)]
+pub struct ChannelReadState {
+    pub channel_id: Uuid,
     pub user_id: Uuid,
     pub last_read_message_id: Option<Uuid>,
     pub updated_at: DateTime<Utc>,

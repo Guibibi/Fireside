@@ -1,5 +1,6 @@
 import { Show, createEffect, createMemo, createResource, createSignal, onCleanup, onMount } from "solid-js";
 import { del, get, patch } from "../api/http";
+import { markChannelRead } from "../api/channels";
 import { deleteDmMessage, editDmMessage, fetchDmMessages, markDmRead } from "../api/dms";
 import { connect, onMessage, send } from "../api/ws";
 import {
@@ -1259,6 +1260,16 @@ export default function MessageArea() {
 
     void markDmRead(threadId, latestMessage.id).catch(() => undefined);
     setDmUnreadCount(threadId, 0);
+  });
+
+  createEffect(() => {
+    const channelId = activeChannelId();
+    if (!channelId) {
+      return;
+    }
+
+    const latestMessage = messages()[messages().length - 1];
+    void markChannelRead(channelId, latestMessage?.id ?? null).catch(() => undefined);
   });
 
   const visibleTypingUsernames = createMemo(() => {

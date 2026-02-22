@@ -27,6 +27,18 @@ export function incrementUnread(channelId: string) {
   }));
 }
 
+export function initializeUnreadCounts(entries: Array<{ channelId: string; unreadCount: number }>) {
+  const next: Record<string, number> = {};
+  for (const entry of entries) {
+    const normalized = Math.max(0, entry.unreadCount);
+    if (normalized > 0) {
+      next[entry.channelId] = normalized;
+    }
+  }
+
+  setUnreadByChannel(next);
+}
+
 export function clearUnread(channelId: string) {
   setUnreadByChannel((current) => {
     if (!current[channelId]) {

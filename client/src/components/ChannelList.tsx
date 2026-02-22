@@ -9,7 +9,8 @@ import {
     untrack,
 } from "solid-js";
 import { username as currentUsername } from "../stores/auth";
-import { del, get, patch as patchRequest, post } from "../api/http";
+import { del, patch as patchRequest, post } from "../api/http";
+import { listChannels, markChannelRead } from "../api/channels";
 import { listDmThreads } from "../api/dms";
 import {
     cleanupMediaTransports,
@@ -34,6 +35,7 @@ import {
     activeDmThreadId,
     Channel,
     clearUnread,
+    initializeUnreadCounts,
     incrementUnread,
     removeUnreadChannel,
     setActiveDmThread,
@@ -127,7 +129,7 @@ import {
 } from "../stores/dms";
 
 async function fetchChannels() {
-    return get<Channel[]>("/channels");
+    return listChannels();
 }
 
 export default function ChannelList() {
@@ -180,6 +182,7 @@ export default function ChannelList() {
         string | null
     >(null);
     const pulseTimers = new Map<string, ReturnType<typeof setTimeout>>();
+    const readMarkerInFlightByChannel = new Set<string>();
     const tauriRuntime = isTauriRuntime();
     const nativeDebugEnabled =
         tauriRuntime &&
@@ -510,14 +513,28 @@ export default function ChannelList() {
         }
 
         setActiveTextChannel(channel.id);
-        clearUnread(channel.id);
+        markChannelReadOptimistically(channel.id);
     }
 
     function clearActiveChannelUnread() {
         const selected = activeChannelId();
         if (selected) {
-            clearUnread(selected);
+            markChannelReadOptimistically(selected);
         }
+    }
+
+    function markChannelReadOptimistically(channelId: string) {
+        clearUnread(channelId);
+        if (readMarkerInFlightByChannel.has(channelId)) {
+            return;
+        }
+
+        readMarkerInFlightByChannel.add(channelId);
+        void markChannelRead(channelId, null)
+            .catch(() => undefined)
+            .finally(() => {
+                readMarkerInFlightByChannel.delete(channelId);
+            });
     }
 
     function formatUnreadBadge(channelId: string) {
@@ -600,7 +617,16 @@ export default function ChannelList() {
         setLoadError("");
         try {
             const loaded = await fetchChannels();
-            const sorted = [...loaded].sort((a, b) => a.position - b.position);
+            initializeUnreadCounts(
+                loaded.map((channel) => ({
+                    channelId: channel.id,
+                    unreadCount: channel.unread_count,
+                })),
+            );
+
+            const sorted = loaded
+                .map(({ unread_count: _unreadCount, ...channel }) => channel)
+                .sort((a, b) => a.position - b.position);
             setChannels(sorted);
             ensureValidActiveChannel(sorted);
         } catch (error) {
