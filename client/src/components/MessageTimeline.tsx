@@ -1,5 +1,6 @@
 import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import { Portal } from "solid-js/web";
+import type { MessageReactionDetail } from "../api/reactions";
 import type { Channel } from "../stores/chat";
 import { username } from "../stores/auth";
 import {
@@ -17,6 +18,7 @@ import { isMentioningUsername } from "../utils/mentions";
 import { ZoomIcon, CloseIcon, DownloadIcon, ExternalLinkIcon } from "./icons";
 import { displayNameFor } from "../stores/userProfiles";
 import { loadEmojis, useEmojiStore } from "../stores/emojis";
+import { errorMessage } from "../utils/error";
 
 interface MessageTimelineProps {
   activeChannel: Channel | null | undefined;
@@ -41,6 +43,7 @@ interface MessageTimelineProps {
   onEditDraftInput: (value: string) => void;
   onAddReaction: (messageId: string, reaction: { emoji_id?: string; unicode_emoji?: string }) => void;
   onRemoveReaction: (messageId: string, reaction: MessageReaction) => void;
+  onLoadReactionDetails: (messageId: string) => Promise<MessageReactionDetail[]>;
   toAbsoluteMediaUrl: (path: string) => string;
 }
 
@@ -52,6 +55,18 @@ interface LazyAttachmentImageProps {
 interface AttachmentPreview {
   displayUrl: string;
   originalUrl: string;
+}
+
+interface ReactionPopoverState {
+  messageId: string;
+  hoveredReactionKey: string;
+  details: MessageReactionDetail[];
+  loading: boolean;
+  error: string | null;
+}
+
+function reactionKey(reaction: { emoji_id: string | null; unicode_emoji: string | null }): string {
+  return `${reaction.emoji_id ?? ""}:${reaction.unicode_emoji ?? ""}`;
 }
 
 function LazyAttachmentImage(props: LazyAttachmentImageProps) {
@@ -114,9 +129,192 @@ export default function MessageTimeline(props: MessageTimelineProps) {
   const [attachmentPreview, setAttachmentPreview] = createSignal<AttachmentPreview | null>(null);
   const [reactionPickerMessageId, setReactionPickerMessageId] = createSignal<string | null>(null);
   const [reactionPickerAnchor, setReactionPickerAnchor] = createSignal<HTMLElement | null>(null);
+  const [reactionPopover, setReactionPopover] = createSignal<ReactionPopoverState | null>(null);
+  const [reactionPopoverAnchor, setReactionPopoverAnchor] = createSignal<HTMLElement | null>(null);
+  const [reactionPopoverAnchorRect, setReactionPopoverAnchorRect] = createSignal<DOMRect | null>(null);
+  const reactionDetailsCache = new Map<string, MessageReactionDetail[]>();
+  const reactionDetailsInFlight = new Map<string, Promise<MessageReactionDetail[]>>();
+  let reactionPopoverCloseTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function clearReactionPopoverCloseTimer() {
+    if (!reactionPopoverCloseTimer) {
+      return;
+    }
+
+    clearTimeout(reactionPopoverCloseTimer);
+    reactionPopoverCloseTimer = null;
+  }
+
+  function closeReactionPopover() {
+    clearReactionPopoverCloseTimer();
+    setReactionPopover(null);
+    setReactionPopoverAnchor(null);
+    setReactionPopoverAnchorRect(null);
+  }
+
+  function scheduleReactionPopoverClose() {
+    clearReactionPopoverCloseTimer();
+    reactionPopoverCloseTimer = setTimeout(() => {
+      closeReactionPopover();
+    }, 140);
+  }
+
+  function updateReactionPopoverAnchorRect() {
+    const anchor = reactionPopoverAnchor();
+    if (!anchor) {
+      setReactionPopoverAnchorRect(null);
+      return;
+    }
+
+    setReactionPopoverAnchorRect(anchor.getBoundingClientRect());
+  }
+
+  function loadReactionDetails(messageId: string): Promise<MessageReactionDetail[]> {
+    const cached = reactionDetailsCache.get(messageId);
+    if (cached) {
+      return Promise.resolve(cached);
+    }
+
+    const pending = reactionDetailsInFlight.get(messageId);
+    if (pending) {
+      return pending;
+    }
+
+    const request = props.onLoadReactionDetails(messageId)
+      .then((details) => {
+        reactionDetailsCache.set(messageId, details);
+        reactionDetailsInFlight.delete(messageId);
+        return details;
+      })
+      .catch((error: unknown) => {
+        reactionDetailsInFlight.delete(messageId);
+        throw error;
+      });
+
+    reactionDetailsInFlight.set(messageId, request);
+    return request;
+  }
+
+  async function openReactionPopover(
+    messageId: string,
+    reaction: { emoji_id: string | null; unicode_emoji: string | null },
+    anchor: HTMLElement,
+  ) {
+    clearReactionPopoverCloseTimer();
+    const hoveredReactionKey = reactionKey(reaction);
+    setReactionPopoverAnchor(anchor);
+    updateReactionPopoverAnchorRect();
+
+    const cached = reactionDetailsCache.get(messageId);
+    setReactionPopover({
+      messageId,
+      hoveredReactionKey,
+      details: cached ?? [],
+      loading: !cached,
+      error: null,
+    });
+
+    if (cached) {
+      return;
+    }
+
+    try {
+      const details = await loadReactionDetails(messageId);
+      setReactionPopover((current) => {
+        if (!current || current.messageId !== messageId) {
+          return current;
+        }
+
+        return {
+          ...current,
+          details,
+          loading: false,
+          error: null,
+        };
+      });
+    } catch (error: unknown) {
+      setReactionPopover((current) => {
+        if (!current || current.messageId !== messageId) {
+          return current;
+        }
+
+        return {
+          ...current,
+          loading: false,
+          error: errorMessage(error, "Failed to load reactions"),
+        };
+      });
+    }
+  }
+
+  const orderedPopoverDetails = createMemo(() => {
+    const state = reactionPopover();
+    if (!state) {
+      return [];
+    }
+
+    return [...state.details].sort((left, right) => {
+      const leftMatch = reactionKey(left) === state.hoveredReactionKey;
+      const rightMatch = reactionKey(right) === state.hoveredReactionKey;
+      if (leftMatch === rightMatch) {
+        return 0;
+      }
+      return leftMatch ? -1 : 1;
+    });
+  });
+
+  const reactionPopoverStyle = createMemo(() => {
+    const anchorRect = reactionPopoverAnchorRect();
+    if (!anchorRect) {
+      return { left: "-9999px", top: "-9999px" };
+    }
+
+    const popupWidth = 264;
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const left = Math.min(
+      Math.max(8, anchorRect.left + (anchorRect.width / 2) - (popupWidth / 2)),
+      Math.max(8, viewportWidth - popupWidth - 8),
+    );
+
+    const estimatedHeight = 160;
+    const placeAbove = anchorRect.top > estimatedHeight + 16;
+    const top = placeAbove
+      ? Math.max(8, anchorRect.top - 10)
+      : Math.min(viewportHeight - 8, anchorRect.bottom + 10);
+
+    return {
+      left: `${left}px`,
+      top: `${top}px`,
+      transform: placeAbove ? "translateY(-100%)" : "none",
+    };
+  });
 
   createEffect(() => {
     void loadEmojis();
+  });
+
+  createEffect(() => {
+    const anchor = reactionPopoverAnchor();
+    if (!anchor) {
+      return;
+    }
+
+    const updatePosition = () => {
+      if (!reactionPopoverAnchor()) {
+        return;
+      }
+      updateReactionPopoverAnchorRect();
+    };
+
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+
+    onCleanup(() => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    });
   });
 
   function messageClassName(content: string): string {
@@ -147,6 +345,10 @@ export default function MessageTimeline(props: MessageTimelineProps) {
       document.body.style.overflow = previousOverflow;
       window.removeEventListener("keydown", onKeyDown);
     });
+  });
+
+  onCleanup(() => {
+    clearReactionPopoverCloseTimer();
   });
 
   return (
@@ -313,6 +515,14 @@ export default function MessageTimeline(props: MessageTimelineProps) {
                                       <button
                                         type="button"
                                         class={`message-reaction-chip${reaction.user_reacted ? " is-active" : ""}`}
+                                        onMouseEnter={(event) => {
+                                          void openReactionPopover(message.id, reaction, event.currentTarget);
+                                        }}
+                                        onFocus={(event) => {
+                                          void openReactionPopover(message.id, reaction, event.currentTarget);
+                                        }}
+                                        onMouseLeave={scheduleReactionPopoverClose}
+                                        onBlur={scheduleReactionPopoverClose}
                                         onClick={() => {
                                           if (reaction.user_reacted) {
                                             props.onRemoveReaction(message.id, reaction);
@@ -425,6 +635,69 @@ export default function MessageTimeline(props: MessageTimelineProps) {
                 setReactionPickerAnchor(null);
               }}
             />
+          </Show>
+          <Show when={reactionPopover()}>
+            {(popover) => (
+              <Portal>
+                <div
+                  class="message-reaction-popover"
+                  style={reactionPopoverStyle()}
+                  onMouseEnter={clearReactionPopoverCloseTimer}
+                  onMouseLeave={scheduleReactionPopoverClose}
+                  role="status"
+                  aria-live="polite"
+                >
+                  <Show when={!popover().loading} fallback={<p class="message-reaction-popover-state">Loading reactions...</p>}>
+                    <Show when={!popover().error} fallback={<p class="message-reaction-popover-state">{popover().error}</p>}>
+                      <Show when={orderedPopoverDetails().length > 0} fallback={<p class="message-reaction-popover-state">No reactions yet.</p>}>
+                        <ul class="message-reaction-popover-list">
+                          <For each={orderedPopoverDetails()}>
+                            {(entry) => {
+                              const [emojiImageFailed, setEmojiImageFailed] = createSignal(false);
+                              const customEmojiUrl = createMemo(() => {
+                                if (!entry.emoji_id) {
+                                  return null;
+                                }
+                                return customEmojiById().get(entry.emoji_id)?.url ?? null;
+                              });
+
+                              return (
+                                <li class="message-reaction-popover-item">
+                                  <span class="message-reaction-popover-emoji" aria-hidden="true">
+                                    <Show
+                                      when={entry.unicode_emoji}
+                                      fallback={(
+                                        <Show
+                                          when={customEmojiUrl() && !emojiImageFailed()}
+                                          fallback={<span class="message-reaction-emoji">{`:${entry.shortcode ?? "emoji"}:`}</span>}
+                                        >
+                                          <img
+                                            class="message-reaction-emoji-image"
+                                            src={customEmojiUrl() ?? ""}
+                                            alt={`:${entry.shortcode ?? "emoji"}:`}
+                                            decoding="async"
+                                            onError={() => setEmojiImageFailed(true)}
+                                          />
+                                        </Show>
+                                      )}
+                                    >
+                                      <span class="message-reaction-emoji">{entry.unicode_emoji}</span>
+                                    </Show>
+                                  </span>
+                                  <span class="message-reaction-popover-users">
+                                    {entry.users.map((user) => user.display_name || user.username).join(", ")}
+                                  </span>
+                                </li>
+                              );
+                            }}
+                          </For>
+                        </ul>
+                      </Show>
+                    </Show>
+                  </Show>
+                </div>
+              </Portal>
+            )}
           </Show>
         </AsyncContent>
       </div>

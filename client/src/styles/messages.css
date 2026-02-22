@@ -435,6 +435,51 @@
   color: var(--mist);
 }
 
+.message-reaction-popover {
+  position: fixed;
+  z-index: 1200;
+  width: min(264px, calc(100vw - 16px));
+  padding: 0.55rem 0.6rem;
+  border: 1px solid var(--cloud-dark);
+  border-radius: var(--radius-md);
+  background: rgba(17, 22, 34, 0.96);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.36);
+  backdrop-filter: blur(6px);
+}
+
+.message-reaction-popover-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.4rem;
+}
+
+.message-reaction-popover-item {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: start;
+  gap: 0.45rem;
+}
+
+.message-reaction-popover-emoji {
+  min-width: 1rem;
+  line-height: 1.2;
+}
+
+.message-reaction-popover-users {
+  color: var(--pearl);
+  font-size: 0.78rem;
+  line-height: 1.3;
+  word-break: break-word;
+}
+
+.message-reaction-popover-state {
+  margin: 0;
+  color: var(--mist);
+  font-size: 0.76rem;
+}
+
 .message-attachment {
   margin: 0;
   width: min(400px, 100%);

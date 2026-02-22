@@ -5,6 +5,8 @@ import { connect, onMessage, send } from "../api/ws";
 import {
   addDmReaction,
   addReaction,
+  getDmMessageReactionDetails,
+  getMessageReactionDetails,
   removeCustomReaction,
   removeDmCustomReaction,
   removeDmUnicodeReaction,
@@ -1309,6 +1311,18 @@ export default function MessageArea() {
         }}
         onRemoveReaction={(messageId, reaction) => {
           void handleRemoveReaction(messageId, reaction);
+        }}
+        onLoadReactionDetails={async (messageId) => {
+          const target = activeTarget();
+          if (!target) {
+            return [];
+          }
+
+          if (target.kind === "dm") {
+            return getDmMessageReactionDetails(messageId);
+          }
+
+          return getMessageReactionDetails(messageId);
         }}
         toAbsoluteMediaUrl={(path) => toAbsoluteMediaUrl(getApiBaseUrl(), path)}
       />

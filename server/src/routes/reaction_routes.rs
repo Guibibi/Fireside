@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use axum::{
     extract::Path,
     extract::State,
-    routing::{delete, post},
+    routing::{delete, get},
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
@@ -41,9 +41,27 @@ pub struct ReactionSummaryResponse {
     pub user_reacted: bool,
 }
 
+#[derive(Debug, Serialize)]
+pub struct ReactionUserResponse {
+    pub user_id: Uuid,
+    pub username: String,
+    pub display_name: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct MessageReactionDetailResponse {
+    pub emoji_id: Option<Uuid>,
+    pub unicode_emoji: Option<String>,
+    pub shortcode: Option<String>,
+    pub users: Vec<ReactionUserResponse>,
+}
+
 pub fn router() -> Router<AppState> {
     Router::new()
-        .route("/messages/{message_id}/reactions", post(add_reaction))
+        .route(
+            "/messages/{message_id}/reactions",
+            get(get_message_reactions).post(add_reaction),
+        )
         .route(
             "/messages/{message_id}/reactions/{emoji_id}",
             delete(remove_custom_reaction),
@@ -52,7 +70,10 @@ pub fn router() -> Router<AppState> {
             "/messages/{message_id}/reactions/unicode/{unicode_emoji}",
             delete(remove_unicode_reaction),
         )
-        .route("/dm-messages/{message_id}/reactions", post(add_dm_reaction))
+        .route(
+            "/dm-messages/{message_id}/reactions",
+            get(get_dm_message_reactions).post(add_dm_reaction),
+        )
         .route(
             "/dm-messages/{message_id}/reactions/{emoji_id}",
             delete(remove_dm_custom_reaction),
@@ -61,6 +82,62 @@ pub fn router() -> Router<AppState> {
             "/dm-messages/{message_id}/reactions/unicode/{unicode_emoji}",
             delete(remove_dm_unicode_reaction),
         )
+}
+
+#[tracing::instrument(skip(state, headers), fields(message_id = %message_id))]
+async fn get_message_reactions(
+    State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Path(message_id): Path<Uuid>,
+) -> Result<Json<Vec<MessageReactionDetailResponse>>, AppError> {
+    extract_claims(&headers, &state.config.jwt.secret)?;
+
+    let message_exists: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM messages WHERE id = $1)")
+            .bind(message_id)
+            .fetch_one(&state.db)
+            .await?;
+
+    if !message_exists {
+        return Err(AppError::NotFound("Message not found".into()));
+    }
+
+    let reactions = fetch_channel_reaction_details(&state, message_id).await?;
+    Ok(Json(reactions))
+}
+
+#[tracing::instrument(skip(state, headers), fields(message_id = %message_id))]
+async fn get_dm_message_reactions(
+    State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Path(message_id): Path<Uuid>,
+) -> Result<Json<Vec<MessageReactionDetailResponse>>, AppError> {
+    let claims = extract_claims(&headers, &state.config.jwt.secret)?;
+
+    let user_id: Uuid = sqlx::query_scalar("SELECT id FROM users WHERE username = $1")
+        .bind(&claims.username)
+        .fetch_optional(&state.db)
+        .await?
+        .ok_or_else(|| AppError::Unauthorized("User not found".into()))?;
+
+    let dm_message_thread: Option<Uuid> = sqlx::query_scalar(
+        "SELECT t.id
+         FROM dm_messages m
+         JOIN dm_threads t ON t.id = m.thread_id
+         WHERE m.id = $1
+           AND (t.user_a_id = $2 OR t.user_b_id = $2)",
+    )
+    .bind(message_id)
+    .bind(user_id)
+    .fetch_optional(&state.db)
+    .await?;
+
+    if dm_message_thread.is_none() {
+        return Err(AppError::NotFound("Message not found".into()));
+    }
+
+    let reactions = fetch_dm_reaction_details(&state, message_id).await?;
+    Ok(Json(reactions))
 }
 
 #[tracing::instrument(skip(state, headers, body), fields(message_id = %message_id))]
@@ -617,4 +694,93 @@ pub async fn get_reactions_for_dm_messages(
     }
 
     Ok(map)
+}
+
+type ReactionDetailRow = (
+    Option<Uuid>,
+    Option<String>,
+    Option<String>,
+    Uuid,
+    String,
+    String,
+);
+
+async fn fetch_channel_reaction_details(
+    state: &AppState,
+    message_id: Uuid,
+) -> Result<Vec<MessageReactionDetailResponse>, AppError> {
+    let rows: Vec<ReactionDetailRow> = sqlx::query_as(
+        "SELECT
+            r.emoji_id,
+            r.unicode_emoji,
+            e.shortcode,
+            u.id AS user_id,
+            u.username,
+            u.display_name
+         FROM reactions r
+         JOIN users u ON u.id = r.user_id
+         LEFT JOIN emojis e ON e.id = r.emoji_id
+         WHERE r.message_id = $1
+         ORDER BY r.created_at ASC",
+    )
+    .bind(message_id)
+    .fetch_all(&state.db)
+    .await?;
+
+    Ok(build_reaction_details(rows))
+}
+
+async fn fetch_dm_reaction_details(
+    state: &AppState,
+    message_id: Uuid,
+) -> Result<Vec<MessageReactionDetailResponse>, AppError> {
+    let rows: Vec<ReactionDetailRow> = sqlx::query_as(
+        "SELECT
+            r.emoji_id,
+            r.unicode_emoji,
+            e.shortcode,
+            u.id AS user_id,
+            u.username,
+            u.display_name
+         FROM dm_reactions r
+         JOIN users u ON u.id = r.user_id
+         LEFT JOIN emojis e ON e.id = r.emoji_id
+         WHERE r.dm_message_id = $1
+         ORDER BY r.created_at ASC",
+    )
+    .bind(message_id)
+    .fetch_all(&state.db)
+    .await?;
+
+    Ok(build_reaction_details(rows))
+}
+
+fn build_reaction_details(rows: Vec<ReactionDetailRow>) -> Vec<MessageReactionDetailResponse> {
+    let mut details: Vec<MessageReactionDetailResponse> = Vec::new();
+    let mut index_by_key: HashMap<(Option<Uuid>, Option<String>), usize> = HashMap::new();
+
+    for (emoji_id, unicode_emoji, shortcode, user_id, username, display_name) in rows {
+        let key = (emoji_id, unicode_emoji.clone());
+        let detail_index = if let Some(index) = index_by_key.get(&key) {
+            *index
+        } else {
+            details.push(MessageReactionDetailResponse {
+                emoji_id,
+                unicode_emoji: unicode_emoji.clone(),
+                shortcode,
+                users: Vec::new(),
+            });
+            let next_index = details.len() - 1;
+            index_by_key.insert(key, next_index);
+            next_index
+        };
+
+        details[detail_index].users.push(ReactionUserResponse {
+            user_id,
+            username,
+            display_name,
+        });
+    }
+
+    details
 }
