@@ -625,6 +625,15 @@ impl MediaService {
 
         entry.native_transports_by_producer.remove(producer_id);
 
+        for (other_conn_id, other_entry) in media_state.iter_mut() {
+            if *other_conn_id == connection_id || other_entry.channel_id != channel_id {
+                continue;
+            }
+            other_entry.consumers.retain(|_cid, consumer| {
+                consumer.producer_id().to_string() != producer_id
+            });
+        }
+
         Ok(ClosedProducer {
             channel_id,
             producer_id: producer_id.to_string(),
@@ -641,6 +650,19 @@ impl MediaService {
         let Some(removed) = removed else {
             return Vec::new();
         };
+
+        let closed_producer_ids: Vec<String> = removed.producers.keys().cloned().collect();
+
+        if !closed_producer_ids.is_empty() {
+            for entry in media_state.values_mut() {
+                if entry.channel_id != removed.channel_id {
+                    continue;
+                }
+                entry.consumers.retain(|_cid, consumer| {
+                    !closed_producer_ids.contains(&consumer.producer_id().to_string())
+                });
+            }
+        }
 
         removed
             .producers

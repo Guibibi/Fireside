@@ -93,6 +93,7 @@ export const transportHealthSubscribers = new Set<(state: TransportHealthState) 
 export const videoTilesSubscribers = new Set<(tiles: RemoteVideoTile[]) => void>();
 export const cameraStateSubscribers = new Set<(snapshot: CameraStateSnapshot) => void>();
 export const screenStateSubscribers = new Set<(snapshot: ScreenShareStateSnapshot) => void>();
+export const audioPlaybackErrorSubscribers = new Set<(username: string | undefined) => void>();
 
 // State setters
 export function setDevice(value: Device | null) { device = value; }

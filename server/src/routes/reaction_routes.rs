@@ -716,7 +716,7 @@ async fn fetch_channel_reaction_details(
             e.shortcode,
             u.id AS user_id,
             u.username,
-            u.display_name
+            COALESCE(u.display_name, u.username) AS display_name
          FROM reactions r
          JOIN users u ON u.id = r.user_id
          LEFT JOIN emojis e ON e.id = r.emoji_id
@@ -741,7 +741,7 @@ async fn fetch_dm_reaction_details(
             e.shortcode,
             u.id AS user_id,
             u.username,
-            u.display_name
+            COALESCE(u.display_name, u.username) AS display_name
          FROM dm_reactions r
          JOIN users u ON u.id = r.user_id
          LEFT JOIN emojis e ON e.id = r.emoji_id

@@ -272,60 +272,75 @@ export async function initializeMediaTransports(channelId: string) {
     }
   }
 
+  const INIT_OVERALL_TIMEOUT_MS = 15_000;
+
   const promise = (async () => {
     setInitializingForChannelId(channelId);
     closeTransports();
 
-    const capabilitiesResponse = await requestMediaSignal(channelId, "get_router_rtp_capabilities");
-    if (capabilitiesResponse.action !== "router_rtp_capabilities") {
-      throw new Error("Unexpected capabilities response from media signaling");
-    }
+    const initWork = (async () => {
+      const capabilitiesResponse = await requestMediaSignal(channelId, "get_router_rtp_capabilities");
+      if (capabilitiesResponse.action !== "router_rtp_capabilities") {
+        throw new Error("Unexpected capabilities response from media signaling");
+      }
 
-    const routerRtpCapabilities = capabilitiesResponse.rtp_capabilities;
-    if (!routerRtpCapabilities) {
-      throw new Error("Router RTP capabilities were not provided by server");
-    }
+      const routerRtpCapabilities = capabilitiesResponse.rtp_capabilities;
+      if (!routerRtpCapabilities) {
+        throw new Error("Router RTP capabilities were not provided by server");
+      }
 
-    const nextDevice = new Device();
-    await nextDevice.load({
-      routerRtpCapabilities: routerRtpCapabilities as Parameters<Device["load"]>[0]["routerRtpCapabilities"],
+      const nextDevice = new Device();
+      await nextDevice.load({
+        routerRtpCapabilities: routerRtpCapabilities as Parameters<Device["load"]>[0]["routerRtpCapabilities"],
+      });
+
+      const sendTransportResponse = await requestMediaSignal(channelId, "create_webrtc_transport", {
+        direction: "send",
+      });
+      const recvTransportResponse = await requestMediaSignal(channelId, "create_webrtc_transport", {
+        direction: "recv",
+      });
+
+      if (sendTransportResponse.action !== "webrtc_transport_created") {
+        throw new Error("Unexpected send transport response from media signaling");
+      }
+
+      if (recvTransportResponse.action !== "webrtc_transport_created") {
+        throw new Error("Unexpected recv transport response from media signaling");
+      }
+
+      const nextSendTransport = nextDevice.createSendTransport(toTransportOptions(sendTransportResponse));
+      const nextRecvTransport = nextDevice.createRecvTransport(toTransportOptions(recvTransportResponse));
+
+      wireTransportConnect(channelId, nextSendTransport);
+      wireTransportConnect(channelId, nextRecvTransport);
+      wireSendTransportProduce(channelId, nextSendTransport);
+      wireTransportConnectionStateMonitor(nextSendTransport);
+      wireTransportConnectionStateMonitor(nextRecvTransport);
+
+      setDevice(nextDevice);
+      setSendTransport(nextSendTransport);
+      setRecvTransport(nextRecvTransport);
+      setTransportHealthState("new");
+      notifyTransportHealthSubscribers();
+      setInitializedForChannelId(channelId);
+      setInitializingForChannelId(null);
+
+      await startLocalAudioProducer(channelId);
+      registerDeviceChangeListener();
+      flushQueuedProducerAnnouncements(channelId);
+    })();
+
+    const overallTimeout = new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error("Media transport initialization timed out")), INIT_OVERALL_TIMEOUT_MS);
     });
 
-    const sendTransportResponse = await requestMediaSignal(channelId, "create_webrtc_transport", {
-      direction: "send",
-    });
-    const recvTransportResponse = await requestMediaSignal(channelId, "create_webrtc_transport", {
-      direction: "recv",
-    });
-
-    if (sendTransportResponse.action !== "webrtc_transport_created") {
-      throw new Error("Unexpected send transport response from media signaling");
+    try {
+      await Promise.race([initWork, overallTimeout]);
+    } catch (error) {
+      cleanupMediaTransports();
+      throw error;
     }
-
-    if (recvTransportResponse.action !== "webrtc_transport_created") {
-      throw new Error("Unexpected recv transport response from media signaling");
-    }
-
-    const nextSendTransport = nextDevice.createSendTransport(toTransportOptions(sendTransportResponse));
-    const nextRecvTransport = nextDevice.createRecvTransport(toTransportOptions(recvTransportResponse));
-
-    wireTransportConnect(channelId, nextSendTransport);
-    wireTransportConnect(channelId, nextRecvTransport);
-    wireSendTransportProduce(channelId, nextSendTransport);
-    wireTransportConnectionStateMonitor(nextSendTransport);
-    wireTransportConnectionStateMonitor(nextRecvTransport);
-
-    setDevice(nextDevice);
-    setSendTransport(nextSendTransport);
-    setRecvTransport(nextRecvTransport);
-    setTransportHealthState("new");
-    notifyTransportHealthSubscribers();
-    setInitializedForChannelId(channelId);
-    setInitializingForChannelId(null);
-
-    await startLocalAudioProducer(channelId);
-    registerDeviceChangeListener();
-    flushQueuedProducerAnnouncements(channelId);
   })();
 
   setInitializePromise(promise);

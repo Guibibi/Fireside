@@ -1,4 +1,5 @@
 import {
+  audioPlaybackErrorSubscribers,
   cameraEnabled,
   cameraError,
   cameraStateSubscribers,
@@ -118,4 +119,15 @@ export function subscribeTransportHealth(subscriber: (state: TransportHealthStat
   return () => {
     transportHealthSubscribers.delete(subscriber);
   };
+}
+
+export function notifyAudioPlaybackError(username: string | undefined) {
+  for (const subscriber of audioPlaybackErrorSubscribers) {
+    subscriber(username);
+  }
+}
+
+export function subscribeAudioPlaybackError(subscriber: (username: string | undefined) => void): () => void {
+  audioPlaybackErrorSubscribers.add(subscriber);
+  return () => { audioPlaybackErrorSubscribers.delete(subscriber); };
 }

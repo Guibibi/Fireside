@@ -440,9 +440,9 @@
   z-index: 1200;
   width: min(264px, calc(100vw - 16px));
   padding: 0.55rem 0.6rem;
-  border: 1px solid var(--cloud-dark);
-  border-radius: var(--radius-md);
-  background: rgba(17, 22, 34, 0.96);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-xl);
+  background: var(--surface-1);
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.36);
   backdrop-filter: blur(6px);
 }

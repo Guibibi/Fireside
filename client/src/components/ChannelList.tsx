@@ -22,6 +22,7 @@ import {
     stopLocalScreenProducer,
     setMicrophoneMuted,
     setSpeakersMuted,
+    subscribeAudioPlaybackError,
 } from "../api/media";
 import {
     listNativeCaptureSources,
@@ -71,6 +72,7 @@ import {
     clearVoiceRejoinNotice,
     clearVoiceCameraError,
     cameraEnabled,
+    getLastVoiceChannelBeforeDisconnect,
     isVoiceMemberSpeaking,
     joinedVoiceChannelId,
     micMuted,
@@ -78,6 +80,7 @@ import {
     resetVoiceMediaState,
     removeVoiceChannelState,
     setJoinedVoiceChannel,
+    setLastVoiceChannelBeforeDisconnect,
     setVoiceCameraError,
     setVoiceActionState,
     speakerMuted,
@@ -781,6 +784,10 @@ export default function ChannelList() {
         connect();
         startConnectionStatusSubscription();
         startTransportHealthSubscription();
+        const unsubscribeAudioError = subscribeAudioPlaybackError((username) => {
+            const who = username ? `from ${username}` : "";
+            showErrorToast(`Audio playback failed${who ? ` ${who}` : ""}. Check browser autoplay settings.`);
+        });
         void loadInitialChannels();
         void loadInitialDms();
 
@@ -805,6 +812,18 @@ export default function ChannelList() {
         document.addEventListener("visibilitychange", handleVisibilityChange);
 
         const unsubscribe = onMessage((msg) => {
+            if (msg.type === "authenticated") {
+                const channelToRejoin = getLastVoiceChannelBeforeDisconnect();
+                if (channelToRejoin && !joinedVoiceChannelId() && voiceActionState() === "idle") {
+                    setLastVoiceChannelBeforeDisconnect(null);
+                    joinVoiceChannel(channelToRejoin);
+                } else if (channelToRejoin) {
+                    setLastVoiceChannelBeforeDisconnect(null);
+                    showVoiceRejoinNotice();
+                }
+                return;
+            }
+
             if (msg.type === "channel_created") {
                 setChannels((current) => {
                     const next = current.some(
@@ -994,15 +1013,16 @@ export default function ChannelList() {
         });
 
         const unsubscribeClose = onClose(() => {
-            if (!joinedVoiceChannelId()) {
+            const currentVoiceChannel = joinedVoiceChannelId();
+            if (!currentVoiceChannel) {
                 return;
             }
 
+            setLastVoiceChannelBeforeDisconnect(currentVoiceChannel);
             cleanupMediaTransports();
             setJoinedVoiceChannel(null);
             resetVoiceMediaState();
             setVoiceActionState("idle");
-            showVoiceRejoinNotice();
         });
 
         onCleanup(() => {
@@ -1019,6 +1039,7 @@ export default function ChannelList() {
             );
             unsubscribe();
             unsubscribeClose();
+            unsubscribeAudioError();
             stopConnectionStatusSubscription();
             stopTransportHealthSubscription();
             stopScreenSharePreview();

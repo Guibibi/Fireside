@@ -39,6 +39,16 @@ const [streamWatchMode, setStreamWatchMode] = createSignal<StreamWatchMode>("non
 const [watchedStreamProducerId, setWatchedStreamProducerId] = createSignal<string | null>(null);
 const [streamWatchNotice, setStreamWatchNotice] = createSignal<string | null>(null);
 const [transportHealth, setTransportHealth] = createSignal<TransportHealthState>("new");
+let lastVoiceChannelBeforeDisconnect: string | null = null;
+
+export function setLastVoiceChannelBeforeDisconnect(channelId: string | null) {
+  lastVoiceChannelBeforeDisconnect = channelId;
+}
+
+export function getLastVoiceChannelBeforeDisconnect(): string | null {
+  return lastVoiceChannelBeforeDisconnect;
+}
+
 let unsubscribeVideoTiles: (() => void) | null = null;
 let unsubscribeCameraState: (() => void) | null = null;
 let unsubscribeScreenState: (() => void) | null = null;
@@ -324,6 +334,7 @@ export function resetVoiceState() {
   setMicMuted(false);
   setSpeakerMuted(false);
   setVoiceRejoinNotice(false);
+  lastVoiceChannelBeforeDisconnect = null;
   setVoiceConnectionStatus("disconnected");
   setStreamWatchNotice(null);
   stopTransportHealthSubscription();
@@ -377,6 +388,7 @@ export function showVoiceRejoinNotice() {
 
 export function clearVoiceRejoinNotice() {
   setVoiceRejoinNotice(false);
+  lastVoiceChannelBeforeDisconnect = null;
 }
 
 export function toggleMicMuted() {

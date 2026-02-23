@@ -5,95 +5,118 @@ Long-term roadmap and completed milestone tracking live in `PLAN.md`.
 
 ## Active Phase
 
-- Phase 5.1: Message improvements
+- Phase 5.2: Persistent channel unread state
 
 ## Phase Goal
 
-- Improve message navigation and readability without changing protocol contracts.
-- Load recent messages first, then lazily fetch older history while scrolling up.
-- Group consecutive messages from the same author into a single visual block.
+- Ensure channel notification dots/counts remain accurate across disconnects and logouts.
+- Move channel unread tracking from transient websocket-only increments to server-authoritative state.
+- Keep realtime UX responsive while making initial state deterministic on login/session restore.
 
 ## Product Decisions Locked
 
-- Initial channel load targets newest ~20 messages.
-- Timeline stays anchored to latest content on channel open.
-- Grouping applies only to consecutive messages in the same channel by the same author.
-- Grouping breaks on author change and date separator boundaries.
+- Channel unread state is derived from persisted per-user read markers plus message history.
+- Initial channel list load includes unread counts so badges are correct before new WS events arrive.
+- Selecting/reading a channel updates read state on the backend and clears local unread immediately.
+- Realtime websocket events continue to drive incremental updates while connected.
 
 ## Architecture Direction
 
 ### Backend/API
 
-- Reuse existing message list endpoint pagination (`before`, `limit`) as the history primitive.
-- Ensure deterministic ordering for paginated history slices.
-- Keep channel chat payload schemas unchanged.
+- Add persisted channel read marker storage (`channel_read_state`) keyed by `channel_id` + `user_id`.
+- Use `ON DELETE SET NULL` for `last_read_message_id` FK (unlike DM's `RESTRICT`) so message deletion doesn't break read markers.
+- Create a separate `ChannelWithUnread` response type for channel list — `Channel` is shared with WS broadcasts (`ChannelCreated`/`ChannelUpdated`) which go to all users, so per-user `unread_count` cannot live on that struct.
+- Extend channel list responses to include `unread_count` per channel for the requesting user.
+- Exclude self-authored messages from unread counts (mirror DM pattern: `m.author_id <> $user_id`).
+- Auto-update sender's read marker when they send a channel message (mirror DM `handle_send_message` pattern).
+- Add channel read marker update endpoint (or equivalent existing-route extension), e.g. `POST /channels/{channel_id}/read`.
+- Keep websocket contract stable where possible; if adding an unread-specific WS event, update server/client contracts together.
 
 ### Frontend
 
-- Add/extend message pagination state in chat store for:
-  - `has_more`
-  - `oldest_loaded_message_id` (or equivalent cursor)
-  - loading guard to prevent duplicate concurrent fetches
-- Trigger lazy-load when the user nears top of the message scroller.
-- Preserve scroll position when prepending older messages.
-- Render grouped message blocks with:
-  - shared author header for each block
-  - per-message timestamp/details retained inside the block body
+- Initialize channel unread store from API-provided unread counts at channel list load.
+- Stop relying exclusively on `channel_activity` for offline durability.
+- On channel selection/visibility restore, mark channel as read via API and clear local unread state optimistically.
+- Preserve existing badge pulse/cue behavior for live activity while connected.
 
 ## Validation and Constraints
 
-- Preserve existing send/edit/delete behavior.
-- Preserve existing typing/read/realtime update behavior.
-- Keep transport field names in `snake_case`.
-- Avoid introducing regressions in DM and channel context switching.
+- Preserve DM unread behavior and existing DM read marker flows.
+- Keep WS payload `type` values and snake_case field names synchronized (`server/src/ws/messages.rs`, `client/src/api/ws.ts`).
+- Avoid regressions in channel switching, focus/visibility handling, and message loading.
+- Do not break existing notification cues for active live sessions.
 
 ## Iteration Plan (Detailed)
 
-1. Audit existing message fetch flow and pagination semantics.
-2. Add/adjust store state for lazy-load cursor + loading guards.
-3. Implement top-scroll history fetch and prepend merge logic.
-4. Implement consecutive-message grouping in timeline renderer.
-5. Validate scroll anchoring behavior for load/append/prepend cases.
-6. Run frontend validation commands.
+1. Audit current channel unread flow in client (`channel_activity`, local unread store) and backend message broadcast paths.
+2. Add DB migration and backend helpers for per-user channel read markers.
+3. Add backend unread count computation for channel list responses.
+4. Add/extend backend channel read-marker endpoint and integrate with latest visible message semantics.
+5. Wire client channel list bootstrap to server unread counts.
+6. Wire client channel open/focus read-marking to backend and keep optimistic local clear behavior.
+7. Verify websocket/live behavior remains correct for connected sessions.
+8. Run full relevant validation commands.
 
 ## Ordered Checklist
 
-### 5.1.A Message lazy loading
+### 5.2.A Backend persistence and unread computation
 
-- [ ] Confirm current API pagination contract for channel history
-- [ ] Fetch newest ~20 on channel open
-- [ ] Load older history on upward scroll threshold
-- [ ] Prevent duplicate inflight history requests per channel
-- [ ] Preserve viewport position when older messages are prepended
+- [x] Add migration for `channel_read_state` table and indexes (use `ON DELETE SET NULL` for `last_read_message_id` FK)
+- [x] Create `ChannelWithUnread` response type in `models.rs` (keep `Channel` untouched for WS use)
+- [x] Add backend query/helper to compute per-channel unread for current user (exclude self-authored messages)
+- [x] Include `unread_count` in channel list API response via `ChannelWithUnread`
+- [x] Add endpoint/update flow to persist channel read marker for current user
+- [x] Auto-update sender's read marker when they send a channel message
+- [x] Ensure authorization/ownership checks mirror existing channel access rules
 
-### 5.1.B Consecutive message grouping
+### 5.2.B Frontend unread integration
 
-- [ ] Group adjacent messages by same author in timeline rendering
-- [ ] Break groups on author change
-- [ ] Break groups across day/date separator changes
-- [ ] Keep per-message controls/metadata usable inside grouped blocks
+- [x] Extend channel API client types to include `unread_count`
+- [x] Initialize channel unread store from channel list payload
+- [x] On channel open, clear unread locally and submit read marker update (add inline or create `api/channels.ts`)
+- [x] Keep `channel_activity` handling for live increments when channel is not active
+- [x] Preserve existing badge pulse/audio behavior for live activity
 
-### 5.1.C Validation
+### 5.2.C Contract sync and regression checks
 
-- [ ] `npm --prefix client run typecheck`
-- [ ] `npm --prefix client run build`
+- [x] If WS payload changes are needed, sync `server/src/ws/messages.rs` and `client/src/api/ws.ts` (no WS payload changes required)
+- [ ] Verify DM unread flows remain unchanged and correct
+- [ ] Verify channel unread survives logout/login and offline periods
+
+### 5.2.D Validation
+
+- [x] `cargo fmt --all --manifest-path server/Cargo.toml -- --check`
+- [x] `cargo clippy --manifest-path server/Cargo.toml --all-targets -- -D warnings`
+- [x] `cargo test --manifest-path server/Cargo.toml`
+- [x] `npm --prefix client run typecheck`
+- [x] `npm --prefix client run build`
 
 ## Touch Points (Expected)
 
+- `server/migrations/*_channel_read_state*.sql`
+- `server/src/models.rs` (new `ChannelWithUnread` response type)
+- `server/src/routes/channel_routes.rs`
+- `server/src/ws/messages.rs` (only if contract update required)
+- `server/src/ws/handler.rs` (auto-update sender read marker on message send)
+- `client/src/api/channels.ts` (or current channel API module)
 - `client/src/stores/chat.ts`
-- `client/src/components/MessageArea.tsx`
-- `client/src/components/MessageTimeline.tsx`
-- `client/src/styles/messages.css`
+- `client/src/components/ChannelList.tsx`
+- `client/src/api/ws.ts` (only if WS contract update required)
 
 ## Validation Commands
 
+- Backend
+  - `cargo fmt --all --manifest-path server/Cargo.toml -- --check`
+  - `cargo clippy --manifest-path server/Cargo.toml --all-targets -- -D warnings`
+  - `cargo test --manifest-path server/Cargo.toml`
 - Frontend
   - `npm --prefix client run typecheck`
   - `npm --prefix client run build`
 
 ## Exit Criteria
 
-- Opening a channel shows latest messages and starts near bottom.
-- Scrolling upward lazy-loads older messages until history is exhausted.
-- Consecutive messages from one user render as grouped blocks.
-- Existing channel realtime behavior remains stable.
+- Channel unread badges are correct immediately after login/app open without relying on missed WS events.
+- If messages arrive while user is logged out/disconnected, unread badges reflect those messages on next load.
+- Opening a channel marks it read and clears badge consistently across refresh/reconnect.
+- Connected realtime behavior still increments/pulses unread for non-active channels.

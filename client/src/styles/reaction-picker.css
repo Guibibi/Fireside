@@ -1,10 +1,9 @@
 .reaction-picker {
   background: var(--surface-1);
   border: 1px solid var(--border-color);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-xl);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-  padding: 6px;
-  min-width: 176px;
+  padding: 5px;
 }
 
 .reaction-picker-content {
@@ -16,20 +15,20 @@
 .reaction-grid {
   display: grid;
   grid-template-columns: repeat(8, 1fr);
-  gap: 3px;
+  gap: 1px;
 }
 
 .reaction-item {
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
   display: flex;
   align-items: center;
   justify-content: center;
   background: transparent;
   border: none;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   cursor: pointer;
-  font-size: 15px;
+  font-size: 14px;
   padding: 0;
   transition: background 0.15s ease;
 }

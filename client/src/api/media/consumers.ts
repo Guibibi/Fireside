@@ -27,7 +27,7 @@ import {
   setRemotePlaybackAudioContext,
   speakersMuted,
 } from "./state";
-import { notifyVideoTilesSubscribers } from "./subscriptions";
+import { notifyAudioPlaybackError, notifyVideoTilesSubscribers } from "./subscriptions";
 import type { MediaKind, MediaSource, RoutingMode, SinkableAudioElement } from "./types";
 
 const consumeInFlight = new Set<string>();
@@ -261,6 +261,7 @@ export async function consumeRemoteProducer(channelId: string, producerId: strin
               producerId: description.producer_id,
               error: retryError,
             });
+            notifyAudioPlaybackError(producerUsernameById.get(description.producer_id));
           }
         }
       } catch (error) {

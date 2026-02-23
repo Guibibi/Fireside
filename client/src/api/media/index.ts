@@ -40,6 +40,7 @@ export {
 // Re-export subscription functions
 export {
   remoteVideoTiles,
+  subscribeAudioPlaybackError,
   subscribeCameraState,
   subscribeScreenState,
   subscribeTransportHealth,

@@ -350,6 +350,10 @@ async fn update_channel(
     .await?
     .ok_or_else(|| AppError::NotFound("Channel not found".into()))?;
 
+    if channel_kind == ChannelKind::Voice {
+        state.media.invalidate_router(channel_id).await;
+    }
+
     broadcast_global_message(
         &state,
         ServerMessage::ChannelUpdated {

@@ -38,6 +38,7 @@ export {
   stopLocalCameraProducer,
   stopLocalScreenProducer,
   subscribeCameraState,
+  subscribeAudioPlaybackError,
   subscribeScreenState,
   subscribeTransportHealth,
   subscribeVideoTiles,
