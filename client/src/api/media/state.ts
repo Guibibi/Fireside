@@ -58,7 +58,7 @@ export let micLevelAudioContext: AudioContext | null = null;
 export let micLevelSourceNode: MediaStreamAudioSourceNode | null = null;
 export let micLevelAnalyserNode: AnalyserNode | null = null;
 export let micLevelData: Uint8Array | null = null;
-export let micLevelMonitorFrame: number | null = null;
+export let micLevelMonitorFrame: ReturnType<typeof setTimeout> | null = null;
 export let micSpeakingHoldUntil = 0;
 export let micSpeakingLastSent = false;
 
@@ -135,7 +135,7 @@ export function setMicLevelAudioContext(value: AudioContext | null) { micLevelAu
 export function setMicLevelSourceNode(value: MediaStreamAudioSourceNode | null) { micLevelSourceNode = value; }
 export function setMicLevelAnalyserNode(value: AnalyserNode | null) { micLevelAnalyserNode = value; }
 export function setMicLevelData(value: Uint8Array | null) { micLevelData = value; }
-export function setMicLevelMonitorFrame(value: number | null) { micLevelMonitorFrame = value; }
+export function setMicLevelMonitorFrame(value: ReturnType<typeof setTimeout> | null) { micLevelMonitorFrame = value; }
 export function setMicSpeakingHoldUntil(value: number) { micSpeakingHoldUntil = value; }
 export function setMicSpeakingLastSent(value: boolean) { micSpeakingLastSent = value; }
 

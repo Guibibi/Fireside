@@ -29,7 +29,7 @@ function internalReportVoiceActivity(channelId: string, speaking: boolean) {
 
 export function stopMicLevelMonitoring(channelId: string | null) {
   if (micLevelMonitorFrame !== null) {
-    cancelAnimationFrame(micLevelMonitorFrame);
+    clearTimeout(micLevelMonitorFrame);
     setMicLevelMonitorFrame(null);
   }
 
@@ -76,6 +76,7 @@ export function startMicLevelMonitoring(channelId: string, stream: MediaStream) 
 
   const levelThreshold = 0.04;
   const speakingHoldMs = 220;
+  const monitorIntervalMs = 50;
 
   const monitor = () => {
     const currentAnalyser = micLevelAnalyserNode;
@@ -103,8 +104,8 @@ export function startMicLevelMonitoring(channelId: string, stream: MediaStream) 
     const speaking = !microphoneMuted && now <= micSpeakingHoldUntil;
     internalReportVoiceActivity(channelId, speaking);
 
-    setMicLevelMonitorFrame(requestAnimationFrame(monitor));
+    setMicLevelMonitorFrame(setTimeout(monitor, monitorIntervalMs));
   };
 
-  setMicLevelMonitorFrame(requestAnimationFrame(monitor));
+  setMicLevelMonitorFrame(setTimeout(monitor, monitorIntervalMs));
 }
