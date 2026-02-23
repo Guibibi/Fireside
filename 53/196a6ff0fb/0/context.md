@@ -1,0 +1,17 @@
+# Session Context
+
+## User Prompts
+
+### Prompt 1
+
+Can you review the @PLAN-EXECUTION.md ?
+
+### Prompt 2
+
+Yes please
+
+### Prompt 3
+
+For the reaction popup, can you style it better? It doesnt follow the colors and its way too large. I'd like it to be rounder. I'm also getting this error when I hover sometimes: ^[[D2026-02-22T18:07:17.388343Z ERROR yankcord_server::errors: Internal error: error occurred while decoding column 5: unexpected null; try decoding as an `Option`
+2026-02-22T18:07:24.205858Z ERROR yankcord_server::errors: Internal error: error occurred while decoding column 5: unexpected null; try decoding as an `Optio...
+

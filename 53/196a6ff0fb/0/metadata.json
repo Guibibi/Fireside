@@ -1,0 +1,36 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "53196a6ff0fb",
+  "session_id": "5b1d71a8-0cd2-4f75-86ed-f40a4e5d1f8a",
+  "strategy": "manual-commit",
+  "created_at": "2026-02-23T15:47:10.968459411Z",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "PLAN-EXECUTION.md",
+    "client/src/styles/messages.css",
+    "client/src/styles/reaction-picker.css",
+    "server/src/routes/reaction_routes.rs"
+  ],
+  "agent": "Claude Code",
+  "transcript_identifier_at_start": "ce6b7dd5-fe06-476d-811e-0c4715d7d942",
+  "checkpoint_transcript_start": 91,
+  "transcript_lines_at_start": 91,
+  "token_usage": {
+    "input_tokens": 11,
+    "cache_creation_tokens": 13541,
+    "cache_read_tokens": 264163,
+    "output_tokens": 1590,
+    "api_call_count": 7
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-02-23T15:47:10.649403486Z",
+    "agent_lines": 0,
+    "human_added": 525,
+    "human_modified": 51,
+    "human_removed": 0,
+    "total_committed": 537,
+    "agent_percentage": 0
+  },
+  "transcript_path": ".claude/projects/-home-guibibi-projects-yankcord/5b1d71a8-0cd2-4f75-86ed-f40a4e5d1f8a.jsonl"
+}
