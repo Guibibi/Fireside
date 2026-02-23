@@ -1,0 +1,31 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "53196a6ff0fb",
+  "session_id": "ee7ec010-dbd6-4948-8afc-fd015731a85c",
+  "strategy": "manual-commit",
+  "created_at": "2026-02-23T15:47:13.79511971Z",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "VOICE-CHAT-REVIEW.md"
+  ],
+  "agent": "Claude Code",
+  "transcript_identifier_at_start": "6a5d20f7-cd74-4149-aa09-1cd19ec866aa",
+  "token_usage": {
+    "input_tokens": 24,
+    "cache_creation_tokens": 52214,
+    "cache_read_tokens": 417508,
+    "output_tokens": 84,
+    "api_call_count": 12
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-02-23T15:47:13.556997099Z",
+    "agent_lines": 368,
+    "human_added": 220,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 588,
+    "agent_percentage": 62.585034013605444
+  },
+  "transcript_path": ".claude/projects/-home-guibibi-projects-yankcord/ee7ec010-dbd6-4948-8afc-fd015731a85c.jsonl"
+}
