@@ -14,6 +14,7 @@ export interface Channel {
 
 const [activeChannelId, setActiveChannelId] = createSignal<string | null>(null);
 const [activeDmThreadId, setActiveDmThreadId] = createSignal<string | null>(null);
+const [isMobileNavOpen, setIsMobileNavOpen] = createSignal<boolean>(false);
 const [unreadByChannel, setUnreadByChannel] = createSignal<Record<string, number>>({});
 
 export function unreadCount(channelId: string): number {
@@ -71,4 +72,12 @@ export function setActiveDmThread(threadId: string | null) {
   setActiveDmThreadId(threadId);
 }
 
-export { activeChannelId, setActiveChannelId, activeDmThreadId, setActiveDmThreadId };
+export function toggleMobileNav() {
+  setIsMobileNavOpen(!isMobileNavOpen());
+}
+
+export function closeMobileNav() {
+  setIsMobileNavOpen(false);
+}
+
+export { activeChannelId, setActiveChannelId, activeDmThreadId, setActiveDmThreadId, isMobileNavOpen };

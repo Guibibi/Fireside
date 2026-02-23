@@ -42,6 +42,7 @@ import {
     setActiveDmThread,
     setActiveTextChannel,
     unreadCount,
+    closeMobileNav,
 } from "../stores/chat";
 import {
     preferredScreenShareBitrateMode,
@@ -191,7 +192,7 @@ export default function ChannelList() {
         tauriRuntime &&
         (import.meta.env.DEV ||
             window.localStorage.getItem("yankcord_debug_native_sender") ===
-                "1");
+            "1");
     let toastTimer: ReturnType<typeof setTimeout> | null = null;
     let screenSharePreviewVideoRef: HTMLVideoElement | undefined;
     let channelCreateNameInputRef: HTMLInputElement | undefined;
@@ -208,8 +209,8 @@ export default function ChannelList() {
             return selected.kind === "screen"
                 ? "screen"
                 : selected.kind === "application"
-                  ? "application"
-                  : "window";
+                    ? "application"
+                    : "window";
         }
 
         return preferredScreenShareSourceKind();
@@ -288,8 +289,8 @@ export default function ChannelList() {
             ? selected.kind === "screen"
                 ? "screen"
                 : selected.kind === "application"
-                  ? "application"
-                  : "window"
+                    ? "application"
+                    : "window"
             : preferredScreenShareSourceKind();
 
         return {
@@ -463,8 +464,8 @@ export default function ChannelList() {
                 selected.kind === "screen"
                     ? "screen"
                     : selected.kind === "application"
-                      ? "application"
-                      : "window",
+                        ? "application"
+                        : "window",
             );
         }
 
@@ -514,6 +515,7 @@ export default function ChannelList() {
         if (settingsOpen()) {
             closeSettings();
         }
+        closeMobileNav();
 
         setActiveTextChannel(channel.id);
         markChannelReadOptimistically(channel.id);
@@ -561,6 +563,7 @@ export default function ChannelList() {
         if (settingsOpen()) {
             closeSettings();
         }
+        closeMobileNav();
 
         setActiveDmThread(threadId);
         setDmUnreadCount(threadId, 0);
@@ -830,10 +833,10 @@ export default function ChannelList() {
                         (channel) => channel.id === msg.channel.id,
                     )
                         ? current.map((channel) =>
-                              channel.id === msg.channel.id
-                                  ? msg.channel
-                                  : channel,
-                          )
+                            channel.id === msg.channel.id
+                                ? msg.channel
+                                : channel,
+                        )
                         : [...current, msg.channel];
                     const sorted = next.sort((a, b) => a.position - b.position);
                     ensureValidActiveChannel(sorted);
@@ -1476,7 +1479,7 @@ export default function ChannelList() {
                                                                                         }
                                                                                     >
                                                                                         {watchedStreamProducerId() ===
-                                                                                        liveTile().producerId
+                                                                                            liveTile().producerId
                                                                                             ? "Watching"
                                                                                             : "Watch Stream"}
                                                                                     </button>

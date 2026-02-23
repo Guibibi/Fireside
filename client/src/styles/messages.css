@@ -528,12 +528,10 @@
   max-height: 292px;
   aspect-ratio: 16 / 10;
   background:
-    linear-gradient(
-      110deg,
+    linear-gradient(110deg,
       rgba(255, 255, 255, 0.06) 10%,
       rgba(255, 255, 255, 0.14) 22%,
-      rgba(255, 255, 255, 0.06) 34%
-    ),
+      rgba(255, 255, 255, 0.06) 34%),
     rgba(255, 255, 255, 0.04);
   background-size: 220% 100%;
   animation: message-attachment-shimmer 1.6s linear infinite;
@@ -704,6 +702,11 @@
   position: relative;
 }
 
+.message-input-actions {
+  display: flex;
+  gap: var(--space-md);
+}
+
 .message-attach-button {
   display: inline-flex;
   align-items: center;
@@ -815,7 +818,7 @@
 
 .mention-picker {
   position: absolute;
-  left: calc(var(--space-xl) + 44px + var(--space-md));
+  left: calc(var(--space-xl) + 132px + calc(var(--space-md) * 3));
   right: calc(var(--space-xl) + 8.6rem + var(--space-md));
   bottom: calc(var(--space-xl) + 3rem);
   max-height: 13rem;
@@ -851,7 +854,7 @@
 
 @media (max-width: 800px) {
   .mention-picker {
-    left: calc(var(--space-xl) + 44px + var(--space-sm));
+    left: calc(var(--space-xl) + 132px + calc(var(--space-md) * 3));
     right: calc(var(--space-xl) + 5.8rem + var(--space-sm));
     bottom: calc(var(--space-xl) + 3.2rem);
   }

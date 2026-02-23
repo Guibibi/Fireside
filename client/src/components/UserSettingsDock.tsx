@@ -1,6 +1,7 @@
 import { onCleanup, onMount } from "solid-js";
 import { username as currentUsername } from "../stores/auth";
 import { openSettings } from "../stores/settings";
+import { closeMobileNav } from "../stores/chat";
 import UserAvatar from "./UserAvatar";
 import { displayNameFor, upsertUserProfile } from "../stores/userProfiles";
 import { getApiBaseUrl, token } from "../stores/auth";
@@ -68,7 +69,10 @@ export default function UserSettingsDock() {
       <button
         type="button"
         class={`user-dock-settings${hasPendingAppUpdate() ? " user-dock-settings-has-update" : ""}`}
-        onClick={() => openSettings()}
+        onClick={() => {
+          openSettings();
+          closeMobileNav();
+        }}
         aria-label={hasPendingAppUpdate() ? "Open settings, update available" : "Open settings"}
         title="Settings"
       >

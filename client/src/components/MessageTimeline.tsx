@@ -15,7 +15,8 @@ import ReactionPicker from "./ReactionPicker";
 import UserAvatar from "./UserAvatar";
 import type { ChannelMessage, MessageDayGroup, MessageReaction } from "./messageTypes";
 import { isMentioningUsername } from "../utils/mentions";
-import { ZoomIcon, CloseIcon, DownloadIcon, ExternalLinkIcon } from "./icons";
+import { ZoomIcon, CloseIcon, DownloadIcon, ExternalLinkIcon, MenuIcon } from "./icons";
+import { toggleMobileNav } from "../stores/chat";
 import { displayNameFor } from "../stores/userProfiles";
 import { loadEmojis, useEmojiStore } from "../stores/emojis";
 import { errorMessage } from "../utils/error";
@@ -354,6 +355,9 @@ export default function MessageTimeline(props: MessageTimelineProps) {
   return (
     <>
       <header class="message-area-header">
+        <button type="button" class="mobile-nav-toggle" onClick={toggleMobileNav} aria-label="Open menu">
+          <MenuIcon />
+        </button>
         <Show when={props.activeChannel} fallback={<p class="message-area-title">Select a channel</p>}>
           <>
             <p class="message-area-title">

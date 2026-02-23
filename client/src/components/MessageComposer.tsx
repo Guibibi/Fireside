@@ -273,29 +273,83 @@ export default function MessageComposer(props: MessageComposerProps) {
         </div>
       </Show>
       <form class="message-input" onSubmit={props.onSubmit}>
-        <button
-          type="button"
-          class="message-attach-button"
-          onClick={() => fileInputRef?.click()}
-          disabled={!props.activeChannelId || props.isSending || !!props.savingMessageId || !!props.deletingMessageId}
-          aria-label="Add image"
-          title="Add image"
-        >
-          <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true">
-            <path d="M4 4.5A1.5 1.5 0 0 1 5.5 3h9A1.5 1.5 0 0 1 16 4.5v11a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 4 15.5z" fill="none" stroke="currentColor" stroke-width="1.6" />
-            <circle cx="8" cy="8" r="1.3" fill="currentColor" />
-            <path d="M6.5 14 10 10.5l2.2 2.2 1.8-1.8L16 13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
-          </svg>
-        </button>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/jpeg,image/png,image/webp,image/gif"
-          multiple
-          class="message-attach-input"
-          onChange={props.onAttachmentInput}
-          disabled={!props.activeChannelId || props.isSending || !!props.savingMessageId || !!props.deletingMessageId}
-        />
+        <div class="message-input-actions">
+          <button
+            type="button"
+            class="message-attach-button"
+            onClick={() => fileInputRef?.click()}
+            disabled={!props.activeChannelId || props.isSending || !!props.savingMessageId || !!props.deletingMessageId}
+            aria-label="Add image"
+            title="Add image"
+          >
+            <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true">
+              <path d="M4 4.5A1.5 1.5 0 0 1 5.5 3h9A1.5 1.5 0 0 1 16 4.5v11a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 4 15.5z" fill="none" stroke="currentColor" stroke-width="1.6" />
+              <circle cx="8" cy="8" r="1.3" fill="currentColor" />
+              <path d="M6.5 14 10 10.5l2.2 2.2 1.8-1.8L16 13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp,image/gif"
+            multiple
+            class="message-attach-input"
+            onChange={props.onAttachmentInput}
+            disabled={!props.activeChannelId || props.isSending || !!props.savingMessageId || !!props.deletingMessageId}
+          />
+
+          <button
+            type="button"
+            ref={gifButtonRef}
+            class="message-gif-button"
+            onClick={() => setShowGifPicker((v) => !v)}
+            disabled={!props.activeChannelId || props.isSending || !!props.savingMessageId || !!props.deletingMessageId}
+            aria-label="Add GIF"
+            title="Add GIF"
+          >
+            <span class="gif-button-text">GIF</span>
+          </button>
+          <Show when={showGifPicker()}>
+            <Suspense fallback={null}>
+              <GifPicker
+                anchorRef={gifButtonRef}
+                onSelect={(gif) => {
+                  props.onGifSelect?.(gif);
+                  setShowGifPicker(false);
+                }}
+                onClose={() => setShowGifPicker(false)}
+              />
+            </Suspense>
+          </Show>
+
+          <button
+            type="button"
+            ref={emojiButtonRef}
+            class="message-emoji-button"
+            onClick={() => setShowEmojiPicker((v) => !v)}
+            disabled={!props.activeChannelId || props.isSending || !!props.savingMessageId || !!props.deletingMessageId}
+            aria-label="Add emoji"
+            title="Add emoji"
+          >
+            <span class="message-emoji-icon" aria-hidden="true">😊</span>
+          </button>
+          <Show when={showEmojiPicker()}>
+            <Suspense fallback={null}>
+              <EmojiPicker
+                anchorRef={emojiButtonRef}
+                onSelect={(selection) => {
+                  if (selection.type === "unicode") {
+                    insertEmoji(selection.emoji);
+                  } else {
+                    insertEmoji(`:${selection.emoji.shortcode}:`);
+                  }
+                  setShowEmojiPicker(false);
+                }}
+                onClose={() => setShowEmojiPicker(false)}
+              />
+            </Suspense>
+          </Show>
+        </div>
         <input
           type="text"
           placeholder={props.activeChannelId ? "Send a message or share an image..." : "Select a channel to start messaging"}
@@ -413,57 +467,6 @@ export default function MessageComposer(props: MessageComposerProps) {
             </For>
           </div>
         </Show>
-        <button
-          type="button"
-          ref={emojiButtonRef}
-          class="message-emoji-button"
-          onClick={() => setShowEmojiPicker((v) => !v)}
-          disabled={!props.activeChannelId || props.isSending || !!props.savingMessageId || !!props.deletingMessageId}
-          aria-label="Add emoji"
-          title="Add emoji"
-        >
-          <span class="message-emoji-icon" aria-hidden="true">😊</span>
-        </button>
-        <Show when={showEmojiPicker()}>
-          <Suspense fallback={null}>
-            <EmojiPicker
-              anchorRef={emojiButtonRef}
-              onSelect={(selection) => {
-                if (selection.type === "unicode") {
-                  insertEmoji(selection.emoji);
-                } else {
-                  insertEmoji(`:${selection.emoji.shortcode}:`);
-                }
-                setShowEmojiPicker(false);
-              }}
-              onClose={() => setShowEmojiPicker(false)}
-            />
-          </Suspense>
-        </Show>
-
-        <button
-          type="button"
-          ref={gifButtonRef}
-          class="message-gif-button"
-          onClick={() => setShowGifPicker((v) => !v)}
-          disabled={!props.activeChannelId || props.isSending || !!props.savingMessageId || !!props.deletingMessageId}
-          aria-label="Add GIF"
-          title="Add GIF"
-        >
-          <span class="gif-button-text">GIF</span>
-        </button>
-        <Show when={showGifPicker()}>
-          <Suspense fallback={null}>
-            <GifPicker
-              anchorRef={gifButtonRef}
-              onSelect={(gif) => {
-                props.onGifSelect?.(gif);
-                setShowGifPicker(false);
-              }}
-              onClose={() => setShowGifPicker(false)}
-            />
-          </Suspense>
-        </Show>
 
         <button
           type="submit"
@@ -482,3 +485,4 @@ export default function MessageComposer(props: MessageComposerProps) {
     </>
   );
 }
+

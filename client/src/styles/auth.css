@@ -9,6 +9,7 @@
   justify-content: center;
   background: var(--gray-1);
   position: relative;
+  padding: var(--space-xl);
 }
 
 .auth-form {
@@ -71,4 +72,10 @@
 
 .auth-link a:hover {
   text-decoration: underline;
+}
+
+@media (max-width: 620px) {
+  .auth-form {
+    padding: var(--space-2xl) var(--space-xl);
+  }
 }
