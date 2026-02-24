@@ -3,7 +3,7 @@
   "checkpoint_id": "2252b1396837",
   "strategy": "manual-commit",
   "branch": "ui-rework",
-  "checkpoints_count": 2,
+  "checkpoints_count": 6,
   "files_touched": [
     ".claude/settings.local.json",
     "client/src-tauri/src/capture/dxgi_capture.rs",
@@ -16,7 +16,11 @@
     "client/src-tauri/src/capture/service/rtp_packetizer.rs",
     "client/src-tauri/src/capture/service/vp8_encoder.rs",
     "client/src-tauri/src/capture/service/vp9_encoder.rs",
-    "client/src-tauri/src/capture/windows_capture.rs"
+    "client/src-tauri/src/capture/windows_capture.rs",
+    "client/src-tauri/src/main.rs",
+    "client/src/api/media/consumers.ts",
+    "client/src/components/ChannelList.tsx",
+    "client/src/styles/utilities.css"
   ],
   "sessions": [
     {
@@ -25,13 +29,20 @@
       "context": "/22/52b1396837/0/context.md",
       "content_hash": "/22/52b1396837/0/content_hash.txt",
       "prompt": "/22/52b1396837/0/prompt.txt"
+    },
+    {
+      "metadata": "/22/52b1396837/1/metadata.json",
+      "transcript": "/22/52b1396837/1/full.jsonl",
+      "context": "/22/52b1396837/1/context.md",
+      "content_hash": "/22/52b1396837/1/content_hash.txt",
+      "prompt": "/22/52b1396837/1/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 48,
-    "cache_creation_tokens": 88519,
-    "cache_read_tokens": 4153218,
-    "output_tokens": 10958,
-    "api_call_count": 46
+    "input_tokens": 114,
+    "cache_creation_tokens": 153825,
+    "cache_read_tokens": 7670997,
+    "output_tokens": 12829,
+    "api_call_count": 98
   }
 }

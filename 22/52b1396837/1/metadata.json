@@ -1,0 +1,37 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "2252b1396837",
+  "session_id": "7de551d4-42ce-4b00-a374-f6ca4e37f171",
+  "strategy": "manual-commit",
+  "created_at": "2026-02-24T15:24:04.862173027Z",
+  "branch": "ui-rework",
+  "checkpoints_count": 4,
+  "files_touched": [
+    "client/src-tauri/src/capture/service/av1_encoder.rs",
+    "client/src-tauri/src/capture/service/vp8_encoder.rs",
+    "client/src-tauri/src/capture/service/vp9_encoder.rs",
+    "client/src-tauri/src/main.rs",
+    "client/src/api/media/consumers.ts",
+    "client/src/components/ChannelList.tsx",
+    "client/src/styles/utilities.css"
+  ],
+  "agent": "Claude Code",
+  "transcript_identifier_at_start": "1311ff0a-2f47-4b25-982a-eb46619a6d58",
+  "token_usage": {
+    "input_tokens": 66,
+    "cache_creation_tokens": 65306,
+    "cache_read_tokens": 3517779,
+    "output_tokens": 1871,
+    "api_call_count": 52
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-02-24T15:24:04.378340291Z",
+    "agent_lines": 38,
+    "human_added": 1304,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 1342,
+    "agent_percentage": 2.8315946348733236
+  },
+  "transcript_path": ".claude/projects/-home-guibibi-projects-yankcord/7de551d4-42ce-4b00-a374-f6ca4e37f171.jsonl"
+}
