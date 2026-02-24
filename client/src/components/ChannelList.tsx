@@ -16,6 +16,7 @@ import {
     cleanupMediaTransports,
     initializeMediaTransports,
     type ScreenShareStartOptions,
+    retryAudioPlayback,
     startLocalCameraProducer,
     startLocalScreenProducer,
     stopLocalCameraProducer,
@@ -161,6 +162,7 @@ export default function ChannelList() {
     >(undefined);
     const [loadError, setLoadError] = createSignal("");
     const [toastError, setToastError] = createSignal("");
+    const [audioFixNeeded, setAudioFixNeeded] = createSignal(false);
     const [cameraActionPending, setCameraActionPending] = createSignal(false);
     const [screenActionPending, setScreenActionPending] = createSignal(false);
     const [screenShareModalOpen, setScreenShareModalOpen] = createSignal(false);
@@ -787,9 +789,8 @@ export default function ChannelList() {
         connect();
         startConnectionStatusSubscription();
         startTransportHealthSubscription();
-        const unsubscribeAudioError = subscribeAudioPlaybackError((username) => {
-            const who = username ? `from ${username}` : "";
-            showErrorToast(`Audio playback failed${who ? ` ${who}` : ""}. Check browser autoplay settings.`);
+        const unsubscribeAudioError = subscribeAudioPlaybackError(() => {
+            setAudioFixNeeded(true);
         });
         void loadInitialChannels();
         void loadInitialDms();
@@ -1609,6 +1610,29 @@ export default function ChannelList() {
             <Show when={toastError()}>
                 <div class="toast toast-error" role="status" aria-live="polite">
                     {toastError()}
+                </div>
+            </Show>
+            <Show when={audioFixNeeded()}>
+                <div class="toast toast-audio-fix" role="alert" aria-live="assertive">
+                    <span>Can't hear others?</span>
+                    <button
+                        class="toast-audio-fix-btn"
+                        onClick={async () => {
+                            const ok = await retryAudioPlayback();
+                            if (ok) {
+                                setAudioFixNeeded(false);
+                            }
+                        }}
+                    >
+                        Fix Audio
+                    </button>
+                    <button
+                        class="toast-audio-fix-dismiss"
+                        onClick={() => setAudioFixNeeded(false)}
+                        aria-label="Dismiss"
+                    >
+                        &times;
+                    </button>
                 </div>
             </Show>
         </div>

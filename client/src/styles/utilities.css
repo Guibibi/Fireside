@@ -61,6 +61,46 @@
   color: var(--danger);
 }
 
+.toast-audio-fix {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  border-color: var(--warning-dim);
+  color: var(--warning);
+  bottom: var(--space-xl);
+}
+
+.toast-audio-fix-btn {
+  padding: var(--space-xs) var(--space-md);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--accent-border);
+  background: var(--accent-dim);
+  color: var(--accent);
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s var(--ease-soft);
+}
+
+.toast-audio-fix-btn:hover {
+  background: var(--accent-border);
+}
+
+.toast-audio-fix-dismiss {
+  background: none;
+  border: none;
+  color: var(--gray-8);
+  font-size: 1.1rem;
+  cursor: pointer;
+  padding: 0 var(--space-2xs);
+  line-height: 1;
+}
+
+.toast-audio-fix-dismiss:hover {
+  color: var(--pearl);
+}
+
 /* Responsive */
 .mobile-nav-toggle {
   display: none;

@@ -28,6 +28,7 @@ export {
   localScreenShareStream,
   remoteVideoTiles,
   resetPreferredAudioDevices,
+  retryAudioPlayback,
   setMicrophoneMuted,
   setPreferredCameraDevice,
   setPreferredMicrophoneDevice,

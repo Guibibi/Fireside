@@ -37,6 +37,9 @@ export {
   stopLocalScreenProducer,
 } from "./producers";
 
+// Re-export consumer functions
+export { retryAudioPlayback } from "./consumers";
+
 // Re-export subscription functions
 export {
   remoteVideoTiles,

@@ -76,6 +76,10 @@ async function getOrCreateRemotePlaybackAudioContext(): Promise<AudioContext> {
   if (remotePlaybackAudioContext && remotePlaybackAudioContext.state !== "closed") {
     if (remotePlaybackAudioContext.state === "suspended") {
       await remotePlaybackAudioContext.resume();
+      if (remotePlaybackAudioContext.state === "suspended") {
+        console.warn("[media] AudioContext still suspended after resume() — audio may be silent");
+        notifyAudioPlaybackError(undefined);
+      }
     }
     return remotePlaybackAudioContext;
   }
@@ -83,7 +87,30 @@ async function getOrCreateRemotePlaybackAudioContext(): Promise<AudioContext> {
   const nextContext = new AudioContext();
   setRemotePlaybackAudioContext(nextContext);
   await nextContext.resume();
+  if (nextContext.state === "suspended") {
+    console.warn("[media] New AudioContext stuck in suspended state — autoplay policy may be blocking audio");
+    notifyAudioPlaybackError(undefined);
+  }
   return nextContext;
+}
+
+export async function retryAudioPlayback(): Promise<boolean> {
+  if (remotePlaybackAudioContext && remotePlaybackAudioContext.state === "suspended") {
+    await remotePlaybackAudioContext.resume();
+    if (remotePlaybackAudioContext.state === "suspended") {
+      return false;
+    }
+  }
+
+  for (const audio of remoteAudioElements.values()) {
+    try {
+      await audio.play();
+    } catch {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 function maybeCloseRemotePlaybackAudioContext() {
