@@ -1,0 +1,37 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "2252b1396837",
+  "strategy": "manual-commit",
+  "branch": "ui-rework",
+  "checkpoints_count": 2,
+  "files_touched": [
+    ".claude/settings.local.json",
+    "client/src-tauri/src/capture/dxgi_capture.rs",
+    "client/src-tauri/src/capture/mod.rs",
+    "client/src-tauri/src/capture/service.rs",
+    "client/src-tauri/src/capture/service/av1_encoder.rs",
+    "client/src-tauri/src/capture/service/encoder_backend.rs",
+    "client/src-tauri/src/capture/service/ffmpeg_ivf_encoder.rs",
+    "client/src-tauri/src/capture/service/native_sender.rs",
+    "client/src-tauri/src/capture/service/rtp_packetizer.rs",
+    "client/src-tauri/src/capture/service/vp8_encoder.rs",
+    "client/src-tauri/src/capture/service/vp9_encoder.rs",
+    "client/src-tauri/src/capture/windows_capture.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/22/52b1396837/0/metadata.json",
+      "transcript": "/22/52b1396837/0/full.jsonl",
+      "context": "/22/52b1396837/0/context.md",
+      "content_hash": "/22/52b1396837/0/content_hash.txt",
+      "prompt": "/22/52b1396837/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 48,
+    "cache_creation_tokens": 88519,
+    "cache_read_tokens": 4153218,
+    "output_tokens": 10958,
+    "api_call_count": 46
+  }
+}

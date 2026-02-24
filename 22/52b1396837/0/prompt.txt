@@ -1,0 +1,96 @@
+Implement the following plan:
+
+# Capture Module Refactoring Plan
+
+## Context
+
+The `capture/` module has accumulated significant code duplication — particularly ~750 lines of near-identical code across the VP8/VP9/AV1 ffmpeg encoders, and 4 boilerplate-heavy packetizer structs. There's also dead code (`dxgi_capture_new.rs`) and a utility function (`unix_timestamp_ms`) copy-pasted in 3 files. This refactoring consolidates duplicates and removes dead code, reducing ~700 net lines while preserving the exact same public API.
+
+## Steps
+
+### Phase 1: Zero-Risk Cleanup
+
+**Step 1.1 — Delete dead `dxgi_capture_new.rs`**
+- Delete `client/src-tauri/src/capture/dxgi_capture_new.rs` (empty `main()` stub)
+- Remove `pub mod dxgi_capture_new;` from `capture/mod.rs`
+
+**Step 1.2 — Extract `unix_timestamp_ms()` to shared location**
+- Add `pub(crate) fn unix_timestamp_ms()` in `capture/mod.rs`
+- Replace the 3 identical local definitions in:
+  - `dxgi_capture.rs` (inside `#[cfg(windows)]` block)
+  - `windows_capture.rs`
+  - `service/native_sender.rs`
+- Each replaced with `use super::unix_timestamp_ms` or `use crate::capture::unix_timestamp_ms`
+
+### Phase 2: Consolidate ffmpeg IVF Encoders (biggest win)
+
+**Step 2.1 — Create `service/ffmpeg_ivf_encoder.rs`**
+
+A single generic encoder that replaces all three codec-specific files. Structure:
+
+- `FfmpegIvfCodecConfig` — static config struct holding codec-specific parameters (ffmpeg codec name, env var, extra flags, realtime flag, cpu-used value, mime type, log label)
+- `VP8_CONFIG`, `VP9_CONFIG`, `AV1_CONFIG` — static const instances
+- `FfmpegIvfProcess` — generic process struct (replaces `Vp8Process`/`Vp9Process`/`Av1Process`) with shared `drain_stdout`, `next_ivf_frame`, `wait_for_frame_output`, `shutdown` methods
+- `FfmpegIvfEncoderBackend` — generic backend implementing `VideoEncoderBackend` trait
+- `spawn_ffmpeg_ivf_process()` — generic spawn that inserts codec-specific args from config
+- `ensure_encoder_available()` — generic probe using `contains(config.encoder_probe_needle)`
+- `try_build_vp8_backend()`, `try_build_vp9_backend()`, `try_build_av1_backend()` — thin public wrappers to maintain API
+
+Key differences absorbed by config:
+| | VP8 | VP9 | AV1 |
+|---|---|---|---|
+| `-c:v` | `libvpx` | `libvpx-vp9` | `libaom-av1` |
+| realtime flag | `-deadline realtime` | `-deadline realtime` | `-usage realtime` |
+| cpu-used | `6` | `6` | `8` |
+| extra flags | none | `-tile-columns 1 -frame-parallel 0` | none |
+
+**Step 2.2 — Update module declarations & imports**
+- In `service.rs`: replace `mod vp8_encoder; mod vp9_encoder; mod av1_encoder;` with `mod ffmpeg_ivf_encoder;`
+- In `encoder_backend.rs`: update imports to point at `super::ffmpeg_ivf_encoder`
+
+**Step 2.3 — Delete old files**
+- Delete `vp8_encoder.rs`, `vp9_encoder.rs`, `av1_encoder.rs`
+
+**Net:** ~1125 lines → ~400 lines
+
+### Phase 3: Collapse `rtp_packetizer.rs`
+
+Replace 4 near-identical structs (`H264RtpPacketizer`, `Vp8RtpPacketizer`, `Vp9RtpPacketizer`, `Av1RtpPacketizer`) with:
+
+- `RtpCodecKind` enum — `H264 | Vp8 | Vp9 | Av1`
+- `CodecRtpPacketizer` — single struct holding `NativeRtpSender` + `RtpCodecKind`
+- `send_encoded_frames` dispatches via `match self.codec` to the correct `send_*` method
+- All other trait methods are identical and shared
+
+Update `create_packetizer_for_codec()` in `native_sender.rs` to construct `CodecRtpPacketizer` with the appropriate `RtpCodecKind`.
+
+**Net:** ~145 lines → ~45 lines
+
+### Not In Scope
+
+**`native_sender.rs` decomposition** — After the above changes it'll be ~900 lines. The file has strong internal cohesion (every struct is used only by the main worker loop). Splitting would scatter related logic across files for marginal readability gain. Deferring.
+
+## Critical Files
+- `client/src-tauri/src/capture/mod.rs` — add shared util, remove dead module
+- `client/src-tauri/src/capture/dxgi_capture.rs` — remove local `unix_timestamp_ms`
+- `client/src-tauri/src/capture/windows_capture.rs` — remove local `unix_timestamp_ms`
+- `client/src-tauri/src/capture/service.rs` — update module declarations
+- `client/src-tauri/src/capture/service/encoder_backend.rs` — update imports
+- `client/src-tauri/src/capture/service/native_sender.rs` — update imports, simplify packetizer creation
+- `client/src-tauri/src/capture/service/rtp_packetizer.rs` — rewrite to enum dispatch
+- `client/src-tauri/src/capture/service/ffmpeg_ivf_encoder.rs` — NEW, generic encoder
+- `client/src-tauri/src/capture/service/vp8_encoder.rs` — DELETE
+- `client/src-tauri/src/capture/service/vp9_encoder.rs` — DELETE
+- `client/src-tauri/src/capture/service/av1_encoder.rs` — DELETE
+- `client/src-tauri/src/capture/dxgi_capture_new.rs` — DELETE
+
+## Verification
+- `cargo check` after each phase (the project is Windows-targeted, so `cargo check --target x86_64-pc-windows-msvc` if cross-compilation is available)
+- Verify no regressions in the Tauri command API surface (`list_native_capture_sources`, `start_native_capture`, `stop_native_capture`, `native_capture_status`, `native_codec_capabilities`)
+
+
+If you need specific details from before exiting plan mode (like exact code snippets, error messages, or content you generated), read the full transcript at: /home/guibibi/.REDACTED.jsonl
+
+---
+
+/clear
