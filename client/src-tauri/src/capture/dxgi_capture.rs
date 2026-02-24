@@ -2,7 +2,7 @@
 mod imp {
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
-    use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+    use std::time::{Duration, Instant};
 
     use windows::core::Interface;
     use windows::Win32::Graphics::Direct3D::D3D_DRIVER_TYPE_UNKNOWN;
@@ -18,16 +18,10 @@ mod imp {
     };
 
     use crate::capture::gpu_frame::GpuTextureHandle;
+    use crate::capture::unix_timestamp_ms;
     use crate::capture::windows_capture::{
         NativeCaptureSource, NativeCaptureSourceKind, NativeFrameData, NativeFramePacket,
     };
-
-    fn unix_timestamp_ms() -> u64 {
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_millis() as u64)
-            .unwrap_or(0)
-    }
 
     pub struct DxgiCaptureSession {
         device: ID3D11Device,

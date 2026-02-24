@@ -16,7 +16,60 @@ const FRAME_ENCODE_TIMEOUT_MS: u64 = 1_500;
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
-struct Vp8Process {
+struct FfmpegIvfCodecConfig {
+    /// ffmpeg `-c:v` value (e.g. `"libvpx"`, `"libvpx-vp9"`, `"libaom-av1"`)
+    ffmpeg_codec: &'static str,
+    /// Environment variable for overriding the ffmpeg binary path
+    env_var: &'static str,
+    /// Encoder probe: exact token matched as the second whitespace-delimited
+    /// field in `ffmpeg -encoders` output (e.g. `"libvpx"`, `"libaom-av1"`)
+    encoder_probe_token: &'static str,
+    /// Name of the realtime flag (`"-deadline"` or `"-usage"`)
+    realtime_flag: &'static str,
+    /// `-cpu-used` value
+    cpu_used: &'static str,
+    /// Extra codec-specific args appended after the common block
+    extra_args: &'static [&'static str],
+    /// MIME type for the codec descriptor
+    mime_type: &'static str,
+    /// Label used in log messages and backend selection
+    log_label: &'static str,
+}
+
+static VP8_CONFIG: FfmpegIvfCodecConfig = FfmpegIvfCodecConfig {
+    ffmpeg_codec: "libvpx",
+    env_var: "YANKCORD_NATIVE_VP8_FFMPEG_PATH",
+    encoder_probe_token: "libvpx",
+    realtime_flag: "-deadline",
+    cpu_used: "6",
+    extra_args: &["-auto-alt-ref", "0"],
+    mime_type: "video/VP8",
+    log_label: "ffmpeg-vp8",
+};
+
+static VP9_CONFIG: FfmpegIvfCodecConfig = FfmpegIvfCodecConfig {
+    ffmpeg_codec: "libvpx-vp9",
+    env_var: "YANKCORD_NATIVE_VP9_FFMPEG_PATH",
+    encoder_probe_token: "libvpx-vp9",
+    realtime_flag: "-deadline",
+    cpu_used: "6",
+    extra_args: &["-tile-columns", "1", "-frame-parallel", "0"],
+    mime_type: "video/VP9",
+    log_label: "ffmpeg-vp9",
+};
+
+static AV1_CONFIG: FfmpegIvfCodecConfig = FfmpegIvfCodecConfig {
+    ffmpeg_codec: "libaom-av1",
+    env_var: "YANKCORD_NATIVE_AV1_FFMPEG_PATH",
+    encoder_probe_token: "libaom-av1",
+    realtime_flag: "-usage",
+    cpu_used: "8",
+    extra_args: &[],
+    mime_type: "video/AV1",
+    log_label: "ffmpeg-av1",
+};
+
+struct FfmpegIvfProcess {
     child: Child,
     stdin: ChildStdin,
     stdout_rx: Receiver<Vec<u8>>,
@@ -27,7 +80,7 @@ struct Vp8Process {
     height: u32,
 }
 
-impl Vp8Process {
+impl FfmpegIvfProcess {
     fn drain_stdout(&mut self) {
         loop {
             match self.stdout_rx.try_recv() {
@@ -38,14 +91,16 @@ impl Vp8Process {
         }
     }
 
-    fn next_ivf_frame(&mut self) -> Result<Option<Vec<u8>>, String> {
+    fn next_ivf_frame(&mut self, label: &str) -> Result<Option<Vec<u8>>, String> {
         if !self.ivf_header_seen {
             if self.pending_output.len() < 32 {
                 return Ok(None);
             }
 
             if &self.pending_output[..4] != b"DKIF" {
-                return Err("ffmpeg VP8 output is not IVF (DKIF header missing)".to_string());
+                return Err(format!(
+                    "ffmpeg {label} output is not IVF (DKIF header missing)"
+                ));
             }
 
             self.pending_output.drain(0..32);
@@ -72,18 +127,18 @@ impl Vp8Process {
         Ok(Some(frame))
     }
 
-    fn wait_for_frame_output(&mut self) -> Result<Vec<u8>, String> {
+    fn wait_for_frame_output(&mut self, label: &str) -> Result<Vec<u8>, String> {
         let started = Instant::now();
         let timeout = Duration::from_millis(FRAME_ENCODE_TIMEOUT_MS);
 
         loop {
             self.drain_stdout();
-            if let Some(frame) = self.next_ivf_frame()? {
+            if let Some(frame) = self.next_ivf_frame(label)? {
                 return Ok(frame);
             }
 
             if started.elapsed() >= timeout {
-                return Err("timed out waiting for VP8 frame output".to_string());
+                return Err(format!("timed out waiting for {label} frame output"));
             }
 
             thread::sleep(Duration::from_millis(2));
@@ -99,24 +154,30 @@ impl Vp8Process {
     }
 }
 
-pub struct Vp8EncoderBackend {
+pub struct FfmpegIvfEncoderBackend {
+    config: &'static FfmpegIvfCodecConfig,
     ffmpeg_bin: String,
     target_fps: u32,
     target_bitrate_kbps: u32,
-    process: Option<Vp8Process>,
+    process: Option<FfmpegIvfProcess>,
 }
 
-impl Vp8EncoderBackend {
-    fn new(target_fps: Option<u32>, target_bitrate_kbps: Option<u32>) -> Result<Self, String> {
-        let ffmpeg_bin = std::env::var("YANKCORD_NATIVE_VP8_FFMPEG_PATH")
+impl FfmpegIvfEncoderBackend {
+    fn new(
+        config: &'static FfmpegIvfCodecConfig,
+        target_fps: Option<u32>,
+        target_bitrate_kbps: Option<u32>,
+    ) -> Result<Self, String> {
+        let ffmpeg_bin = std::env::var(config.env_var)
             .ok()
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty())
             .unwrap_or_else(|| DEFAULT_FFMPEG_BIN.to_string());
 
-        ensure_vp8_encoder_available(&ffmpeg_bin)?;
+        ensure_encoder_available(&ffmpeg_bin, config)?;
 
         Ok(Self {
+            config,
             ffmpeg_bin,
             target_fps: target_fps.unwrap_or(DEFAULT_TARGET_FPS).max(1),
             target_bitrate_kbps: target_bitrate_kbps
@@ -132,7 +193,7 @@ impl Vp8EncoderBackend {
         }
     }
 
-    fn ensure_process(&mut self, width: u32, height: u32) -> Result<&mut Vp8Process, String> {
+    fn ensure_process(&mut self, width: u32, height: u32) -> Result<&mut FfmpegIvfProcess, String> {
         let need_restart = self
             .process
             .as_ref()
@@ -143,7 +204,8 @@ impl Vp8EncoderBackend {
         }
 
         if self.process.is_none() {
-            self.process = Some(spawn_vp8_process(
+            self.process = Some(spawn_ffmpeg_ivf_process(
+                self.config,
                 &self.ffmpeg_bin,
                 self.target_fps,
                 self.target_bitrate_kbps,
@@ -152,9 +214,9 @@ impl Vp8EncoderBackend {
             )?);
         }
 
-        self.process
-            .as_mut()
-            .ok_or_else(|| "VP8 encoder process unavailable".to_string())
+        self.process.as_mut().ok_or_else(|| {
+            format!("{} encoder process unavailable", self.config.log_label)
+        })
     }
 
     fn encode_once(
@@ -165,32 +227,33 @@ impl Vp8EncoderBackend {
     ) -> Result<Vec<Vec<u8>>, String> {
         let frame_size = width as usize * height as usize * 4;
         if frame_size != bgra.len() {
-            return Err("VP8 input frame size mismatch".to_string());
+            return Err(format!("{} input frame size mismatch", self.config.log_label));
         }
 
+        let label = self.config.log_label;
         let process = self.ensure_process(width, height)?;
         process
             .stdin
             .write_all(bgra)
-            .map_err(|error| format!("failed to write frame to VP8 encoder stdin: {error}"))?;
+            .map_err(|error| format!("failed to write frame to {label} encoder stdin: {error}"))?;
         process
             .stdin
             .flush()
-            .map_err(|error| format!("failed to flush VP8 encoder stdin: {error}"))?;
+            .map_err(|error| format!("failed to flush {label} encoder stdin: {error}"))?;
 
-        let frame = process.wait_for_frame_output()?;
+        let frame = process.wait_for_frame_output(label)?;
         if frame.is_empty() {
-            return Err("ffmpeg VP8 encoder produced an empty frame".to_string());
+            return Err(format!("ffmpeg {label} encoder produced an empty frame"));
         }
 
         Ok(vec![frame])
     }
 }
 
-impl VideoEncoderBackend for Vp8EncoderBackend {
+impl VideoEncoderBackend for FfmpegIvfEncoderBackend {
     fn codec_descriptor(&self) -> CodecDescriptor {
         CodecDescriptor {
-            mime_type: "video/VP8",
+            mime_type: self.config.mime_type,
             clock_rate: 90_000,
             packetization_mode: None,
             profile_level_id: None,
@@ -214,8 +277,8 @@ impl VideoEncoderBackend for Vp8EncoderBackend {
             Err(error) => {
                 shared.encode_errors.fetch_add(1, Ordering::Relaxed);
                 eprintln!(
-                    "[native-sender] event=encode_error backend=ffmpeg-vp8 detail=\"{}\"",
-                    error
+                    "[native-sender] event=encode_error backend={} detail=\"{}\"",
+                    self.config.log_label, error
                 );
                 None
             }
@@ -227,7 +290,7 @@ impl VideoEncoderBackend for Vp8EncoderBackend {
     }
 }
 
-impl Drop for Vp8EncoderBackend {
+impl Drop for FfmpegIvfEncoderBackend {
     fn drop(&mut self) {
         self.restart_process();
     }
@@ -237,13 +300,39 @@ pub fn try_build_vp8_backend(
     target_fps: Option<u32>,
     target_bitrate_kbps: Option<u32>,
 ) -> Result<Box<dyn VideoEncoderBackend>, String> {
-    Ok(Box::new(Vp8EncoderBackend::new(
+    Ok(Box::new(FfmpegIvfEncoderBackend::new(
+        &VP8_CONFIG,
         target_fps,
         target_bitrate_kbps,
     )?))
 }
 
-fn ensure_vp8_encoder_available(ffmpeg_bin: &str) -> Result<(), String> {
+pub fn try_build_vp9_backend(
+    target_fps: Option<u32>,
+    target_bitrate_kbps: Option<u32>,
+) -> Result<Box<dyn VideoEncoderBackend>, String> {
+    Ok(Box::new(FfmpegIvfEncoderBackend::new(
+        &VP9_CONFIG,
+        target_fps,
+        target_bitrate_kbps,
+    )?))
+}
+
+pub fn try_build_av1_backend(
+    target_fps: Option<u32>,
+    target_bitrate_kbps: Option<u32>,
+) -> Result<Box<dyn VideoEncoderBackend>, String> {
+    Ok(Box::new(FfmpegIvfEncoderBackend::new(
+        &AV1_CONFIG,
+        target_fps,
+        target_bitrate_kbps,
+    )?))
+}
+
+fn ensure_encoder_available(
+    ffmpeg_bin: &str,
+    config: &FfmpegIvfCodecConfig,
+) -> Result<(), String> {
     let output = Command::new(ffmpeg_bin)
         .arg("-hide_banner")
         .arg("-encoders")
@@ -262,31 +351,35 @@ fn ensure_vp8_encoder_available(ffmpeg_bin: &str) -> Result<(), String> {
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let has_libvpx_vp8 = stdout.lines().any(|line| {
+    let found = stdout.lines().any(|line| {
         let trimmed = line.trim_start();
         if trimmed.is_empty() {
             return false;
         }
-
         let mut tokens = trimmed.split_whitespace();
         let first = tokens.next();
         let second = tokens.next();
-        matches!(first, Some(flags) if flags.len() == 6) && second == Some("libvpx")
+        matches!(first, Some(flags) if flags.len() == 6)
+            && second == Some(config.encoder_probe_token)
     });
-    if !has_libvpx_vp8 {
-        return Err("ffmpeg is available but libvpx VP8 encoder is missing".to_string());
+    if !found {
+        return Err(format!(
+            "ffmpeg is available but {} encoder is missing",
+            config.ffmpeg_codec
+        ));
     }
 
     Ok(())
 }
 
-fn spawn_vp8_process(
+fn spawn_ffmpeg_ivf_process(
+    config: &FfmpegIvfCodecConfig,
     ffmpeg_bin: &str,
     target_fps: u32,
     target_bitrate_kbps: u32,
     width: u32,
     height: u32,
-) -> Result<Vp8Process, String> {
+) -> Result<FfmpegIvfProcess, String> {
     let mut command = Command::new(ffmpeg_bin);
     #[cfg(target_os = "windows")]
     {
@@ -312,19 +405,23 @@ fn spawn_vp8_process(
         .arg("pipe:0")
         .arg("-an")
         .arg("-c:v")
-        .arg("libvpx")
-        .arg("-deadline")
+        .arg(config.ffmpeg_codec)
+        .arg(config.realtime_flag)
         .arg("realtime")
         .arg("-cpu-used")
-        .arg("6")
+        .arg(config.cpu_used)
         .arg("-row-mt")
         .arg("1")
         .arg("-threads")
         .arg("4")
         .arg("-lag-in-frames")
-        .arg("0")
-        .arg("-auto-alt-ref")
-        .arg("0")
+        .arg("0");
+
+    for arg in config.extra_args {
+        command.arg(arg);
+    }
+
+    command
         .arg("-error-resilient")
         .arg("1")
         .arg("-g")
@@ -346,16 +443,16 @@ fn spawn_vp8_process(
 
     let mut child = command
         .spawn()
-        .map_err(|error| format!("failed to spawn ffmpeg for VP8: {error}"))?;
+        .map_err(|error| format!("failed to spawn ffmpeg for {}: {error}", config.log_label))?;
 
     let stdin = child
         .stdin
         .take()
-        .ok_or_else(|| "ffmpeg VP8 stdin unavailable".to_string())?;
+        .ok_or_else(|| format!("ffmpeg {} stdin unavailable", config.log_label))?;
     let stdout = child
         .stdout
         .take()
-        .ok_or_else(|| "ffmpeg VP8 stdout unavailable".to_string())?;
+        .ok_or_else(|| format!("ffmpeg {} stdout unavailable", config.log_label))?;
 
     let (stdout_tx, stdout_rx) = mpsc::channel::<Vec<u8>>();
     let stdout_thread = thread::spawn(move || {
@@ -374,7 +471,7 @@ fn spawn_vp8_process(
         }
     });
 
-    Ok(Vp8Process {
+    Ok(FfmpegIvfProcess {
         child,
         stdin,
         stdout_rx,
