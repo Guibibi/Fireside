@@ -1,0 +1,30 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "955172faedf7",
+  "strategy": "manual-commit",
+  "branch": "feat/rnnoise-noise-suppression",
+  "checkpoints_count": 3,
+  "files_touched": [
+    ".opencode/skills/yankcord-validation-matrix/SKILL.md",
+    "client/src/api/media/consumers.ts",
+    "client/src/api/media/devices.ts",
+    "client/src/api/media/state.ts",
+    "client/src/api/media/transports.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/95/5172faedf7/0/metadata.json",
+      "transcript": "/95/5172faedf7/0/full.jsonl",
+      "context": "/95/5172faedf7/0/context.md",
+      "content_hash": "/95/5172faedf7/0/content_hash.txt",
+      "prompt": "/95/5172faedf7/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 79,
+    "cache_creation_tokens": 158161,
+    "cache_read_tokens": 4010006,
+    "output_tokens": 17106,
+    "api_call_count": 70
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "955172faedf7",
+  "session_id": "69f62152-fc75-495f-98c3-e4e3e2474bb6",
+  "strategy": "manual-commit",
+  "created_at": "2026-02-25T04:53:47.386140802Z",
+  "branch": "feat/rnnoise-noise-suppression",
+  "checkpoints_count": 3,
+  "files_touched": [
+    ".opencode/skills/yankcord-validation-matrix/SKILL.md",
+    "client/src/api/media/consumers.ts",
+    "client/src/api/media/devices.ts",
+    "client/src/api/media/state.ts",
+    "client/src/api/media/transports.ts"
+  ],
+  "agent": "Claude Code",
+  "transcript_identifier_at_start": "0dd16321-eabe-4780-864c-adce09288309",
+  "token_usage": {
+    "input_tokens": 79,
+    "cache_creation_tokens": 158161,
+    "cache_read_tokens": 4010006,
+    "output_tokens": 17106,
+    "api_call_count": 70
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-02-25T04:53:47.076093539Z",
+    "agent_lines": 0,
+    "human_added": 287,
+    "human_modified": 248,
+    "human_removed": 0,
+    "total_committed": 287,
+    "agent_percentage": 0
+  },
+  "transcript_path": ".claude/projects/-home-guibibi-projects-yankcord/69f62152-fc75-495f-98c3-e4e3e2474bb6.jsonl"
+}
