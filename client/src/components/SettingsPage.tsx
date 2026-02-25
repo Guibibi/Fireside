@@ -21,7 +21,7 @@ import {
   updateVoiceNormalizationNodesEnabled,
 } from "../api/media/consumers";
 import { disconnect } from "../api/ws";
-import { updateOutgoingMicrophoneGain } from "../api/media/microphoneProcessing";
+import { updateOutgoingMicrophoneGain, updateRnnoiseEnabled } from "../api/media/microphoneProcessing";
 import {
   clearAuth,
   getApiBaseUrl,
@@ -380,7 +380,7 @@ export default function SettingsPage() {
   function handleVoiceNoiseSuppressionToggle(event: Event) {
     const enabled = (event.currentTarget as HTMLInputElement).checked;
     saveVoiceNoiseSuppressionEnabled(enabled);
-    void applyUpdatedMicrophoneConstraints();
+    void updateRnnoiseEnabled(enabled);
   }
 
   function handleVoiceEchoCancellationToggle(event: Event) {

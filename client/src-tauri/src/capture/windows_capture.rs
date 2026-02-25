@@ -11,7 +11,7 @@ use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
 #[cfg(target_os = "windows")]
 use std::sync::{Mutex, OnceLock};
 #[cfg(target_os = "windows")]
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 use tauri::Window;
 
 #[cfg(target_os = "windows")]
@@ -142,12 +142,7 @@ fn frame_sink() -> &'static Mutex<Option<SyncSender<NativeFramePacket>>> {
 }
 
 #[cfg(target_os = "windows")]
-fn unix_timestamp_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_millis() as u64)
-        .unwrap_or(0)
-}
+use super::unix_timestamp_ms;
 
 #[cfg(target_os = "windows")]
 fn dispatch_frame(packet: NativeFramePacket) {

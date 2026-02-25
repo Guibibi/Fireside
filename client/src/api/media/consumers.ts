@@ -1,7 +1,6 @@
 import type { Transport } from "mediasoup-client/types";
 import {
   preferredAudioOutputDeviceId,
-  voiceAutoLevelEnabled,
   voiceIncomingVolume,
 } from "../../stores/settings";
 import { clampUserVolume, getUserVolume } from "../../stores/userVolume";
@@ -70,28 +69,6 @@ function ensureAudioElement(consumerId: string): HTMLAudioElement {
 
   remoteAudioElements.set(consumerId, audio);
   return audio;
-}
-
-async function getOrCreateRemotePlaybackAudioContext(): Promise<AudioContext> {
-  if (remotePlaybackAudioContext && remotePlaybackAudioContext.state !== "closed") {
-    if (remotePlaybackAudioContext.state === "suspended") {
-      await remotePlaybackAudioContext.resume();
-      if (remotePlaybackAudioContext.state === "suspended") {
-        console.warn("[media] AudioContext still suspended after resume() — audio may be silent");
-        notifyAudioPlaybackError(undefined);
-      }
-    }
-    return remotePlaybackAudioContext;
-  }
-
-  const nextContext = new AudioContext();
-  setRemotePlaybackAudioContext(nextContext);
-  await nextContext.resume();
-  if (nextContext.state === "suspended") {
-    console.warn("[media] New AudioContext stuck in suspended state — autoplay policy may be blocking audio");
-    notifyAudioPlaybackError(undefined);
-  }
-  return nextContext;
 }
 
 export async function retryAudioPlayback(): Promise<boolean> {
@@ -249,28 +226,15 @@ export async function consumeRemoteProducer(channelId: string, producerId: strin
           consumer_id: consumer.id,
         });
 
-        const audioCtx = await getOrCreateRemotePlaybackAudioContext();
-        const rawStream = new MediaStream([consumer.track]);
-        const source = audioCtx.createMediaStreamSource(rawStream);
-        consumerSourceNodes.set(consumer.id, source);
-
-        const gainNode = audioCtx.createGain();
-        consumerGainNodes.set(consumer.id, gainNode);
-
-        const normalizationNode = audioCtx.createDynamicsCompressor();
-        configureNormalizationNode(normalizationNode, voiceAutoLevelEnabled());
-        consumerNormalizationNodes.set(consumer.id, normalizationNode);
+        // Play the raw consumer track directly through the audio element.
+        // WebView2's createMediaStreamSource() fails to produce audio when the
+        // mediasoup consumer track starts in a muted state (before RTP arrives).
+        audio.srcObject = new MediaStream([consumer.track]);
 
         const userVolUsername = producerUsernameById.get(description.producer_id);
         const volume = userVolUsername ? getUserVolume(userVolUsername) : 100;
-        gainNode.gain.value = gainValueForVolume(volume);
+        audio.volume = Math.min(1, gainValueForVolume(volume));
 
-        const destination = audioCtx.createMediaStreamDestination();
-        source.connect(normalizationNode);
-        normalizationNode.connect(gainNode);
-        gainNode.connect(destination);
-
-        audio.srcObject = destination.stream;
         try {
           await audio.play();
         } catch (playError) {
@@ -324,19 +288,25 @@ export async function consumeRemoteProducer(channelId: string, producerId: strin
 
 export function updateUserGainNodes(username: string, volume: number) {
   const gain = gainValueForVolume(volume);
-  for (const [consumerId, gainNode] of consumerGainNodes) {
-    if (consumerUsernameByConsumerId.get(consumerId) === username) {
-      gainNode.gain.value = gain;
+  for (const [consumerId, name] of consumerUsernameByConsumerId) {
+    if (name === username) {
+      const audio = remoteAudioElements.get(consumerId);
+      if (audio) {
+        audio.volume = Math.min(1, gain);
+      }
     }
   }
 }
 
 export function updateIncomingVoiceGainNodes(volume: number) {
   const globalIncoming = clampVoiceVolume(volume) / 100;
-  for (const [consumerId, gainNode] of consumerGainNodes) {
+  for (const [consumerId] of consumerUsernameByConsumerId) {
     const username = consumerUsernameByConsumerId.get(consumerId);
     const userVolume = username ? getUserVolume(username) : 100;
-    gainNode.gain.value = (clampUserVolume(userVolume) / 100) * globalIncoming;
+    const audio = remoteAudioElements.get(consumerId);
+    if (audio) {
+      audio.volume = Math.min(1, (clampUserVolume(userVolume) / 100) * globalIncoming);
+    }
   }
 }
 

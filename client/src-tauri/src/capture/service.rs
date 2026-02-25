@@ -1,5 +1,5 @@
-mod av1_encoder;
 mod encoder_backend;
+mod ffmpeg_ivf_encoder;
 mod h264_encoder;
 mod metrics;
 mod native_sender;
@@ -7,8 +7,6 @@ mod nvenc_encoder;
 mod nvenc_sdk;
 mod rtp_packetizer;
 mod rtp_sender;
-mod vp8_encoder;
-mod vp9_encoder;
 
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, Ordering};

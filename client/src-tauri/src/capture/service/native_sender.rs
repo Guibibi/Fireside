@@ -10,9 +10,7 @@ use super::encoder_backend::{
     create_encoder_backend_for_codec, create_openh264_backend, NativeCodecTarget,
 };
 use super::metrics::NativeSenderSharedMetrics;
-use super::rtp_packetizer::{
-    Av1RtpPacketizer, H264RtpPacketizer, RtpPacketizer, Vp8RtpPacketizer, Vp9RtpPacketizer,
-};
+use super::rtp_packetizer::{CodecRtpPacketizer, RtpCodecKind, RtpPacketizer};
 
 const FAILURE_WINDOW_MS: u64 = 12_000;
 const ENCODE_FAILURE_THRESHOLD: u64 = 18;
@@ -45,42 +43,27 @@ fn create_packetizer_for_codec(
     payload_type: u8,
     ssrc: u32,
 ) -> Result<Box<dyn RtpPacketizer>, String> {
-    if mime_type.eq_ignore_ascii_case("video/h264") {
-        return Ok(Box::new(H264RtpPacketizer::new(
-            target_rtp,
-            payload_type,
-            ssrc,
-        )));
-    }
+    let codec = if mime_type.eq_ignore_ascii_case("video/h264") {
+        RtpCodecKind::H264
+    } else if mime_type.eq_ignore_ascii_case("video/vp8") {
+        RtpCodecKind::Vp8
+    } else if mime_type.eq_ignore_ascii_case("video/vp9") {
+        RtpCodecKind::Vp9
+    } else if mime_type.eq_ignore_ascii_case("video/av1") {
+        RtpCodecKind::Av1
+    } else {
+        return Err(format!(
+            "Unsupported native RTP packetizer codec: {}",
+            mime_type
+        ));
+    };
 
-    if mime_type.eq_ignore_ascii_case("video/vp8") {
-        return Ok(Box::new(Vp8RtpPacketizer::new(
-            target_rtp,
-            payload_type,
-            ssrc,
-        )));
-    }
-
-    if mime_type.eq_ignore_ascii_case("video/vp9") {
-        return Ok(Box::new(Vp9RtpPacketizer::new(
-            target_rtp,
-            payload_type,
-            ssrc,
-        )));
-    }
-
-    if mime_type.eq_ignore_ascii_case("video/av1") {
-        return Ok(Box::new(Av1RtpPacketizer::new(
-            target_rtp,
-            payload_type,
-            ssrc,
-        )));
-    }
-
-    Err(format!(
-        "Unsupported native RTP packetizer codec: {}",
-        mime_type
-    ))
+    Ok(Box::new(CodecRtpPacketizer::new(
+        codec,
+        target_rtp,
+        payload_type,
+        ssrc,
+    )))
 }
 
 #[derive(Debug, Clone)]
@@ -275,12 +258,7 @@ impl FailureWindowState {
     }
 }
 
-fn unix_timestamp_ms() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|duration| duration.as_millis() as u64)
-        .unwrap_or(0)
-}
+use crate::capture::unix_timestamp_ms;
 
 fn trigger_native_fallback(reason: &str, source_id: &str, shared: &NativeSenderSharedMetrics) {
     shared

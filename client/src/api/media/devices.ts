@@ -9,6 +9,7 @@ import {
   savePreferredAudioInputDeviceId,
   savePreferredAudioOutputDeviceId,
   savePreferredCameraDeviceId,
+  voiceNoiseSuppressionEnabled,
   voiceOutgoingVolume,
 } from "../../stores/settings";
 import { audioInputConstraint, cameraInputConstraint } from "./constraints";
@@ -46,6 +47,7 @@ import {
   createProcessedMicrophoneTrack,
   disposePendingMicrophoneProcessing,
   updateOutgoingMicrophoneGain,
+  type MicrophoneProcessingSession,
 } from "./microphoneProcessing";
 
 export function isSpeakerSelectionSupported(): boolean {
@@ -130,10 +132,10 @@ export async function setPreferredMicrophoneDevice(deviceId: string | null) {
 
   const previousStream = micStream;
   const previousTrack = micTrack;
-  let processingSession: ReturnType<typeof createProcessedMicrophoneTrack> | null = null;
+  let processingSession: MicrophoneProcessingSession | null = null;
 
   try {
-    processingSession = createProcessedMicrophoneTrack(nextStream, voiceOutgoingVolume(), microphoneMuted);
+    processingSession = await createProcessedMicrophoneTrack(nextStream, voiceOutgoingVolume(), microphoneMuted, voiceNoiseSuppressionEnabled());
 
     if (micProducer) {
       await micProducer.replaceTrack({ track: processingSession.track });
