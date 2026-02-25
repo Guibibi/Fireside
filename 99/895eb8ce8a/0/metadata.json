@@ -1,0 +1,36 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "99895eb8ce8a",
+  "session_id": "69f62152-fc75-495f-98c3-e4e3e2474bb6",
+  "strategy": "manual-commit",
+  "created_at": "2026-02-25T15:45:17.675848159Z",
+  "branch": "main",
+  "checkpoints_count": 0,
+  "files_touched": [
+    "client/src/api/media/consumers.ts",
+    "client/src/api/media/devices.ts",
+    "client/src/api/media/state.ts",
+    "client/src/api/media/transports.ts"
+  ],
+  "agent": "Claude Code",
+  "transcript_identifier_at_start": "0dd16321-eabe-4780-864c-adce09288309",
+  "checkpoint_transcript_start": 402,
+  "transcript_lines_at_start": 402,
+  "token_usage": {
+    "input_tokens": 8,
+    "cache_creation_tokens": 2028,
+    "cache_read_tokens": 605488,
+    "output_tokens": 280,
+    "api_call_count": 6
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-02-25T15:45:17.352568998Z",
+    "agent_lines": 0,
+    "human_added": 5,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 5,
+    "agent_percentage": 0
+  },
+  "transcript_path": ".claude/projects/-home-guibibi-projects-yankcord/69f62152-fc75-495f-98c3-e4e3e2474bb6.jsonl"
+}

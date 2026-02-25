@@ -1,0 +1,60 @@
+We're still having issues with tauri clients not receiving ANY audio when connected to the voice chat...
+
+---
+
+Where did you base yourself for this changes?
+
+---
+
+Can you stash al lthe changes you just did, then add the diagnostic loggin
+
+---
+
+[Request interrupted by user for tool use]
+
+---
+
+Here what the log gave us: consumers.ts:248 [media:diag] consumer.track initial state {consumerId: '544e9771-025c-435c-bc4c-c8e768b6d2db', producerId: '5d867a33-eec9-4872-bc1a-3d38f7275dfc', trackId: '544e9771-025c-435c-bc4c-c8e768b6d2db', kind: 'audio', readyState: 'live', …}
+consumers.ts:274 [media:diag] after media_resume_consumer {consumerId: '544e9771-025c-435c-bc4c-c8e768b6d2db', trackReadyState: 'live', trackMuted: true}
+consumers.ts:283 [media:diag] AudioContext state {state: 'running', sampleRate: 48000, baseLatency: 0.01}
+consumers.ts:293 [media:diag] rawStream tracks {trackCount: 1, tracks: Array(1)}
+consumers.ts:324 [media:diag] destination.stream tracks {trackCount: 1, tracks: Array(1)}
+consumers.ts:337 [media:diag] audio element before play {consumerId: '544e9771-025c-435c-bc4c-c8e768b6d2db', muted: false, volume: 1, paused: true, readyState: 0, …}
+consumers.ts:350 [media:diag] audio element after play {consumerId: '544e9771-025c-435c-bc4c-c8e768b6d2db', paused: false, readyState: 4, currentTime: 0}
+consumers.ts:265 [media:diag] consumer track UNMUTED {consumerId: '544e9771-025c-435c-bc4c-c8e768b6d2db'}
+consumers.ts:370 [media:diag] audio level check {consumerId: '544e9771-025c-435c-bc4c-c8e768b6d2db', rms: '0.000000', peak: '0.000000', audioCtxState: 'running', audioPaused: false, …}
+consumers.ts:370 [media:diag] audio level check {consumerId: '544e9771-025c-435c-bc4c-c8e768b6d2db', rms: '0.000000', peak: '0.000000', audioCtxState: 'running', audioPaused: false, …}
+consumers.ts:370 [media:diag] audio level check {consumerId: '544e9771-025c-435c-bc4c-c8e768b6d2db', rms: '0.000000', peak: '0.000000', audioCtxState: 'running', audioPaused: false, …}
+consumers.ts:370 [media:diag] audio level check {consumerId: '544e9771-025c-435c-bc4c-c8e768b6d2db', rms: '0.000000', peak: '0.000000', audioCtxState: 'running', audioPaused: false, …}
+consumers.ts:370 [media:diag] audio level check {consumerId: '544e9771-025c-435c-bc4c-c8e768b6d2db', rms: '0.000000', peak: '0.000000', audioCtxState: 'running', audioPaused: false, …}
+consumers.ts:370 [media:diag] audio level check {consumerId: '544e9771-025c-435c-bc4c-c8e768b6d2db', rms: '0.000000', peak: '0.000000', audioCtxState: 'running', audioPaused: false, …}
+consumers.ts:370 [media:diag] audio level check {consumerId: '544e9771-025c-435c-bc4c-c8e768b6d2db', rms: '0.000000', peak: '0.000000', audioCtxState: 'running', audioPaused: false, …}
+consumers.ts:370 [media:diag] audio level check {consumerId: '544e9771-025c-435c-bc4c-c8e768b6d2db', rms: '0.000000', peak: '0.000000', audioCtxState: 'running', audioPaused: false, …}
+consumers.ts:370 [media:diag] audio level check {consumerId: '544e9771-025c-435c-bc4c-c8e768b6d2db', rms: '0.000000', peak: '0.000000', audioCtxState: 'running', audioPaused: false, …}
+consumers.ts:370 [media:diag] audio level check {consumerId: '544e9771-025c-435c-bc4c-c8e768b6d2db', rms: '0.000000', peak: '0.000000', audioCtxState: 'running', audioPaused: false, …}
+consumers.ts:248 [media:diag] consumer.track initial state {consumerId: '23366ff7-8da0-4bca-9db3-0de9bb5f2e8e', producerId: 'b02d057f-1cb4-4222-a167-b343951095ce', trackId: '23366ff7-8da0-4bca-9db3-0de9bb5f2e8e', kind: 'audio', readyState: 'live', …}
+consumers.ts:274 [media:diag] after media_resume_consumer {consumerId: '23366ff7-8da0-4bca-9db3-0de9bb5f2e8e', trackReadyState: 'live', trackMuted: true}
+consumers.ts:283 [media:diag] AudioContext state {state: 'running', sampleRate: 48000, baseLatency: 0.01}
+consumers.ts:293 [media:diag] rawStream tracks {trackCount: 1, tracks: Array(1)}
+consumers.ts:324 [media:diag] destination.stream tracks {trackCount: 1, tracks: Array(1)}
+consumers.ts:337 [media:diag] audio element before play {consumerId: '23366ff7-8da0-4bca-9db3-0de9bb5f2e8e', muted: false, volume: 1, paused: false, readyState: 0, …}
+consumers.ts:350 [media:diag] audio element after play {consumerId: '23366ff7-8da0-4bca-9db3-0de9bb5f2e8e', paused: false, readyState: 4, currentTime: 0}
+consumers.ts:265 [media:diag] consumer track UNMUTED {consumerId: '23366ff7-8da0-4bca-9db3-0de9bb5f2e8e'}
+consumers.ts:370 [media:diag] audio level check {consumerId: '23366ff7-8da0-4bca-9db3-0de9bb5f2e8e', rms: '0.000000', peak: '0.000000', audioCtxState: 'running', audioPaused: false, …}
+consumers.ts:370 [media:diag] audio level check {consumerId: '23366ff7-8da0-4bca-9db3-0de9bb5f2e8e', rms: '0.000000', peak: '0.000000', audioCtxState: 'running', audioPaused: false, …}
+consumers.ts:370 [media:diag] audio level check {consumerId: '23366ff7-8da0-4bca-9db3-0de9bb5f2e8e', rms: '0.000000', peak: '0.000000', audioCtxState: 'running', audioPaused: false, …}
+consumers.ts:370 [media:diag] audio level check {consumerId: '23366ff7-8da0-4bca-9db3-0de9bb5f2e8e', rms: '0.000000', peak: '0.000000', audioCtxState: 'running', audioPaused: false, …}
+consumers.ts:370 [media:diag] audio level check {consumerId: '23366ff7-8da0-4bca-9db3-0de9bb5f2e8e', rms: '0.000000', peak: '0.000000', audioCtxState: 'running', audioPaused: false, …}
+consumers.ts:370 [media:diag] audio level check {consumerId: '23366ff7-8da0-4bca-9db3-0de9bb5f2e8e', rms: '0.000000', peak: '0.000000', audioCtxState: 'running', audioPaused: false, …}
+consumers.ts:370 [media:diag] audio level check {consumerId: '23366ff7-8da0-4bca-9db3-0de9bb5f2e8e', rms: '0.000000', peak: '0.000000', audioCtxState: 'running', audioPaused: false, …}
+consumers.ts:370 [media:diag] audio level check {consumerId: '23366ff7-8da0-4bca-9db3-0de9bb5f2e8e', rms: '0.000000', peak: '0.000000', audioCtxState: 'running', audioPaused: false, …}
+consumers.ts:370 [media:diag] audio level check {consumerId: '23366ff7-8da0-4bca-9db3-0de9bb5f2e8e', rms: '0.000000', peak: '0.000000', audioCtxState: 'running', audioPaused: false, …}
+consumers.ts:370 [media:diag] audio level check {consumerId: '23366ff7-8da0-4bca-9db3-0de9bb5f2e8e', rms: '0.000000', peak: '0.000000', audioCtxState: 'running', audioPaused: false, …}
+
+---
+
+that fixed it commit it and tag it with the next release
+
+---
+
+I just pushed it and merged it, but the workflow for building a new release didnt trigger. can we fix this
