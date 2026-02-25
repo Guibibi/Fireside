@@ -1,0 +1,13 @@
+So we have some noice cancelattion from webrtc, but its not superb, compared to something like discord. Do we have way to improve this?
+
+---
+
+Will that work with both the tauri client and the web client?
+
+---
+
+Yes, but please plan it with opus, and then have a sonnet agent or agents implement it
+
+---
+
+[Request interrupted by user for tool use]
