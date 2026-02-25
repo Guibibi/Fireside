@@ -1,0 +1,113 @@
+Implement the following plan:
+
+# Fireside Rebrand Plan
+
+## Context
+
+The project's GitHub repo is already named "Fireside" and the README uses the Fireside name, but all internal code, configs, and deployment scripts still use "yankcord" / "Yankcord" / "YANKCORD". This plan renames every occurrence to "fireside" / "Fireside" / "FIRESIDE" for a complete, clean rebrand. The live `server/.env` file is intentionally excluded.
+
+**Scope:** ~38 files + 1 directory rename, ~133 individual edits.
+
+---
+
+## Phase 1: Rust Server (build-critical)
+
+| File | Change |
+|------|--------|
+| `server/Cargo.toml` | `name = "yankcord-server"` -> `"fireside-server"` |
+| `server/src/main.rs` | Default RUST_LOG `yankcord_server` -> `fireside_server`, startup message `"Yankcord"` -> `"Fireside"` |
+| `server/src/routes/embed_routes.rs` | User-agent `YankcordBot/1.0 (+https://yankcord.local)` -> `FiresideBot/1.0 (+https://fireside.local)` (2 occurrences) |
+
+`server/Cargo.lock` will auto-regenerate on `cargo build`.
+
+**Verify:** `cargo build` and `cargo test` in `server/`
+
+## Phase 2: Tauri Config
+
+| File | Change |
+|------|--------|
+| `client/src-tauri/tauri.conf.json` | `productName`, `identifier` (`com.yankcord.app` -> `com.fireside.app`), window `title` |
+
+## Phase 3: Tauri Rust - Native Capture Env Vars (27 occurrences across 5 files)
+
+All `YANKCORD_NATIVE_*` -> `FIRESIDE_NATIVE_*` via `replace_all` in each file:
+
+- `client/src-tauri/src/capture/service.rs` (2 vars)
+- `client/src-tauri/src/capture/service/native_sender.rs` (15 vars)
+- `client/src-tauri/src/capture/service/ffmpeg_ivf_encoder.rs` (3 vars)
+- `client/src-tauri/src/capture/service/nvenc_encoder.rs` (2 vars)
+- `client/src-tauri/src/capture/service/rtp_sender.rs` (2 vars)
+
+## Phase 4: Client TypeScript & HTML
+
+| File | Changes |
+|------|---------|
+| `client/index.html` | Title, meta description, noscript text |
+| `client/src/stores/settings.ts` | 18 localStorage keys `yankcord_*` -> `fireside_*` |
+| `client/src/stores/auth.ts` | 5 localStorage keys `yankcord_*` -> `fireside_*` |
+| `client/src/stores/userVolume.ts` | `yankcord_user_volumes` -> `fireside_user_volumes` |
+| `client/src/stores/updater.ts` | `"Restart Yankcord"` -> `"Restart Fireside"` |
+| `client/src/pages/Login.tsx` | `yankcord_auth_notice` -> `fireside_auth_notice` |
+| `client/src/api/ws.ts` | `yankcord_auth_notice` -> `fireside_auth_notice` |
+| `client/src/components/WindowTitlebar.tsx` | `"Yankcord"` -> `"Fireside"` |
+| `client/src/components/settings/UpdaterSettings.tsx` | `"Yankcord checks for updates"` -> `"Fireside checks for updates"` |
+| `client/src/components/ChannelList.tsx` | `yankcord_debug_native_sender` -> `fireside_debug_native_sender` |
+| `client/src/components/channel-list/hooks/useScreenShareModal.ts` | `yankcord_debug_native_sender` -> `fireside_debug_native_sender` |
+
+## Phase 5: CSS Comments
+
+- `client/src/styles/global.css` - `YANKCORD` -> `FIRESIDE`
+- `client/src/styles/variables.css` - `YANKCORD` -> `FIRESIDE`
+
+## Phase 6: Docker & Deployment (8 files)
+
+| File | Changes |
+|------|---------|
+| `server/Dockerfile` | Binary path `yankcord-server` -> `fireside-server` |
+| `docker-compose.prod.yml` | Project name, POSTGRES defaults, RUST_LOG |
+| `server/docker-compose.yml` | Container name, POSTGRES env vars |
+| `server/.env.example` | DATABASE_URL, RUST_LOG |
+| `server/.env.docker.example` | All yankcord refs (DB user, DB name, storage path, RUST_LOG) |
+| `server/config.toml.example` | DATABASE_URL |
+| `scripts/deploy-docker.sh` | REPO_DIR default |
+| `scripts/bootstrap-ubuntu-vm.sh` | REPO_DIR, systemd service name/description/paths |
+| `scripts/deploy-ovh.sh` | REPO_DIR, SERVER_SERVICE, deploy message |
+
+**DO NOT TOUCH:** `server/.env` (live environment file)
+
+## Phase 7: Makefile
+
+- Help text and REPO_DIR default
+
+## Phase 8: Documentation (5 files)
+
+- `PLAN.md`, `PLAN-EXECUTION.md`, `VOICE-CHAT-REVIEW.md`, `AGENTS.md`
+- `docs/deploy.md`, `docs/native-codec-encoder-expansion.md`
+- `client/src-tauri/bin/README.md`
+
+## Phase 9: OpenCode Skills
+
+- `.opencode/skills/yankcord-validation-matrix/SKILL.md` -> update name/description
+- `.opencode/skills/frontend-design-ux/SKILL.md` -> `Fireside visual language`
+- `.opencode/skills/fullstack-feature-slice/SKILL.md` -> `Fireside-specific guardrails`
+- **Directory rename:** `.opencode/skills/yankcord-validation-matrix/` -> `fireside-validation-matrix/`
+
+## Phase 10: Final Verification
+
+1. `grep -ri "yankcord"` across all source files (should return 0 hits except `server/.env` and `Cargo.lock`)
+2. `cargo build` + `cargo test` in `server/`
+3. `npm run typecheck` + `npm run build` in `client/`
+4. Verify `Cargo.lock` regenerated with `fireside-server`
+5. Verify `server/.env` was NOT modified
+
+## Notes
+
+- **Existing users:** Changing localStorage keys will log out existing users and reset their settings. No migration code is planned unless requested.
+- **Deployed infra:** Existing systemd units (`yankcord-server.service`) and Docker volumes (`yankcord_postgres_data`) will need manual migration on deployed servers.
+
+
+If you need specific details from before exiting plan mode (like exact code snippets, error messages, or content you generated), read the full transcript at: /home/guibibi/.REDACTED.jsonl
+
+---
+
+continue
