@@ -3,7 +3,7 @@
   "checkpoint_id": "4b7331e12b0a",
   "strategy": "manual-commit",
   "branch": "feat/rnnoise-noise-suppression",
-  "checkpoints_count": 4,
+  "checkpoints_count": 6,
   "files_touched": [
     ".claude/settings.local.json",
     ".opencode/skills/fireside-validation-matrix/SKILL.md",
@@ -24,11 +24,18 @@
     "client/src-tauri/src/capture/service/nvenc_encoder.rs",
     "client/src-tauri/src/capture/service/rtp_sender.rs",
     "client/src-tauri/tauri.conf.json",
+    "client/src/api/media/constraints.ts",
+    "client/src/api/media/devices.ts",
+    "client/src/api/media/microphoneProcessing.ts",
+    "client/src/api/media/producers.ts",
+    "client/src/api/media/rnnoise.ts",
     "client/src/api/ws.ts",
     "client/src/components/ChannelList.tsx",
+    "client/src/components/SettingsPage.tsx",
     "client/src/components/WindowTitlebar.tsx",
     "client/src/components/channel-list/hooks/useScreenShareModal.ts",
     "client/src/components/settings/UpdaterSettings.tsx",
+    "client/src/components/settings/VoiceAudioPreferences.tsx",
     "client/src/pages/Login.tsx",
     "client/src/stores/auth.ts",
     "client/src/stores/settings.ts",
@@ -36,6 +43,7 @@
     "client/src/stores/userVolume.ts",
     "client/src/styles/global.css",
     "client/src/styles/variables.css",
+    "client/vite.config.ts",
     "docker-compose.prod.yml",
     "docs/deploy.md",
     "docs/native-codec-encoder-expansion.md",
@@ -65,13 +73,20 @@
       "context": "/4b/7331e12b0a/1/context.md",
       "content_hash": "/4b/7331e12b0a/1/content_hash.txt",
       "prompt": "/4b/7331e12b0a/1/prompt.txt"
+    },
+    {
+      "metadata": "/4b/7331e12b0a/2/metadata.json",
+      "transcript": "/4b/7331e12b0a/2/full.jsonl",
+      "context": "/4b/7331e12b0a/2/context.md",
+      "content_hash": "/4b/7331e12b0a/2/content_hash.txt",
+      "prompt": "/4b/7331e12b0a/2/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 106,
-    "cache_creation_tokens": 353302,
-    "cache_read_tokens": 4984294,
-    "output_tokens": 14890,
-    "api_call_count": 59
+    "input_tokens": 175,
+    "cache_creation_tokens": 426439,
+    "cache_read_tokens": 8756715,
+    "output_tokens": 25837,
+    "api_call_count": 122
   }
 }
