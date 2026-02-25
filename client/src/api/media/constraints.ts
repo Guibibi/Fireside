@@ -2,7 +2,6 @@ import {
   preferredAudioInputDeviceId,
   preferredCameraDeviceId,
   voiceEchoCancellationEnabled,
-  voiceNoiseSuppressionEnabled,
   type ScreenShareResolution,
 } from "../../stores/settings";
 import type { ScreenShareStartOptions } from "./types";
@@ -16,7 +15,7 @@ export function audioInputConstraint(deviceId: string | null = preferredAudioInp
   }
 
   if (supportedConstraints?.noiseSuppression) {
-    constraints.noiseSuppression = voiceNoiseSuppressionEnabled();
+    constraints.noiseSuppression = false;
   }
 
   if (supportedConstraints?.echoCancellation) {

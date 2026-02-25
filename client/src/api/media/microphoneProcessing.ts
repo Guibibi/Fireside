@@ -1,6 +1,11 @@
-interface MicrophoneProcessingSession {
+import { createRnnoiseNode, destroyRnnoiseNode, RnnoiseWorkletNode } from "./rnnoise";
+
+export interface MicrophoneProcessingSession {
   context: AudioContext;
+  sourceNode: MediaStreamAudioSourceNode;
   gainNode: GainNode;
+  destinationNode: MediaStreamAudioDestinationNode;
+  rnnoiseNode: RnnoiseWorkletNode | null;
   sourceTrack: MediaStreamTrack;
   track: MediaStreamTrack;
 }
@@ -20,6 +25,11 @@ export function disposeMicrophoneProcessing() {
     return;
   }
 
+  if (activeSession.rnnoiseNode) {
+    destroyRnnoiseNode(activeSession.rnnoiseNode);
+    activeSession.rnnoiseNode = null;
+  }
+
   activeSession.sourceTrack.stop();
   activeSession.track.stop();
   if (activeSession.context.state !== "closed") {
@@ -29,7 +39,12 @@ export function disposeMicrophoneProcessing() {
   activeSession = null;
 }
 
-export function createProcessedMicrophoneTrack(stream: MediaStream, volume: number, muted: boolean): MicrophoneProcessingSession {
+export async function createProcessedMicrophoneTrack(
+  stream: MediaStream,
+  volume: number,
+  muted: boolean,
+  noiseSuppression: boolean,
+): Promise<MicrophoneProcessingSession> {
   const [sourceTrack] = stream.getAudioTracks();
   if (!sourceTrack) {
     throw new Error("Microphone track was not available");
@@ -41,11 +56,25 @@ export function createProcessedMicrophoneTrack(stream: MediaStream, volume: numb
   const destinationNode = audioContext.createMediaStreamDestination();
 
   gainNode.gain.value = clampVoiceVolume(volume) / 100;
-  sourceNode.connect(gainNode);
+
+  let rnnoiseNode: RnnoiseWorkletNode | null = null;
+  if (noiseSuppression) {
+    rnnoiseNode = await createRnnoiseNode(audioContext);
+  }
+
+  if (rnnoiseNode) {
+    sourceNode.connect(rnnoiseNode);
+    rnnoiseNode.connect(gainNode);
+  } else {
+    sourceNode.connect(gainNode);
+  }
   gainNode.connect(destinationNode);
 
   const [processedTrack] = destinationNode.stream.getAudioTracks();
   if (!processedTrack) {
+    if (rnnoiseNode) {
+      destroyRnnoiseNode(rnnoiseNode);
+    }
     sourceTrack.stop();
     void audioContext.close().catch(() => undefined);
     throw new Error("Processed microphone track was not available");
@@ -57,7 +86,10 @@ export function createProcessedMicrophoneTrack(stream: MediaStream, volume: numb
 
   return {
     context: audioContext,
+    sourceNode,
     gainNode,
+    destinationNode,
+    rnnoiseNode,
     sourceTrack,
     track: processedTrack,
   };
@@ -69,6 +101,11 @@ export function activateMicrophoneProcessing(session: MicrophoneProcessingSessio
 }
 
 export function disposePendingMicrophoneProcessing(session: MicrophoneProcessingSession) {
+  if (session.rnnoiseNode) {
+    destroyRnnoiseNode(session.rnnoiseNode);
+    session.rnnoiseNode = null;
+  }
+
   session.sourceTrack.stop();
   session.track.stop();
   if (session.context.state !== "closed") {
@@ -100,4 +137,50 @@ export function updateOutgoingMicrophoneMuted(muted: boolean) {
 
   activeSession.sourceTrack.enabled = !muted;
   activeSession.track.enabled = !muted;
+}
+
+export async function updateRnnoiseEnabled(enabled: boolean): Promise<void> {
+  if (!activeSession) {
+    return;
+  }
+
+  if (enabled && !activeSession.rnnoiseNode) {
+    const { context, sourceNode, gainNode } = activeSession;
+
+    try {
+      sourceNode.disconnect(gainNode);
+    } catch {
+      // may not be directly connected
+    }
+
+    const newNode = await createRnnoiseNode(context);
+    if (!activeSession) {
+      // session was disposed during async WASM load
+      if (newNode) {
+        destroyRnnoiseNode(newNode);
+      }
+      return;
+    }
+
+    if (newNode) {
+      sourceNode.connect(newNode);
+      newNode.connect(gainNode);
+      activeSession.rnnoiseNode = newNode;
+      console.debug("[rnnoise] Noise suppression enabled dynamically");
+    } else {
+      sourceNode.connect(gainNode);
+    }
+  } else if (!enabled && activeSession.rnnoiseNode) {
+    const { sourceNode, gainNode, rnnoiseNode } = activeSession;
+
+    try {
+      sourceNode.disconnect(rnnoiseNode);
+    } catch {
+      // best effort
+    }
+    destroyRnnoiseNode(rnnoiseNode);
+    activeSession.rnnoiseNode = null;
+    sourceNode.connect(gainNode);
+    console.debug("[rnnoise] Noise suppression disabled dynamically");
+  }
 }

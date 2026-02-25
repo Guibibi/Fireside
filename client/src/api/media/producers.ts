@@ -25,8 +25,9 @@ import {
   createProcessedMicrophoneTrack,
   disposeMicrophoneProcessingForTrack,
   disposePendingMicrophoneProcessing,
+  type MicrophoneProcessingSession,
 } from "./microphoneProcessing";
-import { voiceOutgoingVolume } from "../../stores/settings";
+import { voiceNoiseSuppressionEnabled, voiceOutgoingVolume } from "../../stores/settings";
 import {
   cameraEnabled,
   cameraError,
@@ -156,9 +157,9 @@ export async function startLocalAudioProducer(channelId: string) {
     throw new Error("Microphone track was not available");
   }
 
-  let processingSession: ReturnType<typeof createProcessedMicrophoneTrack>;
+  let processingSession: MicrophoneProcessingSession;
   try {
-    processingSession = createProcessedMicrophoneTrack(stream, voiceOutgoingVolume(), microphoneMuted);
+    processingSession = await createProcessedMicrophoneTrack(stream, voiceOutgoingVolume(), microphoneMuted, voiceNoiseSuppressionEnabled());
   } catch (error) {
     stream.getTracks().forEach((track) => track.stop());
     throw error;

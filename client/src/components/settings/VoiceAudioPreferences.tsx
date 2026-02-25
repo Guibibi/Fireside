@@ -24,7 +24,7 @@ export default function VoiceAudioPreferences(props: VoiceAudioPreferencesProps)
           <label class="settings-toggle-card" for="settings-voice-noise-suppression-enabled">
             <span class="settings-toggle-copy">
               <span class="settings-toggle-title">Noise suppression</span>
-              <span class="settings-help">Reduces steady background sounds from your microphone before sending audio.</span>
+              <span class="settings-help">AI-powered noise suppression that reduces background sounds including keyboard clicks and ambient noise.</span>
             </span>
             <input
               id="settings-voice-noise-suppression-enabled"
