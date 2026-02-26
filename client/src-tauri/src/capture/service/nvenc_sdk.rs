@@ -243,6 +243,7 @@ mod imp {
     /// Raw NVENC session opened with a D3D11 device for zero-copy encoding
     /// of GPU-resident textures.
     struct NvencD3D11Session {
+        device_ptr: *mut c_void,
         encoder: *mut c_void,
         output_bitstream: *mut c_void,
         width: u32,
@@ -368,6 +369,7 @@ mod imp {
                 }
 
                 Ok(Self {
+                    device_ptr: d3d11_device,
                     encoder,
                     output_bitstream: create_bitstream.bitstreamBuffer,
                     width,
@@ -608,7 +610,9 @@ mod imp {
             height: u32,
         ) -> Result<&mut NvencD3D11Session, String> {
             let need_restart = match &self.session {
-                Some(NvencSessionMode::D3D11(s)) => s.width != width || s.height != height,
+                Some(NvencSessionMode::D3D11(s)) => {
+                    s.width != width || s.height != height || s.device_ptr != device_ptr
+                }
                 Some(NvencSessionMode::Cuda(_)) => true,
                 None => false,
             };

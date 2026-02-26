@@ -9,6 +9,11 @@ use crate::capture::windows_capture::{
     NativeCaptureSource, NativeCaptureSourceKind, NativeFrameData, NativeFramePacket,
 };
 
+const ACCESS_LOST_STREAK_HINT_THRESHOLD: u32 = 6;
+const ACCESS_LOST_STREAK_RESET_MS: u64 = 3_000;
+const ACCESS_LOST_BASE_DELAY_MS: u64 = 120;
+const ACCESS_LOST_MAX_DELAY_MS: u64 = 1_500;
+
 pub fn run_dxgi_capture_loop(
     source_id: &str,
     stop_signal: Arc<AtomicBool>,
@@ -70,6 +75,9 @@ pub fn run_dxgi_capture_loop(
     let min_frame_interval = Duration::from_micros(1_000_000 / fps as u64);
     let mut last_frame_at = Instant::now();
     let mut last_window_issue: Option<WindowRegionIssue> = None;
+    let mut access_lost_streak: u32 = 0;
+    let mut last_access_lost_at: Option<Instant> = None;
+    let mut access_lost_hint_emitted = false;
 
     while !stop_signal.load(Ordering::Relaxed) {
         let elapsed_since_last = last_frame_at.elapsed();
@@ -145,6 +153,15 @@ pub fn run_dxgi_capture_loop(
         match session.acquire_frame(100) {
             Ok(Some(handle)) => {
                 last_frame_at = Instant::now();
+                if access_lost_streak > 0 {
+                    eprintln!(
+                        "[dxgi-capture] event=access_lost_recovered source={source_id} monitor={} streak={access_lost_streak}",
+                        active_monitor_device_name,
+                    );
+                    access_lost_streak = 0;
+                    last_access_lost_at = None;
+                    access_lost_hint_emitted = false;
+                }
 
                 let output_handle = if let Some(region) = window_region {
                     match session.crop_frame(&handle, region.crop_rect) {
@@ -193,10 +210,38 @@ pub fn run_dxgi_capture_loop(
             }
             Ok(None) => {}
             Err(e) if e.contains("ACCESS_LOST") => {
+                let now = Instant::now();
+                let reset_window = Duration::from_millis(ACCESS_LOST_STREAK_RESET_MS);
+                if last_access_lost_at
+                    .map(|last| now.duration_since(last) > reset_window)
+                    .unwrap_or(true)
+                {
+                    access_lost_streak = 1;
+                } else {
+                    access_lost_streak = access_lost_streak.saturating_add(1);
+                }
+                last_access_lost_at = Some(now);
+
+                let delay_ms = (ACCESS_LOST_BASE_DELAY_MS
+                    * u64::from(access_lost_streak.min(ACCESS_LOST_MAX_DELAY_MS as u32)))
+                .min(ACCESS_LOST_MAX_DELAY_MS);
+
                 eprintln!(
-                    "[dxgi-capture] event=access_lost source={source_id} monitor={} — recreating session",
-                    active_monitor_device_name,
+                    "[dxgi-capture] event=access_lost source={source_id} monitor={} streak={} cooldown_ms={} — recreating session",
+                    active_monitor_device_name, access_lost_streak, delay_ms,
                 );
+
+                if access_lost_streak >= ACCESS_LOST_STREAK_HINT_THRESHOLD
+                    && !access_lost_hint_emitted
+                {
+                    access_lost_hint_emitted = true;
+                    eprintln!(
+                        "[dxgi-capture] event=access_lost_hint source={source_id} monitor={} detail=\"DXGI Desktop Duplication is repeatedly unavailable (common with focused exclusive-fullscreen or protected game surfaces). Try borderless/windowed mode.\"",
+                        active_monitor_device_name,
+                    );
+                }
+
+                std::thread::sleep(Duration::from_millis(delay_ms));
 
                 const MAX_RETRIES: u32 = 5;
                 const INITIAL_DELAY_MS: u64 = 100;

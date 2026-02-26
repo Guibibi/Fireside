@@ -6,7 +6,7 @@ use windows::Win32::Graphics::Direct3D11::{
 };
 use windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_B8G8R8A8_UNORM;
 use windows::Win32::Graphics::Dxgi::{
-    CreateDXGIFactory1, IDXGIAdapter1, IDXGIFactory1, IDXGIOutput, IDXGIOutput1,
+    CreateDXGIFactory1, IDXGIAdapter1, IDXGIFactory1, IDXGIOutput, IDXGIOutput1, IDXGIOutput5,
     IDXGIOutputDuplication, DXGI_ERROR_ACCESS_LOST, DXGI_ERROR_WAIT_TIMEOUT,
     DXGI_OUTDUPL_FRAME_INFO,
 };
@@ -153,9 +153,21 @@ impl DxgiCaptureSession {
             .cast()
             .map_err(|e| format!("DXGI: failed to cast to IDXGIOutput1: {e}"))?;
 
-        let duplication = output1
-            .DuplicateOutput(&device)
-            .map_err(|e| format!("DXGI: failed to duplicate output: {e}"))?;
+        let duplication = if let Ok(output5) = output.cast::<IDXGIOutput5>() {
+            let preferred_formats = [DXGI_FORMAT_B8G8R8A8_UNORM];
+            match output5.DuplicateOutput1(&device, 0, &preferred_formats) {
+                Ok(duplication) => duplication,
+                Err(primary_error) => output1.DuplicateOutput(&device).map_err(|fallback_error| {
+                    format!(
+                        "DXGI: failed to duplicate output (DuplicateOutput1={primary_error}; DuplicateOutput={fallback_error})"
+                    )
+                })?,
+            }
+        } else {
+            output1
+                .DuplicateOutput(&device)
+                .map_err(|e| format!("DXGI: failed to duplicate output: {e}"))?
+        };
 
         let desc = output
             .GetDesc()
