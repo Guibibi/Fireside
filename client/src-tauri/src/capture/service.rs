@@ -1,12 +1,10 @@
 mod encoder_backend;
-mod ffmpeg_ivf_encoder;
-mod h264_encoder;
 mod metrics;
 mod native_sender;
-mod nvenc_encoder;
 mod nvenc_sdk;
 mod rtp_packetizer;
 mod rtp_sender;
+mod x264_encoder;
 
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -19,7 +17,7 @@ use super::windows_capture::{
     self, NativeCaptureSource, NativeCaptureSourceKind, NativeCaptureStartRequest,
     NativeFramePacket,
 };
-use encoder_backend::{create_encoder_backend_for_codec, NativeCodecTarget};
+use encoder_backend::create_encoder_backend;
 use metrics::{NativeSenderMetrics, NativeSenderSharedMetrics, NativeSenderSnapshotInput};
 use native_sender::{run_native_sender_worker, NativeSenderRuntimeConfig};
 
@@ -107,43 +105,25 @@ pub struct NativeCodecCapability {
     pub detail: Option<String>,
 }
 
-fn probe_native_codec_support(codec: NativeCodecTarget) -> Result<(), String> {
-    let preference_override = if codec == NativeCodecTarget::H264 {
-        Some("openh264")
-    } else {
-        None
-    };
-
-    create_encoder_backend_for_codec(codec, None, None, preference_override).map(|_| ())
-}
-
 static CODEC_CAPABILITIES_CACHE: OnceLock<Vec<NativeCodecCapability>> = OnceLock::new();
 
 fn native_codec_capabilities_snapshot() -> Vec<NativeCodecCapability> {
     CODEC_CAPABILITIES_CACHE
         .get_or_init(|| {
-            [
-                (NativeCodecTarget::H264, "video/H264"),
-                (NativeCodecTarget::Vp8, "video/VP8"),
-                (NativeCodecTarget::Vp9, "video/VP9"),
-                (NativeCodecTarget::Av1, "video/AV1"),
-            ]
-            .into_iter()
-            .map(
-                |(codec, mime_type)| match probe_native_codec_support(codec) {
-                    Ok(()) => NativeCodecCapability {
-                        mime_type: mime_type.to_string(),
-                        available: true,
-                        detail: None,
-                    },
-                    Err(error) => NativeCodecCapability {
-                        mime_type: mime_type.to_string(),
-                        available: false,
-                        detail: Some(error),
-                    },
+            let result = create_encoder_backend(None, None, None);
+            let capability = match result {
+                Ok(_) => NativeCodecCapability {
+                    mime_type: "video/H264".to_string(),
+                    available: true,
+                    detail: None,
                 },
-            )
-            .collect()
+                Err(error) => NativeCodecCapability {
+                    mime_type: "video/H264".to_string(),
+                    available: false,
+                    detail: Some(error),
+                },
+            };
+            vec![capability]
         })
         .clone()
 }
@@ -453,7 +433,7 @@ impl NativeCaptureService {
         fps: Option<u32>,
         bitrate_kbps: Option<u32>,
         encoder_backend: Option<String>,
-        codec_mime_type: Option<String>,
+        _codec_mime_type: Option<String>,
         rtp_target: Option<String>,
         payload_type: u8,
         ssrc: u32,
@@ -475,7 +455,6 @@ impl NativeCaptureService {
         let worker_target_fps = fps;
         let worker_target_bitrate_kbps = bitrate_kbps;
         let worker_encoder_backend = encoder_backend.clone();
-        let worker_codec_mime_type = codec_mime_type.clone();
         let worker_target_rtp = target_rtp.clone();
         let handle = thread::Builder::new()
             .name("native-sender-worker".to_string())
@@ -486,7 +465,6 @@ impl NativeCaptureService {
                         target_fps: worker_target_fps,
                         target_bitrate_kbps: worker_target_bitrate_kbps,
                         encoder_backend_preference: worker_encoder_backend,
-                        codec_mime_type: worker_codec_mime_type,
                         target_rtp: worker_target_rtp,
                         payload_type,
                         ssrc,
@@ -574,10 +552,8 @@ fn normalize_encoder_backend(encoder_backend: Option<String>) -> Result<Option<S
     }
 
     match normalized.as_str() {
-        "auto" | "openh264" | "nvenc" | "nvenc_sdk" => Ok(Some(normalized)),
-        _ => {
-            Err("Unsupported encoder backend. Use auto, openh264, nvenc, or nvenc_sdk.".to_string())
-        }
+        "auto" | "nvenc_sdk" | "x264" => Ok(Some(normalized)),
+        _ => Err("Unsupported encoder backend. Use auto, nvenc_sdk, or x264.".to_string()),
     }
 }
 
@@ -592,11 +568,8 @@ fn normalize_codec_mime_type(codec_mime_type: Option<String>) -> Result<Option<S
     }
 
     match normalized.as_str() {
-        "video/h264" | "video/vp8" | "video/vp9" | "video/av1" => Ok(Some(normalized)),
-        _ => Err(
-            "Unsupported native sender codec. Use video/H264, video/VP8, video/VP9, or video/AV1."
-                .to_string(),
-        ),
+        "video/h264" => Ok(Some(normalized)),
+        _ => Err("Unsupported native sender codec. Use video/H264.".to_string()),
     }
 }
 

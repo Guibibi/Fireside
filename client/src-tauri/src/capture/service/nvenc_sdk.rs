@@ -25,10 +25,11 @@ mod imp {
     use cudarc::driver::CudaContext;
     use nvidia_video_codec_sdk::sys::nvEncodeAPI::{
         NVENCSTATUS, NV_ENC_BUFFER_FORMAT, NV_ENC_CODEC_H264_GUID, NV_ENC_CONFIG,
-        NV_ENC_CREATE_BITSTREAM_BUFFER, NV_ENC_DEVICE_TYPE, NV_ENC_INITIALIZE_PARAMS,
-        NV_ENC_INPUT_RESOURCE_TYPE, NV_ENC_LOCK_BITSTREAM, NV_ENC_MAP_INPUT_RESOURCE,
-        NV_ENC_OPEN_ENCODE_SESSION_EX_PARAMS, NV_ENC_PIC_PARAMS, NV_ENC_PIC_TYPE,
-        NV_ENC_PRESET_CONFIG, NV_ENC_PRESET_P4_GUID, NV_ENC_REGISTER_RESOURCE, NV_ENC_TUNING_INFO,
+        NV_ENC_CREATE_BITSTREAM_BUFFER, NV_ENC_DEVICE_TYPE, NV_ENC_H264_PROFILE_HIGH_GUID,
+        NV_ENC_INITIALIZE_PARAMS, NV_ENC_INPUT_RESOURCE_TYPE, NV_ENC_LOCK_BITSTREAM,
+        NV_ENC_MAP_INPUT_RESOURCE, NV_ENC_OPEN_ENCODE_SESSION_EX_PARAMS, NV_ENC_PIC_PARAMS,
+        NV_ENC_PIC_TYPE, NV_ENC_PRESET_CONFIG, NV_ENC_PRESET_P1_GUID, NV_ENC_REGISTER_RESOURCE,
+        NV_ENC_TUNING_INFO,
     };
     use nvidia_video_codec_sdk::{
         Bitstream, Buffer, EncodePictureParams, Encoder, EncoderInitParams, ErrorKind, ENCODE_API,
@@ -90,12 +91,13 @@ mod imp {
             let preset_config = encoder
                 .get_preset_config(
                     NV_ENC_CODEC_H264_GUID,
-                    NV_ENC_PRESET_P4_GUID,
+                    NV_ENC_PRESET_P1_GUID,
                     NV_ENC_TUNING_INFO::NV_ENC_TUNING_INFO_ULTRA_LOW_LATENCY,
                 )
                 .map_err(|e| format!("NVENC SDK: failed to get preset config: {e}"))?;
 
             let mut encode_config: NV_ENC_CONFIG = preset_config.presetCfg;
+            encode_config.profileGUID = NV_ENC_H264_PROFILE_HIGH_GUID;
             encode_config.frameIntervalP = 1; // No B-frames
             encode_config.gopLength = target_fps; // 1 second GOP
 
@@ -109,7 +111,7 @@ mod imp {
 
             let mut init_params = EncoderInitParams::new(NV_ENC_CODEC_H264_GUID, width, height);
             init_params
-                .preset_guid(NV_ENC_PRESET_P4_GUID)
+                .preset_guid(NV_ENC_PRESET_P1_GUID)
                 .tuning_info(NV_ENC_TUNING_INFO::NV_ENC_TUNING_INFO_ULTRA_LOW_LATENCY)
                 .encode_config(&mut encode_config)
                 .enable_picture_type_decision()
@@ -290,7 +292,7 @@ mod imp {
                     ));
                 }
 
-                // Get preset config for H264 baseline
+                // Get preset config for H264 High profile
                 let mut preset_config: NV_ENC_PRESET_CONFIG = nvenc_zeroed();
                 preset_config.version =
                     nvidia_video_codec_sdk::sys::nvEncodeAPI::NV_ENC_PRESET_CONFIG_VER;
@@ -300,7 +302,7 @@ mod imp {
                 let status = (api.get_encode_preset_config_ex)(
                     encoder,
                     NV_ENC_CODEC_H264_GUID,
-                    NV_ENC_PRESET_P4_GUID,
+                    NV_ENC_PRESET_P1_GUID,
                     NV_ENC_TUNING_INFO::NV_ENC_TUNING_INFO_ULTRA_LOW_LATENCY,
                     &mut preset_config,
                 );
@@ -313,6 +315,7 @@ mod imp {
                 }
 
                 let mut encode_config = preset_config.presetCfg;
+                encode_config.profileGUID = NV_ENC_H264_PROFILE_HIGH_GUID;
                 // Disable B-frames for low latency
                 encode_config.frameIntervalP = 1;
                 encode_config.gopLength = target_fps;
@@ -330,7 +333,7 @@ mod imp {
                 init_params.version =
                     nvidia_video_codec_sdk::sys::nvEncodeAPI::NV_ENC_INITIALIZE_PARAMS_VER;
                 init_params.encodeGUID = NV_ENC_CODEC_H264_GUID;
-                init_params.presetGUID = NV_ENC_PRESET_P4_GUID;
+                init_params.presetGUID = NV_ENC_PRESET_P1_GUID;
                 init_params.encodeWidth = width;
                 init_params.encodeHeight = height;
                 init_params.darWidth = width;
@@ -638,7 +641,7 @@ mod imp {
                 mime_type: "video/H264",
                 clock_rate: 90_000,
                 packetization_mode: Some(1),
-                profile_level_id: Some("42e01f"),
+                profile_level_id: Some("64002a"),
             }
         }
 

@@ -6,11 +6,10 @@ use std::time::Duration;
 
 use crate::capture::windows_capture::{self, NativeFrameData, NativeFramePacket};
 
-use super::encoder_backend::{
-    create_encoder_backend_for_codec, create_openh264_backend, NativeCodecTarget,
-};
+use super::encoder_backend::create_encoder_backend;
 use super::metrics::NativeSenderSharedMetrics;
-use super::rtp_packetizer::{CodecRtpPacketizer, RtpCodecKind, RtpPacketizer};
+use super::rtp_packetizer::{H264RtpPacketizer, RtpPacketizer};
+use super::x264_encoder::try_build_x264_backend;
 
 const FAILURE_WINDOW_MS: u64 = 12_000;
 const ENCODE_FAILURE_THRESHOLD: u64 = 18;
@@ -36,35 +35,6 @@ const NVENC_RUNTIME_FALLBACK_ENCODE_FAILURES_DEFAULT: u64 = 12;
 const DEFAULT_MAX_ENCODE_WIDTH: u32 = 1920;
 const DEFAULT_MAX_ENCODE_HEIGHT: u32 = 1080;
 const DEFAULT_FPS_LIMIT: u32 = 30;
-
-fn create_packetizer_for_codec(
-    mime_type: &str,
-    target_rtp: Option<String>,
-    payload_type: u8,
-    ssrc: u32,
-) -> Result<Box<dyn RtpPacketizer>, String> {
-    let codec = if mime_type.eq_ignore_ascii_case("video/h264") {
-        RtpCodecKind::H264
-    } else if mime_type.eq_ignore_ascii_case("video/vp8") {
-        RtpCodecKind::Vp8
-    } else if mime_type.eq_ignore_ascii_case("video/vp9") {
-        RtpCodecKind::Vp9
-    } else if mime_type.eq_ignore_ascii_case("video/av1") {
-        RtpCodecKind::Av1
-    } else {
-        return Err(format!(
-            "Unsupported native RTP packetizer codec: {}",
-            mime_type
-        ));
-    };
-
-    Ok(Box::new(CodecRtpPacketizer::new(
-        codec,
-        target_rtp,
-        payload_type,
-        ssrc,
-    )))
-}
 
 #[derive(Debug, Clone)]
 struct DegradationTuning {
@@ -196,7 +166,6 @@ pub struct NativeSenderRuntimeConfig {
     pub target_fps: Option<u32>,
     pub target_bitrate_kbps: Option<u32>,
     pub encoder_backend_preference: Option<String>,
-    pub codec_mime_type: Option<String>,
     pub target_rtp: Option<String>,
     pub payload_type: u8,
     pub ssrc: u32,
@@ -545,14 +514,7 @@ pub fn run_native_sender_worker(
     stop_signal: Arc<std::sync::atomic::AtomicBool>,
     shared: Arc<NativeSenderSharedMetrics>,
 ) {
-    let codec_target = config
-        .codec_mime_type
-        .as_deref()
-        .and_then(NativeCodecTarget::from_mime_type)
-        .unwrap_or(NativeCodecTarget::H264);
-
-    let (mut encoder, encoder_selection) = match create_encoder_backend_for_codec(
-        codec_target,
+    let (mut encoder, encoder_selection) = match create_encoder_backend(
         config.target_fps,
         config.target_bitrate_kbps,
         config.encoder_backend_preference.as_deref(),
@@ -567,34 +529,17 @@ pub fn run_native_sender_worker(
                     .unwrap_or("auto"),
             );
             shared.set_encoder_backend_fallback_reason(Some(error.as_str()));
-            if codec_target != NativeCodecTarget::H264 {
-                shared.set_recent_fallback_reason(Some("native_sender_codec_not_ready"));
-            }
             trigger_native_fallback("encoder_init_failed", &config.source_id, &shared);
             stop_signal.store(true, Ordering::Relaxed);
             return;
         }
     };
     let codec = encoder.codec_descriptor();
-    let mut packetizer = match create_packetizer_for_codec(
-        codec.mime_type,
+    let mut packetizer: Box<dyn RtpPacketizer> = Box::new(H264RtpPacketizer::new(
         config.target_rtp.clone(),
         config.payload_type,
         config.ssrc,
-    ) {
-        Ok(packetizer) => packetizer,
-        Err(error) => {
-            shared.encode_errors.fetch_add(1, Ordering::Relaxed);
-            shared.set_recent_fallback_reason(Some("unsupported_packetizer_codec"));
-            eprintln!(
-                "[native-sender] event=packetizer_init_failed source={} codec={} detail={}",
-                config.source_id, codec.mime_type, error,
-            );
-            trigger_native_fallback("unsupported_packetizer_codec", &config.source_id, &shared);
-            stop_signal.store(true, Ordering::Relaxed);
-            return;
-        }
-    };
+    ));
     let now_ms = unix_timestamp_ms();
     let degradation_tuning = DegradationTuning::from_env();
 
@@ -813,32 +758,44 @@ pub fn run_native_sender_worker(
                     encoder.encode_frame(encode_input, encode_width, encode_height, &shared);
                 let Some(frames) = encoded_frames else {
                     consecutive_encode_failures = consecutive_encode_failures.saturating_add(1);
-                    if (active_encoder_backend == "nvenc" || active_encoder_backend == "nvenc_sdk")
+                    if active_encoder_backend == "nvenc_sdk"
                         && encoder_selection.requested_backend == "auto"
                         && consecutive_encode_failures >= nvenc_runtime_fallback_encode_failures
                     {
-                        encoder =
-                            create_openh264_backend(config.target_fps, config.target_bitrate_kbps);
-                        active_encoder_backend = "openh264";
-                        shared.set_encoder_backend("openh264");
-                        shared.set_encoder_backend_fallback_reason(Some(
-                            "nvenc_runtime_encode_failure_threshold",
-                        ));
-                        shared
-                            .encoder_backend_runtime_fallback_events
-                            .fetch_add(1, Ordering::Relaxed);
+                        match try_build_x264_backend(
+                            config.target_fps,
+                            config.target_bitrate_kbps,
+                        ) {
+                            Ok(x264) => {
+                                encoder = x264;
+                                active_encoder_backend = "x264";
+                                shared.set_encoder_backend("x264");
+                                shared.set_encoder_backend_fallback_reason(Some(
+                                    "nvenc_runtime_encode_failure_threshold",
+                                ));
+                                shared
+                                    .encoder_backend_runtime_fallback_events
+                                    .fetch_add(1, Ordering::Relaxed);
 
-                        // Force at least degradation level 1 to halve frame rate,
-                        // giving the software encoder breathing room.
-                        if degradation_state.level < 1 {
-                            degradation_state.level = 1;
-                            shared.set_degradation_level(1);
+                                // Force at least degradation level 1 to halve frame rate,
+                                // giving the software encoder breathing room.
+                                if degradation_state.level < 1 {
+                                    degradation_state.level = 1;
+                                    shared.set_degradation_level(1);
+                                }
+
+                                eprintln!(
+                                    "[native-sender] event=encoder_backend_runtime_fallback source={} from=nvenc_sdk to=x264 reason=encode_failure_threshold threshold={} forced_degrade_level={}",
+                                    config.source_id, nvenc_runtime_fallback_encode_failures, degradation_state.level,
+                                );
+                            }
+                            Err(e) => {
+                                eprintln!(
+                                    "[native-sender] event=runtime_fallback_failed source={} from=nvenc_sdk detail=\"{}\"",
+                                    config.source_id, e,
+                                );
+                            }
                         }
-
-                        eprintln!(
-                            "[native-sender] event=encoder_backend_runtime_fallback source={} from=nvenc to=openh264 reason=encode_failure_threshold threshold={} forced_degrade_level={}",
-                            config.source_id, nvenc_runtime_fallback_encode_failures, degradation_state.level,
-                        );
                     }
                     continue;
                 };
