@@ -16,7 +16,18 @@ The stack uses Docker Compose and includes:
 - Docker Engine + Docker Compose plugin
 - Open firewall ports:
   - `80/tcp` and `443/tcp` for web traffic
-  - UDP media ports required by your voice policy
+  - `10000:59999/udp` for WebRTC media (mediasoup default worker port range)
+
+  ```bash
+  sudo ufw allow 22/tcp
+  sudo ufw allow 80/tcp
+  sudo ufw allow 443/tcp
+  sudo ufw allow 10000:59999/udp
+  ```
+
+  Voice will silently fail if the UDP range is not open — mediasoup
+  allocates a random port per transport from this range and clients
+  cannot receive audio when those ports are firewalled.
 
 Optional helper to install Docker on Ubuntu:
 
