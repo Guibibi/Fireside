@@ -62,11 +62,8 @@ impl DxgiCaptureTarget {
         }
 
         if let Some(raw_pid) = source_id.strip_prefix("application:") {
-            let process_id = raw_pid
-                .trim()
-                .parse::<u32>()
-                .map_err(|_| "DXGI: invalid application source id".to_string())?;
-            let hwnd = resolve_application_hwnd(process_id)?;
+            let (process_id, preferred_hwnd) = parse_application_source_id(raw_pid)?;
+            let hwnd = resolve_application_hwnd(process_id, preferred_hwnd)?;
             return Ok(Self::Window {
                 hwnd,
                 process_id: Some(process_id),
@@ -128,9 +125,54 @@ fn window_from_hwnd(hwnd: usize) -> WinWindow {
     WinWindow::from_raw_hwnd(hwnd as *mut c_void)
 }
 
-fn resolve_application_hwnd(process_id: u32) -> Result<usize, String> {
+fn parse_application_source_id(raw: &str) -> Result<(u32, Option<usize>), String> {
+    let mut parts = raw.split(':');
+    let process_id = parts
+        .next()
+        .ok_or_else(|| "DXGI: invalid application source id".to_string())?
+        .trim()
+        .parse::<u32>()
+        .map_err(|_| "DXGI: invalid application source id".to_string())?;
+
+    let preferred_hwnd = match parts.next() {
+        Some(value) if !value.trim().is_empty() => Some(
+            value
+                .trim()
+                .parse::<usize>()
+                .map_err(|_| "DXGI: invalid application source id".to_string())?,
+        ),
+        Some(_) => {
+            return Err("DXGI: invalid application source id".to_string());
+        }
+        None => None,
+    };
+
+    if parts.next().is_some() {
+        return Err("DXGI: invalid application source id".to_string());
+    }
+
+    Ok((process_id, preferred_hwnd))
+}
+
+fn resolve_application_hwnd(
+    process_id: u32,
+    preferred_hwnd: Option<usize>,
+) -> Result<usize, String> {
+    if let Some(hwnd) = preferred_hwnd {
+        let window = window_from_hwnd(hwnd);
+        if window.is_valid() && window.process_id().ok() == Some(process_id) {
+            return Ok(hwnd);
+        }
+        return Err("DXGI: selected application window is no longer available".to_string());
+    }
+
     let windows = WinWindow::enumerate()
         .map_err(|error| format!("DXGI: failed to enumerate windows: {error}"))?;
+
+    let foreground_hwnd = WinWindow::foreground()
+        .ok()
+        .map(|window| window.as_raw_hwnd() as usize);
+    let mut best: Option<(u64, usize)> = None;
 
     for window in windows {
         if !window.is_valid() {
@@ -146,10 +188,28 @@ fn resolve_application_hwnd(process_id: u32) -> Result<usize, String> {
             continue;
         }
 
-        return Ok(window.as_raw_hwnd() as usize);
+        let hwnd = window.as_raw_hwnd() as usize;
+        let area = window
+            .rect()
+            .ok()
+            .and_then(|rect| {
+                let width = u32::try_from(rect.right.saturating_sub(rect.left)).ok()?;
+                let height = u32::try_from(rect.bottom.saturating_sub(rect.top)).ok()?;
+                Some(u64::from(width) * u64::from(height))
+            })
+            .unwrap_or(0);
+        let score = ((foreground_hwnd == Some(hwnd)) as u64) << 63 | area;
+
+        match &best {
+            Some((best_score, _)) if *best_score >= score => {}
+            _ => {
+                best = Some((score, hwnd));
+            }
+        }
     }
 
-    Err("DXGI: application source has no capturable window".to_string())
+    best.map(|(_, hwnd)| hwnd)
+        .ok_or_else(|| "DXGI: application source has no capturable window".to_string())
 }
 
 fn crop_rect_for_window_on_output(window_rect: RectI32, output_rect: RectI32) -> Option<CropRect> {
@@ -164,10 +224,21 @@ fn crop_rect_for_window_on_output(window_rect: RectI32, output_rect: RectI32) ->
 
     let local_left = (left - output_rect.left).max(0) as u32;
     let local_top = (top - output_rect.top).max(0) as u32;
-    let local_right = (right - output_rect.left).max(0) as u32;
-    let local_bottom = (bottom - output_rect.top).max(0) as u32;
+    let mut local_right = (right - output_rect.left).max(0) as u32;
+    let mut local_bottom = (bottom - output_rect.top).max(0) as u32;
+
+    if (local_right - local_left) % 2 != 0 {
+        local_right = local_right.saturating_sub(1);
+    }
+    if (local_bottom - local_top) % 2 != 0 {
+        local_bottom = local_bottom.saturating_sub(1);
+    }
 
     if local_right <= local_left || local_bottom <= local_top {
+        return None;
+    }
+
+    if local_right - local_left < 2 || local_bottom - local_top < 2 {
         return None;
     }
 

@@ -448,6 +448,133 @@ enum SelectedCaptureItem {
 }
 
 #[cfg(target_os = "windows")]
+#[derive(Debug, Clone)]
+struct ApplicationCandidate {
+    process_id: u32,
+    hwnd: usize,
+    window_title: String,
+    app_name: Option<String>,
+    width: Option<u32>,
+    height: Option<u32>,
+    area: u64,
+    is_foreground: bool,
+}
+
+#[cfg(target_os = "windows")]
+impl ApplicationCandidate {
+    fn from_window(
+        process_id: u32,
+        hwnd: usize,
+        window_title: String,
+        app_name: Option<String>,
+        width: Option<u32>,
+        height: Option<u32>,
+        foreground_hwnd: Option<usize>,
+    ) -> Self {
+        let area = match (width, height) {
+            (Some(w), Some(h)) => u64::from(w) * u64::from(h),
+            _ => 0,
+        };
+
+        Self {
+            process_id,
+            hwnd,
+            window_title,
+            app_name,
+            width,
+            height,
+            area,
+            is_foreground: foreground_hwnd == Some(hwnd),
+        }
+    }
+
+    fn is_better_than(&self, other: &Self) -> bool {
+        if self.is_foreground != other.is_foreground {
+            return self.is_foreground;
+        }
+
+        if self.area != other.area {
+            return self.area > other.area;
+        }
+
+        self.window_title.len() > other.window_title.len()
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn parse_application_source_id(raw: &str) -> Result<(u32, Option<usize>), String> {
+    let mut parts = raw.split(':');
+    let process_id = parts
+        .next()
+        .ok_or_else(|| "Invalid application source id. Refresh sources and try again.".to_string())?
+        .parse::<u32>()
+        .map_err(|_| "Invalid application source id. Refresh sources and try again.".to_string())?;
+
+    let preferred_hwnd = match parts.next() {
+        Some(value) if !value.trim().is_empty() => Some(value.parse::<usize>().map_err(|_| {
+            "Invalid application source id. Refresh sources and try again.".to_string()
+        })?),
+        Some(_) => {
+            return Err(
+                "Invalid application source id. Refresh sources and try again.".to_string(),
+            );
+        }
+        None => None,
+    };
+
+    if parts.next().is_some() {
+        return Err("Invalid application source id. Refresh sources and try again.".to_string());
+    }
+
+    Ok((process_id, preferred_hwnd))
+}
+
+#[cfg(target_os = "windows")]
+fn resolve_application_window(process_id: u32, preferred_hwnd: Option<usize>) -> Option<WinWindow> {
+    if let Some(hwnd) = preferred_hwnd {
+        let window = WinWindow::from_raw_hwnd(hwnd as *mut c_void);
+        if window.is_valid() && window.process_id().ok() == Some(process_id) {
+            return Some(window);
+        }
+        return None;
+    }
+
+    let windows = WinWindow::enumerate().ok()?;
+    let foreground_hwnd = WinWindow::foreground()
+        .ok()
+        .map(|window| window.as_raw_hwnd() as usize);
+    let mut best: Option<(u64, usize, WinWindow)> = None;
+
+    for window in windows {
+        if !window.is_valid() || window.process_id().ok() != Some(process_id) {
+            continue;
+        }
+
+        let title = window.title().unwrap_or_default().trim().to_string();
+        if title.is_empty() {
+            continue;
+        }
+
+        let hwnd = window.as_raw_hwnd() as usize;
+        let (width, height) = safe_window_dimensions(window);
+        let area = match (width, height) {
+            (Some(w), Some(h)) => u64::from(w) * u64::from(h),
+            _ => 0,
+        };
+        let score = ((foreground_hwnd == Some(hwnd)) as u64) << 63 | area;
+
+        match &best {
+            Some((best_score, _, _)) if *best_score >= score => {}
+            _ => {
+                best = Some((score, hwnd, window));
+            }
+        }
+    }
+
+    best.map(|(_, _, window)| window)
+}
+
+#[cfg(target_os = "windows")]
 fn safe_window_dimensions(window: WinWindow) -> (Option<u32>, Option<u32>) {
     let Ok(rect) = window.rect() else {
         return (None, None);
@@ -493,9 +620,12 @@ fn monitor_sources() -> Result<Vec<NativeCaptureSource>, String> {
 fn window_and_application_sources() -> Result<Vec<NativeCaptureSource>, String> {
     let windows =
         WinWindow::enumerate().map_err(|error| format!("Failed to list windows: {error}"))?;
+    let foreground_hwnd = WinWindow::foreground()
+        .ok()
+        .map(|window| window.as_raw_hwnd() as usize);
 
     let mut sources = Vec::new();
-    let mut applications: HashMap<u32, NativeCaptureSource> = HashMap::new();
+    let mut applications: HashMap<u32, ApplicationCandidate> = HashMap::new();
 
     for window in windows {
         if !window.is_valid() {
@@ -525,22 +655,40 @@ fn window_and_application_sources() -> Result<Vec<NativeCaptureSource>, String> 
         });
 
         if let Some(pid) = process_id {
-            applications
-                .entry(pid)
-                .or_insert_with(|| NativeCaptureSource {
-                    id: format!("application:{pid}"),
-                    kind: NativeCaptureSourceKind::Application,
-                    title: app_name
-                        .clone()
-                        .unwrap_or_else(|| format!("Application {pid}")),
-                    app_name: app_name.clone(),
-                    width: None,
-                    height: None,
-                });
+            let candidate = ApplicationCandidate::from_window(
+                pid,
+                hwnd,
+                title.clone(),
+                app_name.clone(),
+                width,
+                height,
+                foreground_hwnd,
+            );
+
+            match applications.get(&pid) {
+                Some(existing) if !candidate.is_better_than(existing) => {}
+                _ => {
+                    applications.insert(pid, candidate);
+                }
+            }
         }
     }
 
-    sources.extend(applications.into_values());
+    sources.extend(applications.into_values().map(|candidate| {
+        let app_label = candidate
+            .app_name
+            .clone()
+            .unwrap_or_else(|| format!("Application {}", candidate.process_id));
+
+        NativeCaptureSource {
+            id: format!("application:{}:{}", candidate.process_id, candidate.hwnd),
+            kind: NativeCaptureSourceKind::Application,
+            title: format!("{} ({})", app_label, candidate.window_title),
+            app_name: Some(app_label),
+            width: candidate.width,
+            height: candidate.height,
+        }
+    }));
     Ok(sources)
 }
 
@@ -572,18 +720,11 @@ fn resolve_capture_item(source_id: &str) -> Result<SelectedCaptureItem, String> 
         return Ok(SelectedCaptureItem::Window(window));
     }
 
-    if let Some(raw_pid) = source_id.strip_prefix("application:") {
-        let process_id = raw_pid.parse::<u32>().map_err(|_| {
-            "Invalid application source id. Refresh sources and try again.".to_string()
+    if let Some(raw_application) = source_id.strip_prefix("application:") {
+        let (process_id, preferred_hwnd) = parse_application_source_id(raw_application)?;
+        let window = resolve_application_window(process_id, preferred_hwnd).ok_or_else(|| {
+            "Selected capture source is no longer available. Refresh and try again.".to_string()
         })?;
-        let windows = WinWindow::enumerate()
-            .map_err(|error| format!("Failed to enumerate windows: {error}"))?;
-        let window = windows
-            .into_iter()
-            .find(|window| window.is_valid() && window.process_id().ok() == Some(process_id))
-            .ok_or_else(|| {
-                "Selected capture source is no longer available. Refresh and try again.".to_string()
-            })?;
         return Ok(SelectedCaptureItem::Window(window));
     }
 
