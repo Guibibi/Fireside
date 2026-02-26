@@ -250,13 +250,19 @@ pub fn run_dxgi_capture_loop(
 pub fn list_dxgi_monitors() -> Result<Vec<NativeCaptureSource>, String> {
     let mut sources = enumerate_dxgi_outputs()?
         .into_iter()
-        .map(|output| NativeCaptureSource {
-            id: format!("screen:{}", output.device_name),
-            kind: NativeCaptureSourceKind::Screen,
-            title: output.device_name,
-            app_name: None,
-            width: Some(output.width()),
-            height: Some(output.height()),
+        .map(|output| {
+            let width = output.width();
+            let height = output.height();
+            let device_name = output.device_name;
+
+            NativeCaptureSource {
+                id: format!("screen:{device_name}"),
+                kind: NativeCaptureSourceKind::Screen,
+                title: device_name,
+                app_name: None,
+                width: Some(width),
+                height: Some(height),
+            }
         })
         .collect::<Vec<_>>();
 

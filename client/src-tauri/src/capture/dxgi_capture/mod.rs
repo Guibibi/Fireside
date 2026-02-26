@@ -6,7 +6,7 @@ mod target;
 mod windows;
 
 #[cfg(target_os = "windows")]
-pub use windows::{list_dxgi_monitors, run_dxgi_capture_loop};
+pub use windows::run_dxgi_capture_loop;
 
 #[cfg(not(target_os = "windows"))]
 #[allow(dead_code)]
