@@ -6,6 +6,7 @@ Long-term roadmap and completed milestone tracking live in `PLAN.md`.
 ## Active Phase
 
 - Phase 5.2: Persistent channel unread state
+- Focused track: Windows native screen share rewrite (`zed-scap` + `playa-ffmpeg`, H264-first)
 
 ## Phase Goal
 
@@ -123,102 +124,220 @@ Long-term roadmap and completed milestone tracking live in `PLAN.md`.
 
 ---
 
-## Focused Plan: DXGI Window/Application Capture Migration
+## Focused Plan: Windows Native Screen Share Rewrite (Scorched Earth, H264-First)
 
 ### Goal
 
-- Route native streaming for `screen:*`, `window:*`, and `application:*` through DXGI Desktop Duplication.
-- Remove runtime dependence on `windows-capture` for active window/app stream capture.
-- Keep visible-pixels behavior explicit (occlusion/minimize are expected DXGI constraints).
-- Prevent NVENC CUDA teardown crashes currently triggered by window/app capture path.
+- Replace the current Windows native screen-share implementation end-to-end with a new pipeline based on `zed-scap` capture and `playa-ffmpeg` encoding.
+- Keep native sender codec support locked to `video/H264` for this phase.
+- Keep a clean scaffold for future codec expansion (`VP8`, `VP9`, `AV1`) without enabling them yet.
+- Preserve existing user-facing flow (native source picker -> start -> LIVE -> stop) while replacing internals.
+
+### Scope (Locked)
+
+- Windows only for this rewrite.
+- Linux/macOS native capture work is explicitly deferred.
+- No broad media transport redesign in this phase (keep current native RTP ingest model).
+
+### Non-Goals
+
+- No VP8/VP9/AV1 production enablement in this phase.
+- No browser screen-share redesign.
+- No server-wide mediasoup codec matrix changes outside native sender compatibility/scaffold work.
 
 ### Product Decisions Locked
 
-- Window and application capture use the visible desktop pixels model (not hidden/offscreen window composition).
-- `application:<pid>` resolves to one concrete window at session start and remains locked to that window for the active session.
-- Source listing UX stays unchanged for now (`windows_capture::list_sources`), but stream ingestion moves to DXGI.
-- If the target window rect is invalid or minimized, capture loop skips frames and keeps session alive.
+- Native sender negotiated codec is H264 only for now (`video/H264`, packetization-mode `1`, baseline profile).
+- Native command surface remains stable:
+  - `list_native_capture_sources`
+  - `native_codec_capabilities`
+  - `start_native_capture`
+  - `stop_native_capture`
+  - `native_capture_status`
+- Existing signaling shape for native sender session remains backward compatible (`rtp_target`, `payload_type`, `ssrc`, codec metadata fields).
+- Windows source listing should continue to expose screen/window/application-compatible ids where feasible, even if implementation maps application to a concrete window target internally.
 
 ### Architecture Direction
 
-#### DXGI capture module
+#### A. Capture subsystem (`zed-scap`)
 
-- Extend `client/src-tauri/src/capture/dxgi_capture.rs` to parse source ids (`screen`, `window`, `application`) into a capture target.
-- Add monitor/window resolution helpers and monitor remap logic when a window moves displays.
-- Add GPU region-copy path (`CopySubresourceRegion`) so window/app sources crop the duplicated desktop texture to the target rect.
-- Keep texture allocation cached and recreate only when dimensions or monitor target changes.
+- Introduce a dedicated Windows capture adapter module that wraps `zed-scap` target enumeration and frame pumping.
+- Normalize `zed-scap` target/frame structures into Yankcord-native structures used by service/runtime.
+- Standardize source id parsing and mapping:
+  - `screen:*` -> display target
+  - `window:*` -> window target
+  - `application:*` -> compatibility mapping to selected window target
+- Keep frame output normalized to one internal format contract (`bgra8` bytes + width/height + timestamp) before encoder handoff.
 
-#### Capture service routing
+#### B. Encoder subsystem (`playa-ffmpeg`)
 
-- Update `client/src-tauri/src/capture/service.rs` so all native source kinds start DXGI capture threads.
-- Stop invoking `windows_capture::start_capture` for active sender sessions.
-- Preserve current stop lifecycle (`stop_dxgi_capture`, sender worker teardown, status snapshots).
+- Replace subprocess/x264 and direct NVENC SDK codepaths with one in-process FFmpeg backend.
+- Implement H264 encoder selection policy inside the backend (Windows):
+  1. `h264_nvenc` (if available)
+  2. `h264_qsv` or `h264_amf` (if available)
+  3. `libx264` fallback
+- Ensure produced bitstream is Annex B and fed through existing H264 RTP packetizer path.
+- Preserve low-latency settings and keyframe request support (RTCP PLI/FIR -> next-frame keyframe).
 
-#### Sender/encoder stability
+#### C. Codec scaffold (future-proofing)
 
-- Keep GPU-texture fast path (`encode_gpu_frame`) as primary for all DXGI-fed sources.
-- Keep CPU readback fallback available, but no longer rely on windows-capture CPU frame path for window/app sessions.
-- Add defensive logging around window target loss/remap events to simplify production diagnosis.
+- Introduce explicit native codec catalog model with readiness states (`ready` vs `planned`).
+- Keep runtime selection hard-gated to H264 for this phase.
+- Add codec-factory extension points so future codecs can register:
+  - codec descriptor
+  - encoder builder
+  - RTP packetizer builder
+- For non-H264 requests, fail deterministically with clear diagnostics instead of silent fallback.
+
+#### D. Sender/runtime service
+
+- Keep one bounded frame queue between capture and sender worker.
+- Preserve existing metrics surface consumed by frontend diagnostics (worker active, queue pressure, encode/send errors, backend label).
+- Remove old DXGI/cuda-specific lifecycle assumptions and replace with backend-agnostic worker lifecycle.
+- Keep stop/start idempotent and panic-safe.
+
+#### E. Server/native signaling compatibility
+
+- Keep current `create_native_sender_session` flow and payload stable.
+- Keep server `native_codec` representation H264-ready; add optional planned-codec scaffold fields only if backward compatible.
+- Do not change first-message auth or general WS contract behavior.
 
 ### Iteration Plan (Detailed)
 
-1. Add source-target parsing and window/app monitor resolution helpers in DXGI module.
-2. Implement cropped-texture output for window/app targets while retaining full-frame path for screen targets.
-3. Implement window/app monitor-change detection and session recreation hooks.
-4. Update capture service routing to start DXGI for all source kinds.
-5. Remove windows-capture active start path from native sender flow while preserving source listing.
-6. Add/adjust diagnostics for window invalid/minimized/monitor-move events.
-7. Run validation commands and complete manual QA backlog in `QA.md`.
+1. Freeze contracts and capture all existing command/signaling payload shapes as compatibility targets.
+2. Add new capture adapter around `zed-scap` (Windows only), including target normalization and source id mapping.
+3. Build new in-process H264 encoder backend using `playa-ffmpeg`.
+4. Wire sender worker to new backend, preserving RTP packetization/send path and feedback loop.
+5. Add codec scaffold primitives (catalog, readiness, factory hooks) while keeping H264-only gate active.
+6. Replace/remove legacy modules (DXGI, Windows Graphics Capture adapter for active streaming, subprocess x264, NVENC SDK backend).
+7. Update build/release wiring to remove obsolete FFmpeg binary bundling assumptions.
+8. Keep frontend API stable; update only diagnostics labels/fields if needed.
+9. Run validation matrix and complete manual QA backlog in `QA.md`.
 
 ### Ordered Checklist
 
-#### NATIVE.DXGI.A Source modeling and monitor resolution
+#### WIN.REWRITE.A Contract freeze and compatibility envelope
 
-- [ ] Add DXGI target enum for `screen`, `window`, and `application` source ids
-- [ ] Resolve `window` target HWND + rect and reject invalid handles safely
-- [ ] Resolve `application` target PID to one locked window at session start
-- [ ] Map window target to monitor device name used by DXGI session
+- [ ] Record current Tauri command request/response contracts from `client/src/api/nativeCapture.ts`
+- [ ] Record native sender signaling payload shape from `client/src/api/media/types.ts` and `server/src/ws/media_signal.rs`
+- [ ] Lock H264-only negotiation behavior and define explicit error for unsupported codec requests
+- [ ] Confirm no WS discriminator drift (`server/src/ws/messages.rs` <-> `client/src/api/ws.ts`)
 
-#### NATIVE.DXGI.B Cropped GPU frame pipeline
+#### WIN.REWRITE.B Dependencies and build system
 
-- [ ] Add reusable crop texture path with `CopySubresourceRegion`
-- [ ] Clamp crop rect to monitor bounds and skip zero-area regions
-- [ ] Emit `GpuTexture` packets with cropped dimensions for window/app
-- [ ] Keep full-monitor `CopyResource` path for `screen` sources
+- [ ] Update `client/src-tauri/Cargo.toml` to add `zed-scap` and `playa-ffmpeg` (Windows target scope)
+- [ ] Remove obsolete encoder/capture deps tied to legacy implementation where no longer used
+- [ ] Remove/adjust `native-nvenc` feature semantics if it no longer reflects runtime behavior
+- [ ] Update `client/src-tauri/build.rs` to remove hard requirement for bundled `ffmpeg.exe`
+- [ ] Update `client/src-tauri/tauri.conf.json` resources only if no longer needed for legacy binary bundling
+- [ ] Update `.github/workflows/tauri-release.yml` Windows job assumptions (no CUDA/NVCodec SDK precheck unless still needed)
 
-#### NATIVE.DXGI.C Service integration
+#### WIN.REWRITE.C New Windows capture adapter (`zed-scap`)
 
-- [ ] Update `start_dxgi_capture` to accept all source kinds
-- [ ] Route `start_native_capture` to DXGI for screen/window/application
-- [ ] Remove runtime `windows_capture::start_capture` dependency for active sessions
-- [ ] Preserve stop/restart behavior and active-session cache semantics
+- [ ] Add capture adapter module under `client/src-tauri/src/capture/` for `zed-scap` target/frame integration
+- [ ] Implement `list_sources` conversion to existing `NativeCaptureSource` shape
+- [ ] Implement source id parsing and deterministic target selection
+- [ ] Implement capture loop start/stop lifecycle with bounded frame dispatch
+- [ ] Normalize incoming frame variants to internal `bgra8` payload contract
+- [ ] Add robust error mapping for permission denied, target lost, and unsupported states
 
-#### NATIVE.DXGI.D Stability and observability
+#### WIN.REWRITE.D New H264 encoder backend (`playa-ffmpeg`)
 
-- [ ] Add logs for target-window minimized/lost/monitor-moved events
-- [ ] Add safe handling for transient resolution changes without panics
-- [ ] Verify no worker crash on window/app start, stop, or target loss
+- [ ] Add new encoder backend module replacing `x264_encoder.rs` + `nvenc_sdk.rs`
+- [ ] Implement encoder probing and backend-selection diagnostics (selected vs requested)
+- [ ] Implement H264 encode loop with Annex B output for packetizer consumption
+- [ ] Implement keyframe request hook for RTCP feedback
+- [ ] Implement width/height change handling (session reinit without panic)
+- [ ] Implement deterministic fallback order and explicit failure reason propagation
 
-#### NATIVE.DXGI.E Validation
+#### WIN.REWRITE.E Codec scaffold for future expansion
 
-- [ ] `cargo check --manifest-path client/src-tauri/Cargo.toml --features native-nvenc`
-- [ ] `cargo clippy --manifest-path client/src-tauri/Cargo.toml --all-targets --features native-nvenc -- -D warnings`
-- [ ] `cargo test --manifest-path client/src-tauri/Cargo.toml --features native-nvenc`
+- [ ] Add codec catalog abstraction with readiness statuses (`ready`, `planned`)
+- [ ] Keep `video/H264` as only `ready` codec in runtime gate
+- [ ] Add factory interfaces for future codec-specific encoder/packetizer registration
+- [ ] Ensure unsupported codec path emits structured diagnostic reason
+- [ ] Keep server/client codec metadata fields additive and backward compatible
+
+#### WIN.REWRITE.F Native sender worker and RTP integration
+
+- [ ] Rewire `native_sender` worker to new capture frame envelope and encoder backend
+- [ ] Keep existing H264 RTP packetizer behavior and MTU fragmentation path
+- [ ] Keep RTCP feedback polling and keyframe request path active
+- [ ] Preserve queue pressure/degradation/fallback metric fields consumed by frontend
+- [ ] Ensure worker shutdown is graceful on capture stop, queue disconnect, or encoder failure
+
+#### WIN.REWRITE.G Service command surface and status model
+
+- [ ] Keep command handlers in `client/src-tauri/src/capture/service.rs` signature-compatible
+- [ ] Keep `NativeCaptureStatus` payload shape compatible for frontend callers
+- [ ] Keep `native_codec_capabilities` command returning H264-ready data (plus optional planned entries)
+- [ ] Keep start idempotency semantics for same source/options + active worker
+- [ ] Keep stop idempotency semantics with best-effort cleanup
+
+#### WIN.REWRITE.H Frontend integration safeguards
+
+- [ ] Verify no required API callsite changes in `client/src/api/media/native.ts`
+- [ ] Keep native session negotiation path stable in `client/src/api/media/producers.ts`
+- [ ] Keep diagnostics parsing compatible (backend labels and fallback reason fields)
+- [ ] Keep source picker UX compatible in `client/src/components/channel-list/hooks/useScreenShareModal.ts`
+
+#### WIN.REWRITE.I Legacy cleanup (scorched-earth completion)
+
+- [ ] Remove legacy active-stream capture modules and thread wiring replaced by new adapter
+- [ ] Remove legacy encoder backend modules superseded by new FFmpeg backend
+- [ ] Remove dead env vars/config references tied only to removed modules
+- [ ] Update docs that mention removed paths (`docs/zero-copy-nvenc.md`, `client/src-tauri/bin/README.md`, related notes)
+
+#### WIN.REWRITE.J Validation
+
+- [ ] `cargo fmt --all --manifest-path client/src-tauri/Cargo.toml -- --check`
+- [ ] `cargo clippy --manifest-path client/src-tauri/Cargo.toml --all-targets -- -D warnings`
+- [ ] `cargo test --manifest-path client/src-tauri/Cargo.toml`
 - [ ] `npm --prefix client run typecheck`
 - [ ] `npm --prefix client run build`
 
+#### WIN.REWRITE.K Manual QA linkage
+
+- [ ] Execute Windows-native rewrite checklist from `QA.md`
+- [ ] Capture logs for at least one hardware-accelerated run and one software-fallback run
+- [ ] Validate remote viewer playback quality/stability on start, stop, and repeated sessions
+
 ### Touch Points (Expected)
 
-- `client/src-tauri/src/capture/dxgi_capture.rs`
+- `client/src-tauri/Cargo.toml`
+- `client/src-tauri/build.rs`
+- `client/src-tauri/tauri.conf.json`
+- `client/src-tauri/src/capture/mod.rs`
 - `client/src-tauri/src/capture/service.rs`
+- `client/src-tauri/src/capture/service/encoder_backend.rs`
 - `client/src-tauri/src/capture/service/native_sender.rs`
-- `client/src-tauri/src/capture/windows_capture.rs` (source listing only; no active stream start path)
-- `client/src/api/nativeCapture.ts` (only if request/telemetry payload changes)
-- `client/src/api/media/native.ts` (only if native start options change)
+- `client/src-tauri/src/capture/service/rtp_packetizer.rs`
+- `client/src-tauri/src/capture/service/rtp_sender.rs`
+- `client/src-tauri/src/capture/service/metrics.rs`
+- `client/src-tauri/src/capture/windows_capture.rs` (replace/remove active-stream responsibilities)
+- `client/src-tauri/src/lib.rs`
+- `client/src/api/nativeCapture.ts` (only for additive status/capability fields)
+- `client/src/api/media/native.ts` (only if diagnostics fields change)
+- `client/src/api/media/producers.ts` (only if codec metadata handling needs additive adjustments)
+- `server/src/media/native_codec.rs` (only additive codec scaffold alignment)
+- `server/src/media/transport.rs` (only if additive scaffold wiring needed)
+- `server/src/ws/media_signal.rs` (only if additive payload fields required)
+- `docs/zero-copy-nvenc.md`
+- `client/src-tauri/bin/README.md`
+- `.github/workflows/tauri-release.yml`
+
+### Risks and Mitigations
+
+- Capture permission/target edge cases in `zed-scap` -> keep clear error mapping and retry boundaries.
+- Hardware encoder availability varies by host -> enforce deterministic fallback to software and expose reason in metrics.
+- Bitstream/packetization mismatch risk -> keep strict Annex B validation before RTP send and fail fast with diagnostics.
+- Contract drift risk during rewrite -> preserve command names/payload shapes and run WS/Tauri bridge sync checks.
+- Build pipeline drift -> update release workflow and docs in same change set.
 
 ### Exit Criteria
 
-- Starting native stream from `window:*` no longer crashes `native-sender-worker`.
-- Window/app streams are delivered via DXGI and appear watchable remotely with LIVE badge behavior unchanged.
-- Window move between monitors triggers stable remap/recovery without process crash.
-- Occlusion/minimized behavior matches visible-pixels model and is documented in QA outcomes.
+- Windows native screen share runs on new `zed-scap` + `playa-ffmpeg` pipeline with no legacy active-stream modules in use.
+- Native sender negotiates and publishes H264 successfully end-to-end.
+- Runtime fallback from hardware to software encode is observable and stable.
+- Tauri/frontend command and signaling contracts remain compatible.
+- Manual QA checklist in `QA.md` is completed for this track.

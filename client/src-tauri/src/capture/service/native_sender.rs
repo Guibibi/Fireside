@@ -9,7 +9,6 @@ use crate::capture::windows_capture::{self, NativeFrameData, NativeFramePacket};
 use super::encoder_backend::create_encoder_backend;
 use super::metrics::NativeSenderSharedMetrics;
 use super::rtp_packetizer::{H264RtpPacketizer, RtpPacketizer};
-use super::x264_encoder::try_build_x264_backend;
 
 const FAILURE_WINDOW_MS: u64 = 12_000;
 const ENCODE_FAILURE_THRESHOLD: u64 = 18;
@@ -31,7 +30,6 @@ const LEVEL3_BITRATE_NUMERATOR_DEFAULT: u32 = 7;
 const LEVEL3_BITRATE_DENOMINATOR_DEFAULT: u32 = 10;
 const DEFAULT_TARGET_BITRATE_KBPS: u32 = 8_000;
 const MIN_DEGRADED_BITRATE_KBPS: u32 = 1_200;
-const NVENC_RUNTIME_FALLBACK_ENCODE_FAILURES_DEFAULT: u64 = 12;
 const DEFAULT_MAX_ENCODE_WIDTH: u32 = 1920;
 const DEFAULT_MAX_ENCODE_HEIGHT: u32 = 1080;
 const DEFAULT_FPS_LIMIT: u32 = 30;
@@ -240,8 +238,6 @@ fn trigger_native_fallback(reason: &str, source_id: &str, shared: &NativeSenderS
         "[native-sender] event=fallback_triggered source={} reason={}",
         source_id, reason
     );
-
-    let _ = windows_capture::stop_capture();
 
     shared
         .fallback_completed_events
@@ -596,14 +592,6 @@ pub fn run_native_sender_worker(
     let mut resolution_cap_buffer = DownscaleBuffer::default();
     let mut fps_limiter = FpsLimiter::new(config.target_fps);
     let mut bitrate_limiter = BitrateLimiter::default();
-    let mut consecutive_encode_failures = 0u64;
-    let mut active_encoder_backend = encoder_selection.selected_backend;
-    let nvenc_runtime_fallback_encode_failures = env_u64(
-        "YANKCORD_NATIVE_NVENC_RUNTIME_FALLBACK_ENCODE_FAILURES",
-        NVENC_RUNTIME_FALLBACK_ENCODE_FAILURES_DEFAULT,
-        1,
-        120,
-    );
 
     while !stop_signal.load(Ordering::Relaxed) {
         match receiver.recv_timeout(Duration::from_millis(250)) {
@@ -642,69 +630,8 @@ pub fn run_native_sender_worker(
                     continue;
                 }
 
-                // Phase 3: Try GPU encode first for GPU-resident textures
-                if let NativeFrameData::GpuTexture(handle) = frame_data {
-                    use super::encoder_backend::GpuEncodeResult;
-                    match encoder.encode_gpu_frame(handle, &shared) {
-                        GpuEncodeResult::Encoded(nals) => {
-                            // GPU encode succeeded — packetize and send
-                            let encoded_bytes: usize = nals.iter().map(|n| n.len()).sum();
-                            let bitrate_cap_kbps = degradation_state
-                                .bitrate_cap_kbps(config.target_bitrate_kbps, &degradation_tuning);
-                            if !bitrate_limiter.allow(
-                                encoded_bytes,
-                                unix_timestamp_ms(),
-                                bitrate_cap_kbps,
-                            ) {
-                                shared.dropped_during_send.fetch_add(1, Ordering::Relaxed);
-                                continue;
-                            }
-
-                            shared.encoded_frames.fetch_add(1, Ordering::Relaxed);
-                            shared
-                                .encoded_bytes
-                                .fetch_add(encoded_bytes as u64, Ordering::Relaxed);
-                            shared
-                                .last_frame_width
-                                .store(handle.width as u64, Ordering::Relaxed);
-                            shared
-                                .last_frame_height
-                                .store(handle.height as u64, Ordering::Relaxed);
-
-                            let rtp_packets =
-                                packetizer.send_encoded_frames(&nals, packet.timestamp_ms);
-                            shared
-                                .rtp_packets_sent
-                                .fetch_add(rtp_packets as u64, Ordering::Relaxed);
-
-                            shared.processed_packets.fetch_add(1, Ordering::Relaxed);
-                            continue;
-                        }
-                        GpuEncodeResult::NoOutput => {
-                            // Pipeline ramp-up, no output yet
-                            continue;
-                        }
-                        GpuEncodeResult::NotSupported => {
-                            // Fall through to CPU readback path below
-                        }
-                    }
-                }
-
-                // Resolve frame data to CPU BGRA bytes
-                let bgra_owned;
                 let bgra: &[u8] = match frame_data {
-                    NativeFrameData::CpuBgra(data) => data,
-                    NativeFrameData::GpuTexture(handle) => match handle.readback_bgra() {
-                        Ok(data) => {
-                            bgra_owned = data;
-                            &bgra_owned
-                        }
-                        Err(e) => {
-                            shared.encode_errors.fetch_add(1, Ordering::Relaxed);
-                            eprintln!("[native-sender] event=gpu_readback_error detail=\"{e}\"");
-                            continue;
-                        }
-                    },
+                    NativeFrameData::CpuBgra(data) => data.as_slice(),
                 };
 
                 if let Some(expected_len) = packet.bgra_len {
@@ -757,47 +684,8 @@ pub fn run_native_sender_worker(
                 let encoded_frames =
                     encoder.encode_frame(encode_input, encode_width, encode_height, &shared);
                 let Some(frames) = encoded_frames else {
-                    consecutive_encode_failures = consecutive_encode_failures.saturating_add(1);
-                    if active_encoder_backend == "nvenc_sdk"
-                        && encoder_selection.requested_backend == "auto"
-                        && consecutive_encode_failures >= nvenc_runtime_fallback_encode_failures
-                    {
-                        match try_build_x264_backend(config.target_fps, config.target_bitrate_kbps)
-                        {
-                            Ok(x264) => {
-                                encoder = x264;
-                                active_encoder_backend = "x264";
-                                shared.set_encoder_backend("x264");
-                                shared.set_encoder_backend_fallback_reason(Some(
-                                    "nvenc_runtime_encode_failure_threshold",
-                                ));
-                                shared
-                                    .encoder_backend_runtime_fallback_events
-                                    .fetch_add(1, Ordering::Relaxed);
-
-                                // Force at least degradation level 1 to halve frame rate,
-                                // giving the software encoder breathing room.
-                                if degradation_state.level < 1 {
-                                    degradation_state.level = 1;
-                                    shared.set_degradation_level(1);
-                                }
-
-                                eprintln!(
-                                    "[native-sender] event=encoder_backend_runtime_fallback source={} from=nvenc_sdk to=x264 reason=encode_failure_threshold threshold={} forced_degrade_level={}",
-                                    config.source_id, nvenc_runtime_fallback_encode_failures, degradation_state.level,
-                                );
-                            }
-                            Err(e) => {
-                                eprintln!(
-                                    "[native-sender] event=runtime_fallback_failed source={} from=nvenc_sdk detail=\"{}\"",
-                                    config.source_id, e,
-                                );
-                            }
-                        }
-                    }
                     continue;
                 };
-                consecutive_encode_failures = 0;
 
                 let encoded_bytes: usize = frames.iter().map(|frame| frame.len()).sum();
                 let bitrate_cap_kbps = degradation_state

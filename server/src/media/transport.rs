@@ -381,7 +381,7 @@ impl MediaService {
         let tuple = plain_transport.tuple();
         let rtp_target = self.native_rtp_target_for_port(tuple.local_port());
         let ssrc = canonical_native_ssrc(connection_id);
-        let codec = NativeVideoCodec::from_preference_list(preferred_codecs.as_deref());
+        let codec = NativeVideoCodec::from_preference_list(preferred_codecs.as_deref())?;
         let codec_descriptor = codec.descriptor();
 
         let producer = plain_transport
@@ -444,10 +444,7 @@ impl MediaService {
                 .clone()
                 .unwrap_or_else(|| NATIVE_H264_PROFILE_LEVEL_ID.to_string()),
             codec: codec_descriptor,
-            available_codecs: NativeVideoCodec::all_for_advertisement()
-                .iter()
-                .map(|codec| codec.descriptor())
-                .collect(),
+            available_codecs: NativeVideoCodec::all_for_advertisement(),
             owner_connection_id: connection_id,
         })
     }
@@ -629,9 +626,9 @@ impl MediaService {
             if *other_conn_id == connection_id || other_entry.channel_id != channel_id {
                 continue;
             }
-            other_entry.consumers.retain(|_cid, consumer| {
-                consumer.producer_id().to_string() != producer_id
-            });
+            other_entry
+                .consumers
+                .retain(|_cid, consumer| consumer.producer_id().to_string() != producer_id);
         }
 
         Ok(ClosedProducer {

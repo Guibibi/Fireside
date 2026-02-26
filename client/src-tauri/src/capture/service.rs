@@ -1,10 +1,9 @@
 mod encoder_backend;
+mod ffmpeg_backend;
 mod metrics;
 mod native_sender;
-mod nvenc_sdk;
 mod rtp_packetizer;
 mod rtp_sender;
-mod x264_encoder;
 
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -16,12 +15,10 @@ use tauri::{State, Window};
 use super::windows_capture::{
     self, NativeCaptureSource, NativeCaptureSourceKind, NativeFramePacket,
 };
+use super::zed_scap_capture;
 use encoder_backend::create_encoder_backend;
 use metrics::{NativeSenderMetrics, NativeSenderSharedMetrics, NativeSenderSnapshotInput};
 use native_sender::{run_native_sender_worker, NativeSenderRuntimeConfig};
-
-#[cfg(target_os = "windows")]
-use super::dxgi_capture;
 
 const DEFAULT_FRAME_QUEUE_CAPACITY: usize = 16;
 
@@ -61,17 +58,19 @@ pub struct NativeCaptureService {
     active_session: Mutex<Option<ActiveCaptureSession>>,
     sender_worker: Mutex<Option<NativeSenderWorker>>,
     last_sender_metrics: Mutex<Option<NativeSenderMetrics>>,
-    dxgi_capture: Mutex<Option<DxgiCaptureThread>>,
+    capture_worker: Mutex<Option<CaptureWorkerThread>>,
 }
 
-struct DxgiCaptureThread {
+struct CaptureWorkerThread {
+    source_id: String,
     stop_signal: Arc<AtomicBool>,
     handle: Option<JoinHandle<()>>,
 }
 
-impl std::fmt::Debug for DxgiCaptureThread {
+impl std::fmt::Debug for CaptureWorkerThread {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("DxgiCaptureThread")
+        f.debug_struct("CaptureWorkerThread")
+            .field("source_id", &self.source_id)
             .field(
                 "active",
                 &self
@@ -360,53 +359,63 @@ impl NativeCaptureService {
         Ok(())
     }
 
-    fn stop_dxgi_capture(&self) {
-        // Even if the lock is poisoned, we should still try to stop the capture
-        // thread to avoid leaving zombie threads. Poisoning only affects the
-        // state value, not our ability to signal the stop flag.
-        let mut dxgi = match self.dxgi_capture.lock() {
+    fn is_capture_worker_active_for(&self, source_id: &str) -> Result<bool, String> {
+        let worker = self
+            .capture_worker
+            .lock()
+            .map_err(|_| "Native capture worker lock was poisoned".to_string())?;
+
+        Ok(worker
+            .as_ref()
+            .map(|active| {
+                active.source_id == source_id
+                    && active
+                        .handle
+                        .as_ref()
+                        .map(|handle| !handle.is_finished())
+                        .unwrap_or(false)
+            })
+            .unwrap_or(false))
+    }
+
+    fn stop_capture_worker(&self) {
+        let mut capture_worker = match self.capture_worker.lock() {
             Ok(lock) => lock,
             Err(poisoned) => {
-                eprintln!("[native-capture] warning=lock_poisoned location=stop_dxgi_capture");
+                eprintln!("[native-capture] warning=lock_poisoned location=stop_capture_worker");
                 poisoned.into_inner()
             }
         };
 
-        if let Some(mut thread) = dxgi.take() {
-            thread.stop_signal.store(true, Ordering::Relaxed);
-            if let Some(handle) = thread.handle.take() {
+        if let Some(mut worker) = capture_worker.take() {
+            worker.stop_signal.store(true, Ordering::Relaxed);
+            if let Some(handle) = worker.handle.take() {
                 let _ = handle.join();
             }
         }
     }
 
     #[cfg(target_os = "windows")]
-    fn start_dxgi_capture(&self, source_id: &str, target_fps: Option<u32>) -> Result<(), String> {
-        self.stop_dxgi_capture();
+    fn start_capture_worker(&self, source_id: &str, target_fps: Option<u32>) -> Result<(), String> {
+        self.stop_capture_worker();
 
         let stop_signal = Arc::new(AtomicBool::new(false));
-        let thread_stop = Arc::clone(&stop_signal);
-        let thread_source_id = source_id.to_string();
+        let worker_stop = Arc::clone(&stop_signal);
+        let worker_source_id = source_id.to_string();
 
         let handle = thread::Builder::new()
-            .name("dxgi-capture".to_string())
+            .name("native-capture-worker".to_string())
             .spawn(move || {
-                dxgi_capture::run_dxgi_capture_loop(
-                    &thread_source_id,
-                    thread_stop,
-                    target_fps,
-                    |packet| {
-                        windows_capture::dispatch_frame_external(packet);
-                    },
-                );
+                zed_scap_capture::run_capture_loop(&worker_source_id, worker_stop, target_fps);
             })
-            .map_err(|e| format!("Failed to start DXGI capture thread: {e}"))?;
+            .map_err(|error| format!("Failed to start native capture worker: {error}"))?;
 
-        let mut dxgi = self
-            .dxgi_capture
+        let mut capture_worker = self
+            .capture_worker
             .lock()
-            .map_err(|_| "DXGI capture lock was poisoned".to_string())?;
-        *dxgi = Some(DxgiCaptureThread {
+            .map_err(|_| "Native capture worker lock was poisoned".to_string())?;
+        *capture_worker = Some(CaptureWorkerThread {
+            source_id: source_id.to_string(),
             stop_signal,
             handle: Some(handle),
         });
@@ -415,8 +424,12 @@ impl NativeCaptureService {
     }
 
     #[cfg(not(target_os = "windows"))]
-    fn start_dxgi_capture(&self, _source_id: &str, _target_fps: Option<u32>) -> Result<(), String> {
-        Err("DXGI capture is only supported on Windows".to_string())
+    fn start_capture_worker(
+        &self,
+        _source_id: &str,
+        _target_fps: Option<u32>,
+    ) -> Result<(), String> {
+        Err("Native capture is supported on Windows only".to_string())
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -545,8 +558,15 @@ fn normalize_encoder_backend(encoder_backend: Option<String>) -> Result<Option<S
     }
 
     match normalized.as_str() {
-        "auto" | "nvenc_sdk" | "x264" => Ok(Some(normalized)),
-        _ => Err("Unsupported encoder backend. Use auto, nvenc_sdk, or x264.".to_string()),
+        "auto" => Ok(Some("auto".to_string())),
+        "h264_nvenc" | "nvenc_sdk" | "nvenc" => Ok(Some("h264_nvenc".to_string())),
+        "h264_qsv" => Ok(Some("h264_qsv".to_string())),
+        "h264_amf" => Ok(Some("h264_amf".to_string())),
+        "libx264" | "x264" | "software" => Ok(Some("libx264".to_string())),
+        _ => Err(
+            "Unsupported encoder backend. Use auto, h264_nvenc, h264_qsv, h264_amf, or libx264."
+                .to_string(),
+        ),
     }
 }
 
@@ -584,7 +604,8 @@ fn normalize_ssrc(ssrc: Option<u32>) -> Result<u32, String> {
 
 #[tauri::command]
 pub fn list_native_capture_sources(window: Window) -> Result<Vec<NativeCaptureSource>, String> {
-    windows_capture::list_sources(&window)
+    let _ = window;
+    zed_scap_capture::list_sources()
 }
 
 #[tauri::command]
@@ -598,6 +619,7 @@ pub fn start_native_capture(
     service: State<NativeCaptureService>,
     request: StartNativeCaptureRequest,
 ) -> Result<NativeCaptureStatus, String> {
+    let _ = window;
     let normalized = request.source_id.trim();
     if normalized.is_empty() {
         return Err(
@@ -613,7 +635,7 @@ pub fn start_native_capture(
     let payload_type = normalize_payload_type(request.payload_type)?;
     let ssrc = normalize_ssrc(request.ssrc)?;
 
-    let sources = windows_capture::list_sources(&window)?;
+    let sources = zed_scap_capture::list_sources()?;
     let selected_source = sources
         .iter()
         .find(|source| source.id == normalized)
@@ -638,7 +660,7 @@ pub fn start_native_capture(
             && active.encoder_backend == encoder_backend
             && active.codec_mime_type == codec_mime_type
             && service.is_worker_active_for(normalized)?
-            && windows_capture::is_capture_active_for(normalized)?
+            && service.is_capture_worker_active_for(normalized)?
         {
             return service.current_status();
         }
@@ -667,18 +689,11 @@ pub fn start_native_capture(
         ssrc,
     )?;
 
-    match selected_source.kind {
-        NativeCaptureSourceKind::Screen
-        | NativeCaptureSourceKind::Window
-        | NativeCaptureSourceKind::Application => {
-            let _ = windows_capture::stop_capture();
-            service
-                .start_dxgi_capture(normalized, fps)
-                .inspect_err(|_| {
-                    let _ = service.stop_sender_worker();
-                })?;
-        }
-    }
+    service
+        .start_capture_worker(normalized, fps)
+        .inspect_err(|_| {
+            let _ = service.stop_sender_worker();
+        })?;
 
     let mut active_session = service
         .active_session
@@ -703,8 +718,7 @@ pub fn start_native_capture(
 pub fn stop_native_capture(
     service: State<NativeCaptureService>,
 ) -> Result<NativeCaptureStatus, String> {
-    service.stop_dxgi_capture();
-    windows_capture::stop_capture()?;
+    service.stop_capture_worker();
     service.stop_sender_worker()?;
 
     let mut active_session = service

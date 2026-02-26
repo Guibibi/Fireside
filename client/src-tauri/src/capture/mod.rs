@@ -1,7 +1,6 @@
-pub mod dxgi_capture;
-pub mod gpu_frame;
 pub mod service;
 pub mod windows_capture;
+pub mod zed_scap_capture;
 
 pub(crate) fn unix_timestamp_ms() -> u64 {
     std::time::SystemTime::now()

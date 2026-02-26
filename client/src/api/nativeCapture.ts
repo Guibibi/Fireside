@@ -69,8 +69,8 @@ export interface NativeCaptureStatus {
     fallback_triggered_events: number;
     fallback_completed_events: number;
     encoder_backend_runtime_fallback_events: number;
-    encoder_backend: "nvenc_sdk" | "x264" | string | null;
-    encoder_backend_requested: "auto" | "nvenc_sdk" | "x264" | string | null;
+    encoder_backend: "h264_nvenc" | "h264_qsv" | "h264_amf" | "libx264" | string | null;
+    encoder_backend_requested: "auto" | "h264_nvenc" | "h264_qsv" | "h264_amf" | "libx264" | string | null;
     encoder_backend_fallback_reason: string | null;
   };
 }

@@ -1,20 +1,5 @@
+use super::ffmpeg_backend::{build_ffmpeg_backend, probe_ffmpeg_backend};
 use super::metrics::NativeSenderSharedMetrics;
-use super::nvenc_sdk::try_build_nvenc_sdk_backend;
-use super::x264_encoder::try_build_x264_backend;
-
-use crate::capture::gpu_frame::GpuTextureHandle;
-
-/// Result of attempting to encode a GPU-resident texture directly.
-#[derive(Debug, Clone)]
-#[allow(dead_code)]
-pub enum GpuEncodeResult {
-    /// Encoder does not support GPU texture input; fall back to CPU readback.
-    NotSupported,
-    /// Encoder accepted the frame but produced no output yet (pipeline ramp-up).
-    NoOutput,
-    /// Successfully encoded: NAL units ready for packetization.
-    Encoded(Vec<Vec<u8>>),
-}
 
 #[derive(Debug, Clone, Copy)]
 pub struct CodecDescriptor {
@@ -34,21 +19,6 @@ pub trait VideoEncoderBackend: Send {
         shared: &NativeSenderSharedMetrics,
     ) -> Option<Vec<Vec<u8>>>;
     fn request_keyframe(&mut self) -> bool;
-
-    /// Try to encode a GPU-resident texture directly (zero-copy path).
-    /// Default implementation returns `NotSupported`, causing the caller
-    /// to fall back to CPU readback + `encode_frame`.
-    ///
-    /// Note: This method is available on all platforms but returns NotSupported
-    /// on non-Windows platforms. The GpuTextureHandle is cfg-gated internally.
-    #[allow(unused_variables)]
-    fn encode_gpu_frame(
-        &mut self,
-        handle: &GpuTextureHandle,
-        shared: &NativeSenderSharedMetrics,
-    ) -> GpuEncodeResult {
-        GpuEncodeResult::NotSupported
-    }
 }
 
 pub struct EncoderBackendSelection {
@@ -60,25 +30,30 @@ pub struct EncoderBackendSelection {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum EncoderPreference {
     Auto,
-    NvencSdk,
-    X264,
+    H264Nvenc,
+    H264Qsv,
+    H264Amf,
+    Libx264,
 }
 
 impl EncoderPreference {
     fn from_label(raw: &str) -> Self {
-        let normalized = raw.trim().to_lowercase();
-        match normalized.as_str() {
-            "nvenc_sdk" => Self::NvencSdk,
-            "x264" | "software" => Self::X264,
+        match raw.trim().to_lowercase().as_str() {
+            "h264_nvenc" | "nvenc" | "nvenc_sdk" => Self::H264Nvenc,
+            "h264_qsv" => Self::H264Qsv,
+            "h264_amf" => Self::H264Amf,
+            "libx264" | "x264" | "software" => Self::Libx264,
             _ => Self::Auto,
         }
     }
 
-    fn as_label(&self) -> &'static str {
+    fn as_label(self) -> &'static str {
         match self {
             Self::Auto => "auto",
-            Self::NvencSdk => "nvenc_sdk",
-            Self::X264 => "x264",
+            Self::H264Nvenc => "h264_nvenc",
+            Self::H264Qsv => "h264_qsv",
+            Self::H264Amf => "h264_amf",
+            Self::Libx264 => "libx264",
         }
     }
 }
@@ -93,71 +68,57 @@ pub fn create_encoder_backend(
         .unwrap_or(EncoderPreference::Auto);
     let requested_backend = preference.as_label();
 
-    // Explicit nvenc_sdk request
-    if preference == EncoderPreference::NvencSdk {
-        return match try_build_nvenc_sdk_backend(target_fps, target_bitrate_kbps) {
-            Ok(backend) => Ok((
-                backend,
-                EncoderBackendSelection {
-                    requested_backend,
-                    selected_backend: "nvenc_sdk",
-                    fallback_reason: None,
-                },
-            )),
-            Err(error) => Err(error),
-        };
-    }
-
-    // Explicit x264 request
-    if preference == EncoderPreference::X264 {
-        return match try_build_x264_backend(target_fps, target_bitrate_kbps) {
-            Ok(backend) => Ok((
-                backend,
-                EncoderBackendSelection {
-                    requested_backend,
-                    selected_backend: "x264",
-                    fallback_reason: None,
-                },
-            )),
-            Err(error) => Err(error),
-        };
-    }
-
-    // Auto: try nvenc_sdk first, then x264 fallback
-    let nvenc_sdk_error = match try_build_nvenc_sdk_backend(target_fps, target_bitrate_kbps) {
-        Ok(backend) => {
-            return Ok((
-                backend,
-                EncoderBackendSelection {
-                    requested_backend,
-                    selected_backend: "nvenc_sdk",
-                    fallback_reason: None,
-                },
-            ));
-        }
-        Err(e) => e,
+    let candidates: Vec<EncoderPreference> = match preference {
+        EncoderPreference::Auto => vec![
+            EncoderPreference::H264Nvenc,
+            EncoderPreference::H264Qsv,
+            EncoderPreference::H264Amf,
+            EncoderPreference::Libx264,
+        ],
+        explicit => vec![explicit],
     };
 
-    match try_build_x264_backend(target_fps, target_bitrate_kbps) {
-        Ok(backend) => Ok((
-            backend,
-            EncoderBackendSelection {
-                requested_backend,
-                selected_backend: "x264",
-                fallback_reason: Some(format!("nvenc_sdk: {}", nvenc_sdk_error)),
-            },
-        )),
-        Err(x264_error) => Err(format!(
-            "no encoder available — nvenc_sdk: {}; x264: {}",
-            nvenc_sdk_error, x264_error
-        )),
+    let mut probe_failures = Vec::new();
+    let mut selected = None;
+
+    for candidate in candidates {
+        match probe_ffmpeg_backend(candidate.as_label()) {
+            Ok(()) => {
+                selected = Some(candidate);
+                break;
+            }
+            Err(error) => {
+                probe_failures.push(format!("{}: {}", candidate.as_label(), error));
+            }
+        }
     }
+
+    let Some(selected_backend) = selected else {
+        return Err(format!(
+            "no encoder available — {}",
+            probe_failures.join("; ")
+        ));
+    };
+
+    let backend =
+        build_ffmpeg_backend(target_fps, target_bitrate_kbps, selected_backend.as_label())?;
+
+    let fallback_reason = if preference == EncoderPreference::Auto && !probe_failures.is_empty() {
+        Some(probe_failures.join("; "))
+    } else {
+        None
+    };
+
+    Ok((
+        backend,
+        EncoderBackendSelection {
+            requested_backend,
+            selected_backend: selected_backend.as_label(),
+            fallback_reason,
+        },
+    ))
 }
 
-/// Split an Annex B H.264/H.265 bitstream into individual NAL units,
-/// stripping the start code prefixes (0x000001 or 0x00000001).
-/// Used by nvenc_sdk and x264_encoder.
-#[allow(dead_code)]
 pub(super) fn split_annex_b_nals(bitstream: &[u8]) -> Vec<Vec<u8>> {
     let mut start_indices = Vec::new();
     let mut index = 0usize;

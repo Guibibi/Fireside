@@ -31,12 +31,36 @@ pub struct NativeCodecDescriptor {
 pub(super) struct NativeVideoCodec;
 
 impl NativeVideoCodec {
-    pub fn from_preference_list(_preferred_codecs: Option<&[String]>) -> Self {
-        Self
+    pub fn from_preference_list(preferred_codecs: Option<&[String]>) -> Result<Self, String> {
+        if let Some(preferences) = preferred_codecs {
+            let normalized_preferences = preferences
+                .iter()
+                .map(|value| value.trim().to_ascii_lowercase())
+                .filter(|value| !value.is_empty())
+                .collect::<Vec<_>>();
+
+            if !normalized_preferences.is_empty()
+                && !normalized_preferences
+                    .iter()
+                    .any(|codec| codec == "video/h264")
+            {
+                return Err(
+                    "Unsupported native sender codec request. This phase supports video/H264 only."
+                        .to_string(),
+                );
+            }
+        }
+
+        Ok(Self)
     }
 
-    pub fn all_for_advertisement() -> [Self; 1] {
-        [Self]
+    pub fn all_for_advertisement() -> Vec<NativeCodecDescriptor> {
+        vec![
+            Self.descriptor(),
+            planned_codec_descriptor("video/VP8", 90_000, 98),
+            planned_codec_descriptor("video/VP9", 90_000, 99),
+            planned_codec_descriptor("video/AV1", 90_000, 100),
+        ]
     }
 
     fn mime_type(self) -> &'static str {
@@ -72,6 +96,21 @@ impl NativeVideoCodec {
             profile_level_id: self.profile_level_id().map(str::to_string),
             readiness: self.readiness(),
         }
+    }
+}
+
+fn planned_codec_descriptor(
+    mime_type: &str,
+    clock_rate: u32,
+    payload_type: u8,
+) -> NativeCodecDescriptor {
+    NativeCodecDescriptor {
+        mime_type: mime_type.to_string(),
+        clock_rate,
+        payload_type,
+        packetization_mode: None,
+        profile_level_id: None,
+        readiness: NativeCodecReadiness::Planned,
     }
 }
 

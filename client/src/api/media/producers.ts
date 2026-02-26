@@ -539,12 +539,7 @@ async function startNativeScreenProducer(
     }
 
     const negotiatedMimeTypeNormalized = negotiatedMimeType.toLowerCase();
-    if (
-      negotiatedMimeTypeNormalized !== "video/h264"
-      && negotiatedMimeTypeNormalized !== "video/vp8"
-      && negotiatedMimeTypeNormalized !== "video/vp9"
-      && negotiatedMimeTypeNormalized !== "video/av1"
-    ) {
+    if (negotiatedMimeTypeNormalized !== "video/h264") {
       reportCodecDecision(channelId, "video/h264", negotiatedMimeType, "unsupported_codec");
       reportNativeSenderDiagnostic(
         channelId,

@@ -28,10 +28,10 @@ jobs:
             runs_on_json: '["macos-latest"]'
             build_cmd: npm --prefix client run tauri build
             enable_nvenc: false
-          - name: windows-nvenc
+          - name: windows
             runs_on_json: '["self-hosted", "Windows", "nvenc"]'
-            build_cmd: npm --prefix client run tauri:build:nvenc
-            enable_nvenc: true
+            build_cmd: npm --prefix client run tauri build
+            enable_nvenc: false
 
     runs-on: ${{ fromJSON(matrix.runs_on_json) }}
     timeout-minutes: 90
@@ -41,8 +41,6 @@ jobs:
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
       TAURI_UPDATER_PUBLIC_KEY: ${{ secrets.TAURI_UPDATER_PUBLIC_KEY }}
       TAURI_UPDATER_ENDPOINT: https://github.com/${{ github.repository }}/releases/latest/download/latest.json
-      WORKFLOW_CUDA_PATH: ${{ vars.CUDA_PATH }}
-      WORKFLOW_NVIDIA_VIDEO_CODEC_SDK_PATH: ${{ vars.NVIDIA_VIDEO_CODEC_SDK_PATH }}
 
     steps:
       - name: Checkout repository
@@ -79,33 +77,6 @@ jobs:
 
       - name: Sync app version from git tag
         run: node scripts/sync-client-version-from-tag.mjs --tag "${{ github.ref_name }}"
-
-      - name: Validate NVENC build environment
-        if: matrix.enable_nvenc
-        shell: powershell
-        run: |
-          $cudaPath = if ($env:WORKFLOW_CUDA_PATH) { $env:WORKFLOW_CUDA_PATH } else { $env:CUDA_PATH }
-          $nvCodecPath = if ($env:WORKFLOW_NVIDIA_VIDEO_CODEC_SDK_PATH) { $env:WORKFLOW_NVIDIA_VIDEO_CODEC_SDK_PATH } else { $env:NVIDIA_VIDEO_CODEC_SDK_PATH }
-
-          if (-not $cudaPath) {
-            throw "CUDA_PATH is not set. Define it on the runner host or set repository variable CUDA_PATH."
-          }
-          if (-not (Test-Path $cudaPath)) {
-            throw "CUDA_PATH does not exist: $cudaPath"
-          }
-          if (-not $nvCodecPath) {
-            throw "NVIDIA_VIDEO_CODEC_SDK_PATH is not set. Define it on the runner host or set repository variable NVIDIA_VIDEO_CODEC_SDK_PATH."
-          }
-          if (-not (Test-Path $nvCodecPath)) {
-            throw "NVIDIA_VIDEO_CODEC_SDK_PATH does not exist: $nvCodecPath"
-          }
-          $nvcc = Join-Path $cudaPath "bin/nvcc.exe"
-          if (-not (Test-Path $nvcc)) {
-            throw "CUDA nvcc not found at $nvcc"
-          }
-          Write-Host "Resolved CUDA_PATH: $cudaPath"
-          Write-Host "Resolved NVIDIA_VIDEO_CODEC_SDK_PATH: $nvCodecPath"
-          & $nvcc --version
 
       - name: Inject updater config from secrets
         run: node scripts/prepare-tauri-updater-config.mjs
