@@ -97,7 +97,6 @@ mod imp {
                 .map_err(|e| format!("NVENC SDK: failed to get preset config: {e}"))?;
 
             let mut encode_config: NV_ENC_CONFIG = preset_config.presetCfg;
-            encode_config.profileGUID = NV_ENC_H264_PROFILE_HIGH_GUID;
             encode_config.frameIntervalP = 1; // No B-frames
             encode_config.gopLength = target_fps; // 1 second GOP
 
