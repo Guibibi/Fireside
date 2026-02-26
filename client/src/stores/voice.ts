@@ -17,11 +17,18 @@ export type StreamWatchMode = "none" | "focused" | "mini";
 export interface VoicePresenceChannel {
   channel_id: string;
   usernames: string[];
+  mute_states: Record<string, { mic_muted: boolean; speaker_muted: boolean }>;
+}
+
+export interface VoiceMuteState {
+  micMuted: boolean;
+  speakerMuted: boolean;
 }
 
 const [joinedVoiceChannelId, setJoinedVoiceChannelId] = createSignal<string | null>(null);
 const [participantsByChannel, setParticipantsByChannel] = createSignal<Record<string, string[]>>({});
 const [speakingByChannel, setSpeakingByChannel] = createSignal<Record<string, string[]>>({});
+const [muteStateByChannel, setMuteStateByChannel] = createSignal<Record<string, Record<string, VoiceMuteState>>>({});
 const [voiceActionState, setVoiceActionState] = createSignal<VoiceActionState>("idle");
 const [micMuted, setMicMuted] = createSignal(false);
 const [speakerMuted, setSpeakerMuted] = createSignal(false);
@@ -61,19 +68,45 @@ function sortUnique(usernames: string[]): string[] {
 
 export function applyVoiceSnapshot(channels: VoicePresenceChannel[]) {
   const next: Record<string, string[]> = {};
+  const nextMuteState: Record<string, Record<string, VoiceMuteState>> = {};
   for (const channel of channels) {
     next[channel.channel_id] = sortUnique(channel.usernames);
+    nextMuteState[channel.channel_id] = Object.fromEntries(
+      Object.entries(channel.mute_states).map(([username, state]) => [
+        username,
+        {
+          micMuted: state.mic_muted,
+          speakerMuted: state.speaker_muted,
+        },
+      ]),
+    );
   }
   setParticipantsByChannel(next);
+  setMuteStateByChannel(nextMuteState);
   setSpeakingByChannel({});
 }
 
-export function applyVoiceJoined(channelId: string, joinedUsername: string) {
+export function applyVoiceJoined(
+  channelId: string,
+  joinedUsername: string,
+  muteState: VoiceMuteState = { micMuted: false, speakerMuted: false },
+) {
   setParticipantsByChannel((current) => {
     const existing = current[channelId] ?? [];
     return {
       ...current,
       [channelId]: sortUnique([...existing, joinedUsername]),
+    };
+  });
+
+  setMuteStateByChannel((current) => {
+    const existing = current[channelId] ?? {};
+    return {
+      ...current,
+      [channelId]: {
+        ...existing,
+        [joinedUsername]: muteState,
+      },
     };
   });
 }
@@ -110,6 +143,26 @@ export function applyVoiceLeft(channelId: string, leftUsername: string) {
       [channelId]: nextUsers,
     };
   });
+
+  setMuteStateByChannel((current) => {
+    const existing = current[channelId] ?? {};
+    if (!existing[leftUsername]) {
+      return current;
+    }
+
+    const nextMembers = { ...existing };
+    delete nextMembers[leftUsername];
+    if (Object.keys(nextMembers).length === 0) {
+      const next = { ...current };
+      delete next[channelId];
+      return next;
+    }
+
+    return {
+      ...current,
+      [channelId]: nextMembers,
+    };
+  });
 }
 
 export function removeVoiceChannelState(channelId: string) {
@@ -131,6 +184,29 @@ export function removeVoiceChannelState(channelId: string) {
     const next = { ...current };
     delete next[channelId];
     return next;
+  });
+
+  setMuteStateByChannel((current) => {
+    if (!current[channelId]) {
+      return current;
+    }
+
+    const next = { ...current };
+    delete next[channelId];
+    return next;
+  });
+}
+
+export function applyVoiceMuteState(channelId: string, username: string, muteState: VoiceMuteState) {
+  setMuteStateByChannel((current) => {
+    const existing = current[channelId] ?? {};
+    return {
+      ...current,
+      [channelId]: {
+        ...existing,
+        [username]: muteState,
+      },
+    };
   });
 }
 
@@ -177,6 +253,10 @@ export function participantsInChannel(channelId: string | null): string[] {
   }
 
   return participantsByChannel()[channelId] ?? [];
+}
+
+export function voiceMemberMuteState(channelId: string, username: string): VoiceMuteState {
+  return muteStateByChannel()[channelId]?.[username] ?? { micMuted: false, speakerMuted: false };
 }
 
 export function setJoinedVoiceChannel(channelId: string | null) {
@@ -330,6 +410,7 @@ export function resetVoiceState() {
   setJoinedVoiceChannelId(null);
   setParticipantsByChannel({});
   setSpeakingByChannel({});
+  setMuteStateByChannel({});
   setVoiceActionState("idle");
   setMicMuted(false);
   setSpeakerMuted(false);
@@ -406,6 +487,7 @@ export {
   localVideoStream,
   localScreenShareStream,
   participantsByChannel,
+  muteStateByChannel,
   screenShareEnabled,
   screenShareError,
   screenShareRoutingMode,

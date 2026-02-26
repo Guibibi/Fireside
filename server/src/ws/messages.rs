@@ -8,6 +8,13 @@ use crate::models::Channel;
 pub struct VoicePresenceChannel {
     pub channel_id: Uuid,
     pub usernames: Vec<String>,
+    pub mute_states: std::collections::HashMap<String, VoiceMuteState>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct VoiceMuteState {
+    pub mic_muted: bool,
+    pub speaker_muted: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -65,6 +72,13 @@ pub enum ClientMessage {
 
     #[serde(rename = "voice_activity")]
     VoiceActivity { channel_id: Uuid, speaking: bool },
+
+    #[serde(rename = "voice_mute_state")]
+    VoiceMuteState {
+        channel_id: Uuid,
+        mic_muted: bool,
+        speaker_muted: bool,
+    },
 
     #[serde(rename = "heartbeat")]
     Heartbeat,
@@ -237,7 +251,12 @@ pub enum ServerMessage {
     VoiceLeft { channel_id: Uuid, user_id: Uuid },
 
     #[serde(rename = "voice_user_joined")]
-    VoiceUserJoined { channel_id: Uuid, username: String },
+    VoiceUserJoined {
+        channel_id: Uuid,
+        username: String,
+        mic_muted: bool,
+        speaker_muted: bool,
+    },
 
     #[serde(rename = "voice_user_left")]
     VoiceUserLeft { channel_id: Uuid, username: String },
@@ -247,6 +266,14 @@ pub enum ServerMessage {
         channel_id: Uuid,
         username: String,
         speaking: bool,
+    },
+
+    #[serde(rename = "voice_user_mute_state")]
+    VoiceUserMuteState {
+        channel_id: Uuid,
+        username: String,
+        mic_muted: bool,
+        speaker_muted: bool,
     },
 
     #[serde(rename = "media_signal")]

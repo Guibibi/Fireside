@@ -6,7 +6,12 @@ import { flushQueuedProducerAnnouncements, disposeRemoteConsumer } from "./consu
 import { registerDeviceChangeListener, unregisterDeviceChangeListener } from "./devices";
 import { disarmNativeCapture } from "./native";
 import { startLocalAudioProducer } from "./producers";
-import { reportVoiceActivity, requestMediaSignal, toTransportOptions } from "./signaling";
+import {
+  reportVoiceActivity,
+  reportVoiceMuteState,
+  requestMediaSignal,
+  toTransportOptions,
+} from "./signaling";
 import {
   cameraProducer,
   cameraStream,
@@ -18,6 +23,7 @@ import {
   micProducer,
   micStream,
   micTrack,
+  microphoneMuted,
   pendingRequests,
   producerRoutingModeById,
   producerSourceById,
@@ -30,6 +36,7 @@ import {
   screenStream,
   screenTrack,
   sendTransport,
+  speakersMuted,
   setCameraEnabled,
   setCameraError,
   setCameraProducer,
@@ -370,6 +377,8 @@ export function setMicrophoneMuted(muted: boolean) {
   if (muted) {
     reportVoiceActivity(currentChannelId, false);
   }
+
+  reportVoiceMuteState(currentChannelId, microphoneMuted, speakersMuted);
 }
 
 export function setSpeakersMuted(muted: boolean) {
@@ -377,6 +386,13 @@ export function setSpeakersMuted(muted: boolean) {
   for (const audio of remoteAudioElements.values()) {
     audio.muted = muted;
   }
+
+  const currentChannelId = initializedForChannelId;
+  if (!currentChannelId) {
+    return;
+  }
+
+  reportVoiceMuteState(currentChannelId, microphoneMuted, speakersMuted);
 }
 
 export function cleanupMediaTransports() {

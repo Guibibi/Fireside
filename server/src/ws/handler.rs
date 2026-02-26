@@ -19,14 +19,18 @@ use super::media_signal::{
     allow_media_signal_event, handle_media_signal_message, media_signal_payload_size_bytes,
     request_id_from_payload, send_media_signal_error, MAX_MEDIA_SIGNAL_PAYLOAD_BYTES,
 };
-use super::messages::{ClientMessage, PresenceUser, ServerMessage, VoicePresenceChannel};
-use super::voice::{broadcast_closed_producers, broadcast_voice_activity_to_channel};
+use super::messages::{
+    ClientMessage, PresenceUser, ServerMessage, VoiceMuteState, VoicePresenceChannel,
+};
+use super::voice::{
+    broadcast_closed_producers, broadcast_voice_activity_to_channel,
+};
 use crate::auth::{validate_token, Claims};
 use crate::message_attachments::{
     load_message_attachments_by_message, persist_message_attachments_in_tx,
     resolve_uploads_for_message,
 };
-use crate::AppState;
+use crate::{AppState, VoiceMuteState as StoredVoiceMuteState};
 
 const WS_IDLE_TIMEOUT: Duration = Duration::from_secs(45);
 const WS_AUTH_TIMEOUT: Duration = Duration::from_secs(15);
@@ -178,14 +182,32 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
 
     let voice_presence_channels: Vec<VoicePresenceChannel> = {
         let voice_members_by_channel = state.voice_members_by_channel.read().await;
+        let voice_mute_state_by_username = state.voice_mute_state_by_username.read().await;
         let mut channels: Vec<VoicePresenceChannel> = voice_members_by_channel
             .iter()
             .map(|(channel_id, usernames)| {
                 let mut sorted_usernames: Vec<String> = usernames.iter().cloned().collect();
                 sorted_usernames.sort_unstable();
+                let mute_states = sorted_usernames
+                    .iter()
+                    .filter_map(|username| {
+                        voice_mute_state_by_username
+                            .get(username)
+                            .map(|state| {
+                                (
+                                    username.clone(),
+                                    VoiceMuteState {
+                                        mic_muted: state.mic_muted,
+                                        speaker_muted: state.speaker_muted,
+                                    },
+                                )
+                            })
+                    })
+                    .collect();
                 VoicePresenceChannel {
                     channel_id: *channel_id,
                     usernames: sorted_usernames,
+                    mute_states,
                 }
             })
             .collect();
@@ -626,6 +648,44 @@ async fn handle_client_message(
                 channel_id,
                 &claims.username,
                 speaking,
+                None,
+            )
+            .await;
+        }
+        ClientMessage::VoiceMuteState {
+            channel_id,
+            mic_muted,
+            speaker_muted,
+        } => {
+            let joined_channel = {
+                let voice_members_by_connection = state.voice_members_by_connection.read().await;
+                voice_members_by_connection.get(&connection_id).copied()
+            };
+
+            if joined_channel != Some(channel_id) {
+                return false;
+            }
+
+            {
+                let mut voice_mute_state_by_username =
+                    state.voice_mute_state_by_username.write().await;
+                voice_mute_state_by_username.insert(
+                    claims.username.clone(),
+                    StoredVoiceMuteState {
+                        mic_muted,
+                        speaker_muted,
+                    },
+                );
+            }
+
+            broadcast_global_message(
+                state,
+                ServerMessage::VoiceUserMuteState {
+                    channel_id,
+                    username: claims.username.clone(),
+                    mic_muted,
+                    speaker_muted,
+                },
                 None,
             )
             .await;
@@ -1292,6 +1352,12 @@ async fn handle_join_voice(
     }
 
     let user_id = claims.user_id;
+    let voice_mute_state = {
+        let mut voice_mute_state_by_username = state.voice_mute_state_by_username.write().await;
+        *voice_mute_state_by_username
+            .entry(claims.username.clone())
+            .or_insert_with(StoredVoiceMuteState::default)
+    };
 
     let previous_channel_id = {
         let mut voice_members_by_connection = state.voice_members_by_connection.write().await;
@@ -1346,6 +1412,8 @@ async fn handle_join_voice(
             ServerMessage::VoiceUserJoined {
                 channel_id,
                 username: claims.username.clone(),
+                mic_muted: voice_mute_state.mic_muted,
+                speaker_muted: voice_mute_state.speaker_muted,
             },
             None,
         )

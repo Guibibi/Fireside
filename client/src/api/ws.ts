@@ -20,6 +20,11 @@ export interface PresenceUser {
   status: PresenceStatus;
 }
 
+export interface VoiceMuteState {
+  mic_muted: boolean;
+  speaker_muted: boolean;
+}
+
 export type ServerMessage =
   | { type: "authenticated"; user_id: string; username: string; role: string }
   | { type: "error"; message: string }
@@ -87,13 +92,26 @@ export type ServerMessage =
   | { type: "dm_unread_updated"; thread_id: string; unread_count: number }
   | {
     type: "voice_presence_snapshot";
-    channels: { channel_id: string; usernames: string[] }[];
+    channels: { channel_id: string; usernames: string[]; mute_states: Record<string, VoiceMuteState> }[];
   }
   | { type: "voice_joined"; channel_id: string; user_id: string }
   | { type: "voice_left"; channel_id: string; user_id: string }
-  | { type: "voice_user_joined"; channel_id: string; username: string }
+  | {
+    type: "voice_user_joined";
+    channel_id: string;
+    username: string;
+    mic_muted: boolean;
+    speaker_muted: boolean;
+  }
   | { type: "voice_user_left"; channel_id: string; username: string }
   | { type: "voice_user_speaking"; channel_id: string; username: string; speaking: boolean }
+  | {
+    type: "voice_user_mute_state";
+    channel_id: string;
+    username: string;
+    mic_muted: boolean;
+    speaker_muted: boolean;
+  }
   | { type: "media_signal"; channel_id: string; payload: unknown }
   | {
     type: "reaction_added";
@@ -138,7 +156,7 @@ let closeHandlers: CloseHandler[] = [];
 let statusHandlers: StatusHandler[] = [];
 let pendingSends: string[] = [];
 let latestPresenceUsers: PresenceUser[] | null = null;
-let latestVoicePresenceChannels: { channel_id: string; usernames: string[] }[] | null = null;
+let latestVoicePresenceChannels: { channel_id: string; usernames: string[]; mute_states: Record<string, VoiceMuteState> }[] | null = null;
 let manualDisconnect = false;
 let awaitingAuthentication = false;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -331,6 +349,7 @@ export function connect(url = getWsUrl(), reconnectAttempt = false) {
         latestVoicePresenceChannels = msg.channels.map((channel) => ({
           channel_id: channel.channel_id,
           usernames: [...new Set(channel.usernames)].sort((a, b) => a.localeCompare(b)),
+          mute_states: { ...(channel.mute_states ?? {}) },
         }));
       } else if (msg.type === "user_connected") {
         const current = latestPresenceUsers ?? [];
@@ -351,22 +370,69 @@ export function connect(url = getWsUrl(), reconnectAttempt = false) {
           : [];
       } else if (msg.type === "voice_user_joined") {
         const current = latestVoicePresenceChannels ?? [];
-        const channelsById = new Map(current.map((channel) => [channel.channel_id, [...channel.usernames]]));
-        const nextUsers = channelsById.get(msg.channel_id) ?? [];
-        channelsById.set(msg.channel_id, [...new Set([...nextUsers, msg.username])].sort((a, b) => a.localeCompare(b)));
-        latestVoicePresenceChannels = Array.from(channelsById.entries()).map(([channel_id, usernames]) => ({ channel_id, usernames }));
+        const channelsById = new Map(current.map((channel) => [channel.channel_id, {
+          usernames: [...channel.usernames],
+          mute_states: { ...channel.mute_states },
+        }]));
+        const next = channelsById.get(msg.channel_id) ?? { usernames: [], mute_states: {} };
+        channelsById.set(msg.channel_id, {
+          usernames: [...new Set([...next.usernames, msg.username])].sort((a, b) => a.localeCompare(b)),
+          mute_states: {
+            ...next.mute_states,
+            [msg.username]: {
+              mic_muted: msg.mic_muted,
+              speaker_muted: msg.speaker_muted,
+            },
+          },
+        });
+        latestVoicePresenceChannels = Array.from(channelsById.entries()).map(([channel_id, value]) => ({
+          channel_id,
+          usernames: value.usernames,
+          mute_states: value.mute_states,
+        }));
       } else if (msg.type === "voice_user_left") {
         const current = latestVoicePresenceChannels ?? [];
-        const channelsById = new Map(current.map((channel) => [channel.channel_id, [...channel.usernames]]));
-        const nextUsers = (channelsById.get(msg.channel_id) ?? []).filter((username) => username !== msg.username);
+        const channelsById = new Map(current.map((channel) => [channel.channel_id, {
+          usernames: [...channel.usernames],
+          mute_states: { ...channel.mute_states },
+        }]));
+        const next = channelsById.get(msg.channel_id) ?? { usernames: [], mute_states: {} };
+        const nextUsers = next.usernames.filter((username) => username !== msg.username);
+        const nextMuteStates = { ...next.mute_states };
+        delete nextMuteStates[msg.username];
 
         if (nextUsers.length === 0) {
           channelsById.delete(msg.channel_id);
         } else {
-          channelsById.set(msg.channel_id, nextUsers);
+          channelsById.set(msg.channel_id, {
+            usernames: nextUsers,
+            mute_states: nextMuteStates,
+          });
         }
 
-        latestVoicePresenceChannels = Array.from(channelsById.entries()).map(([channel_id, usernames]) => ({ channel_id, usernames }));
+        latestVoicePresenceChannels = Array.from(channelsById.entries()).map(([channel_id, value]) => ({
+          channel_id,
+          usernames: value.usernames,
+          mute_states: value.mute_states,
+        }));
+      } else if (msg.type === "voice_user_mute_state") {
+        const current = latestVoicePresenceChannels ?? [];
+        latestVoicePresenceChannels = current.map((channel) => {
+          if (channel.channel_id !== msg.channel_id) {
+            return channel;
+          }
+
+          return {
+            ...channel,
+            mute_states: {
+              ...channel.mute_states,
+              [msg.username]: {
+                mic_muted: msg.mic_muted,
+                speaker_muted: msg.speaker_muted,
+              },
+            },
+          };
+        });
       }
 
       handlers.forEach((h) => h(msg));
@@ -456,13 +522,14 @@ export function onMessage(handler: MessageHandler) {
   }
 
   if (latestVoicePresenceChannels) {
-    handler({
-      type: "voice_presence_snapshot",
-      channels: latestVoicePresenceChannels.map((channel) => ({
-        channel_id: channel.channel_id,
-        usernames: [...channel.usernames],
-      })),
-    });
+      handler({
+        type: "voice_presence_snapshot",
+        channels: latestVoicePresenceChannels.map((channel) => ({
+          channel_id: channel.channel_id,
+          usernames: [...channel.usernames],
+          mute_states: { ...channel.mute_states },
+        })),
+      });
   }
 
   return () => {

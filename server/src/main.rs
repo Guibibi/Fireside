@@ -29,6 +29,12 @@ pub struct MediaSignalRateState {
     pub events_in_window: u32,
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+pub struct VoiceMuteState {
+    pub mic_muted: bool,
+    pub speaker_muted: bool,
+}
+
 #[derive(Clone)]
 pub struct AppState {
     pub db: sqlx::PgPool,
@@ -46,6 +52,7 @@ pub struct AppState {
     pub dm_subscriptions: Arc<RwLock<HashMap<Uuid, Uuid>>>,
     pub voice_members_by_connection: Arc<RwLock<HashMap<Uuid, Uuid>>>,
     pub voice_members_by_channel: Arc<RwLock<HashMap<Uuid, HashSet<String>>>>,
+    pub voice_mute_state_by_username: Arc<RwLock<HashMap<String, VoiceMuteState>>>,
     pub media_signal_rate_by_connection: Arc<RwLock<HashMap<Uuid, MediaSignalRateState>>>,
 }
 
@@ -113,6 +120,7 @@ async fn main() {
         dm_subscriptions: Arc::new(RwLock::new(HashMap::new())),
         voice_members_by_connection: Arc::new(RwLock::new(HashMap::new())),
         voice_members_by_channel: Arc::new(RwLock::new(HashMap::new())),
+        voice_mute_state_by_username: Arc::new(RwLock::new(HashMap::new())),
         media_signal_rate_by_connection: Arc::new(RwLock::new(HashMap::new())),
     };
 

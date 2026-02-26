@@ -151,6 +151,15 @@ export function reportVoiceActivity(channelId: string, speaking: boolean) {
   });
 }
 
+export function reportVoiceMuteState(channelId: string, micMuted: boolean, speakerMuted: boolean) {
+  send({
+    type: "voice_mute_state",
+    channel_id: channelId,
+    mic_muted: micMuted,
+    speaker_muted: speakerMuted,
+  });
+}
+
 export function reportNativeSenderDiagnostic(channelId: string, event: string, detail?: string) {
   send({
     type: "media_signal",

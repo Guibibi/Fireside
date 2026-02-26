@@ -376,6 +376,9 @@ pub async fn cleanup_connection(
 
         let mut user_presence_by_username = state.user_presence_by_username.write().await;
         user_presence_by_username.remove(username);
+
+        let mut voice_mute_state_by_username = state.voice_mute_state_by_username.write().await;
+        voice_mute_state_by_username.remove(username);
     }
 
     if let (Some(voice_channel_id), Some(username)) =

@@ -69,6 +69,7 @@ import {
 import {
     applyVoiceJoined,
     applyVoiceLeft,
+    applyVoiceMuteState,
     applyVoiceSpeaking,
     applyVoiceSnapshot,
     clearVoiceRejoinNotice,
@@ -97,6 +98,7 @@ import {
     showVoiceRejoinNotice,
     toggleMicMuted,
     toggleSpeakerMuted,
+    voiceMemberMuteState,
     voiceRejoinNotice,
     voiceActionState,
     videoTiles,
@@ -105,7 +107,7 @@ import {
 } from "../stores/voice";
 import AsyncContent from "./AsyncContent";
 import UserSettingsDock from "./UserSettingsDock";
-import { PlusIcon } from "./icons";
+import { MicrophoneIcon, PlusIcon, SpeakerIcon } from "./icons";
 import {
     ChannelRow,
     CreateChannelModal,
@@ -909,7 +911,10 @@ export default function ChannelList() {
                 ) {
                     playVoiceJoinCue();
                 }
-                applyVoiceJoined(msg.channel_id, msg.username);
+                applyVoiceJoined(msg.channel_id, msg.username, {
+                    micMuted: msg.mic_muted,
+                    speakerMuted: msg.speaker_muted,
+                });
                 return;
             }
 
@@ -926,6 +931,14 @@ export default function ChannelList() {
 
             if (msg.type === "voice_user_speaking") {
                 applyVoiceSpeaking(msg.channel_id, msg.username, msg.speaking);
+                return;
+            }
+
+            if (msg.type === "voice_user_mute_state") {
+                applyVoiceMuteState(msg.channel_id, msg.username, {
+                    micMuted: msg.mic_muted,
+                    speakerMuted: msg.speaker_muted,
+                });
                 return;
             }
 
@@ -1437,6 +1450,43 @@ export default function ChannelList() {
                                                                 <span class="channel-voice-member-name">
                                                                     {displayNameFor(memberUsername)}
                                                                 </span>
+                                                                <Show
+                                                                    when={
+                                                                        voiceMemberMuteState(channel.id, memberUsername)
+                                                                            .micMuted ||
+                                                                        voiceMemberMuteState(channel.id, memberUsername)
+                                                                            .speakerMuted
+                                                                    }
+                                                                >
+                                                                    <span
+                                                                        class="channel-voice-member-mute-icons"
+                                                                        role="group"
+                                                                        aria-label={`${displayNameFor(memberUsername)} mute status`}
+                                                                    >
+                                                                        <Show
+                                                                            when={voiceMemberMuteState(channel.id, memberUsername).micMuted}
+                                                                        >
+                                                                            <span
+                                                                                class="channel-voice-member-mute-icon"
+                                                                                title="Microphone muted"
+                                                                                aria-label="Microphone muted"
+                                                                            >
+                                                                                <MicrophoneIcon muted class="channel-voice-member-mute-glyph" />
+                                                                            </span>
+                                                                        </Show>
+                                                                        <Show
+                                                                            when={voiceMemberMuteState(channel.id, memberUsername).speakerMuted}
+                                                                        >
+                                                                            <span
+                                                                                class="channel-voice-member-mute-icon"
+                                                                                title="Speaker muted"
+                                                                                aria-label="Speaker muted"
+                                                                            >
+                                                                                <SpeakerIcon muted class="channel-voice-member-mute-glyph" />
+                                                                            </span>
+                                                                        </Show>
+                                                                    </span>
+                                                                </Show>
                                                                 <Show
                                                                     when={streamTileForVoiceMember(channel.id, memberUsername)}
                                                                 >
