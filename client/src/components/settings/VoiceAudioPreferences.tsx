@@ -65,7 +65,7 @@ export default function VoiceAudioPreferences(props: VoiceAudioPreferencesProps)
       <section class="settings-audio-group">
         <div class="settings-audio-group-head">
           <h6>Volume</h6>
-          <p class="settings-help">Fine tune how loud voices sound for you and for others.</p>
+          <p class="settings-help">Incoming voice is 0-100%; outgoing microphone gain supports up to 200%.</p>
         </div>
 
         <div class="settings-slider-stack">
@@ -78,12 +78,12 @@ export default function VoiceAudioPreferences(props: VoiceAudioPreferencesProps)
               id="settings-voice-incoming-volume"
               type="range"
               min="0"
-              max="200"
+              max="100"
               step="1"
               value={props.voiceIncomingVolume}
               onInput={props.onVoiceIncomingVolumeInput}
             />
-            <p class="settings-help">Adjusts all incoming voice audio before per-user volume sliders.</p>
+            <p class="settings-help">Adjusts all incoming voice audio before per-user volume sliders (0-100%).</p>
           </div>
 
           <div class="settings-slider-card">
@@ -100,7 +100,7 @@ export default function VoiceAudioPreferences(props: VoiceAudioPreferencesProps)
               value={props.voiceOutgoingVolume}
               onInput={props.onVoiceOutgoingVolumeInput}
             />
-            <p class="settings-help">Adjusts your microphone level sent to other participants.</p>
+            <p class="settings-help">Adjusts your microphone level sent to other participants (0-200%).</p>
           </div>
         </div>
       </section>

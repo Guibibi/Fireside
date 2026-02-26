@@ -144,7 +144,7 @@ function VolumeSlider(props: { username: string }) {
       <input
         type="range"
         min="0"
-        max="200"
+        max="100"
         value={localVolume()}
         onInput={handleInput}
         class="context-menu-volume-slider"

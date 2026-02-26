@@ -37,7 +37,15 @@ function readBooleanPreference(key: string, defaultValue: boolean): boolean {
   return defaultValue;
 }
 
-function clampVoiceVolume(volume: number): number {
+function clampIncomingVoiceVolume(volume: number): number {
+  if (!Number.isFinite(volume)) {
+    return 100;
+  }
+
+  return Math.max(0, Math.min(100, Math.round(volume)));
+}
+
+function clampOutgoingVoiceVolume(volume: number): number {
   if (!Number.isFinite(volume)) {
     return 100;
   }
@@ -45,7 +53,11 @@ function clampVoiceVolume(volume: number): number {
   return Math.max(0, Math.min(200, Math.round(volume)));
 }
 
-function readVoiceVolumePreference(key: string, defaultValue: number): number {
+function readVoiceVolumePreference(
+  key: string,
+  defaultValue: number,
+  clamp: (volume: number) => number,
+): number {
   const value = localStorage.getItem(key);
   if (!value) {
     return defaultValue;
@@ -56,7 +68,7 @@ function readVoiceVolumePreference(key: string, defaultValue: number): number {
     return defaultValue;
   }
 
-  return clampVoiceVolume(parsed);
+  return clamp(parsed);
 }
 
 function readScreenShareResolution(): ScreenShareResolution {
@@ -170,11 +182,11 @@ const [voiceEchoCancellationEnabled, setVoiceEchoCancellationEnabled] = createSi
 );
 
 const [voiceIncomingVolume, setVoiceIncomingVolume] = createSignal<number>(
-  readVoiceVolumePreference(VOICE_INCOMING_VOLUME_KEY, 100),
+  readVoiceVolumePreference(VOICE_INCOMING_VOLUME_KEY, 100, clampIncomingVoiceVolume),
 );
 
 const [voiceOutgoingVolume, setVoiceOutgoingVolume] = createSignal<number>(
-  readVoiceVolumePreference(VOICE_OUTGOING_VOLUME_KEY, 100),
+  readVoiceVolumePreference(VOICE_OUTGOING_VOLUME_KEY, 100, clampOutgoingVoiceVolume),
 );
 
 export {
@@ -300,13 +312,13 @@ export function saveVoiceEchoCancellationEnabled(enabled: boolean) {
 }
 
 export function saveVoiceIncomingVolume(volume: number) {
-  const normalized = clampVoiceVolume(volume);
+  const normalized = clampIncomingVoiceVolume(volume);
   localStorage.setItem(VOICE_INCOMING_VOLUME_KEY, String(normalized));
   setVoiceIncomingVolume(normalized);
 }
 
 export function saveVoiceOutgoingVolume(volume: number) {
-  const normalized = clampVoiceVolume(volume);
+  const normalized = clampOutgoingVoiceVolume(volume);
   localStorage.setItem(VOICE_OUTGOING_VOLUME_KEY, String(normalized));
   setVoiceOutgoingVolume(normalized);
 }

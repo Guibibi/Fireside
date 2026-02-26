@@ -40,7 +40,7 @@ function clampVoiceVolume(volume: number): number {
     return 100;
   }
 
-  return Math.max(0, Math.min(200, Math.round(volume)));
+  return Math.max(0, Math.min(100, Math.round(volume)));
 }
 
 function gainValueForVolume(localUserVolume: number): number {

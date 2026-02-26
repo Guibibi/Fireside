@@ -7,7 +7,7 @@ export function clampUserVolume(volume: number): number {
     return 100;
   }
 
-  return Math.max(0, Math.min(200, Math.round(volume)));
+  return Math.max(0, Math.min(100, Math.round(volume)));
 }
 
 function loadVolumes(): Map<string, number> {
@@ -15,7 +15,20 @@ function loadVolumes(): Map<string, number> {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const entries: [string, number][] = JSON.parse(raw);
-      return new Map(entries);
+      let changed = false;
+      const normalizedEntries = entries.map(([username, value]) => {
+        const normalized = clampUserVolume(value);
+        if (normalized !== value) {
+          changed = true;
+        }
+        return [username, normalized] as [string, number];
+      });
+
+      if (changed) {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(normalizedEntries));
+      }
+
+      return new Map(normalizedEntries);
     }
   } catch {
     // ignore corrupt data
