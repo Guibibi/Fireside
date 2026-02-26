@@ -37,12 +37,12 @@ fn video_rtcp_feedback() -> Vec<RtcpFeedback> {
     ]
 }
 
-fn h264_codec_parameters() -> RtpCodecParametersParameters {
+fn h264_codec_parameters(profile_level_id: &'static str) -> RtpCodecParametersParameters {
     let mut parameters = RtpCodecParametersParameters::default();
     parameters
         .insert("level-asymmetry-allowed", 1_u32)
         .insert("packetization-mode", 1_u32)
-        .insert("profile-level-id", "42e01f");
+        .insert("profile-level-id", profile_level_id);
     parameters
 }
 
@@ -69,7 +69,14 @@ pub fn media_codecs(opus_config: Option<&OpusConfig>) -> Vec<RtpCodecCapability>
             mime_type: MimeTypeVideo::H264,
             preferred_payload_type: None,
             clock_rate: 90000.try_into().unwrap(),
-            parameters: h264_codec_parameters(),
+            parameters: h264_codec_parameters("42e01f"),
+            rtcp_feedback: video_rtcp_feedback(),
+        },
+        RtpCodecCapability::Video {
+            mime_type: MimeTypeVideo::H264,
+            preferred_payload_type: None,
+            clock_rate: 90000.try_into().unwrap(),
+            parameters: h264_codec_parameters("64002a"),
             rtcp_feedback: video_rtcp_feedback(),
         },
         RtpCodecCapability::Video {
