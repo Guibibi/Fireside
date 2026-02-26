@@ -153,8 +153,7 @@ impl X264EncoderBackend {
         let nals = split_annex_b_nals(&encoded);
 
         if nals.is_empty() {
-            process.consecutive_empty_outputs =
-                process.consecutive_empty_outputs.saturating_add(1);
+            process.consecutive_empty_outputs = process.consecutive_empty_outputs.saturating_add(1);
             if process.consecutive_empty_outputs >= CONSECUTIVE_EMPTY_THRESHOLD {
                 return Err(format!(
                     "ffmpeg x264 produced no NAL units ({} consecutive empties)",
@@ -175,7 +174,7 @@ impl VideoEncoderBackend for X264EncoderBackend {
             mime_type: "video/H264",
             clock_rate: 90_000,
             packetization_mode: Some(1),
-            profile_level_id: Some("64002a"),
+            profile_level_id: Some("42e01f"),
         }
     }
 
@@ -342,9 +341,9 @@ fn spawn_x264_process(
         .arg("-c:v")
         .arg("libx264")
         .arg("-profile:v")
-        .arg("high")
+        .arg("baseline")
         .arg("-level")
-        .arg("4.2")
+        .arg("3.1")
         .arg("-preset")
         .arg("ultrafast")
         .arg("-tune")

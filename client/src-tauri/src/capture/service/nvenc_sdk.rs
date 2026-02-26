@@ -25,7 +25,7 @@ mod imp {
     use cudarc::driver::CudaContext;
     use nvidia_video_codec_sdk::sys::nvEncodeAPI::{
         NVENCSTATUS, NV_ENC_BUFFER_FORMAT, NV_ENC_CODEC_H264_GUID, NV_ENC_CONFIG,
-        NV_ENC_CREATE_BITSTREAM_BUFFER, NV_ENC_DEVICE_TYPE, NV_ENC_H264_PROFILE_HIGH_GUID,
+        NV_ENC_CREATE_BITSTREAM_BUFFER, NV_ENC_DEVICE_TYPE, NV_ENC_H264_PROFILE_BASELINE_GUID,
         NV_ENC_INITIALIZE_PARAMS, NV_ENC_INPUT_RESOURCE_TYPE, NV_ENC_LOCK_BITSTREAM,
         NV_ENC_MAP_INPUT_RESOURCE, NV_ENC_OPEN_ENCODE_SESSION_EX_PARAMS, NV_ENC_PIC_PARAMS,
         NV_ENC_PIC_TYPE, NV_ENC_PRESET_CONFIG, NV_ENC_PRESET_P1_GUID, NV_ENC_REGISTER_RESOURCE,
@@ -97,6 +97,7 @@ mod imp {
                 .map_err(|e| format!("NVENC SDK: failed to get preset config: {e}"))?;
 
             let mut encode_config: NV_ENC_CONFIG = preset_config.presetCfg;
+            encode_config.profileGUID = NV_ENC_H264_PROFILE_BASELINE_GUID;
             encode_config.frameIntervalP = 1; // No B-frames
             encode_config.gopLength = target_fps; // 1 second GOP
 
@@ -291,7 +292,7 @@ mod imp {
                     ));
                 }
 
-                // Get preset config for H264 High profile
+                // Get preset config for H264 Baseline profile
                 let mut preset_config: NV_ENC_PRESET_CONFIG = nvenc_zeroed();
                 preset_config.version =
                     nvidia_video_codec_sdk::sys::nvEncodeAPI::NV_ENC_PRESET_CONFIG_VER;
@@ -314,7 +315,7 @@ mod imp {
                 }
 
                 let mut encode_config = preset_config.presetCfg;
-                encode_config.profileGUID = NV_ENC_H264_PROFILE_HIGH_GUID;
+                encode_config.profileGUID = NV_ENC_H264_PROFILE_BASELINE_GUID;
                 // Disable B-frames for low latency
                 encode_config.frameIntervalP = 1;
                 encode_config.gopLength = target_fps;
@@ -640,7 +641,7 @@ mod imp {
                 mime_type: "video/H264",
                 clock_rate: 90_000,
                 packetization_mode: Some(1),
-                profile_level_id: Some("64002a"),
+                profile_level_id: Some("42e01f"),
             }
         }
 

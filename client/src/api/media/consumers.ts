@@ -35,6 +35,10 @@ function isConsumingProducer(producerId: string): boolean {
   return consumerIdByProducerId.has(producerId) || consumeInFlight.has(producerId);
 }
 
+function describeConsumeError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 function clampVoiceVolume(volume: number): number {
   if (!Number.isFinite(volume)) {
     return 100;
@@ -345,7 +349,15 @@ export function queueOrConsumeProducer(
     return;
   }
 
-  void consumeRemoteProducer(channelId, producerId).catch(() => {
+  void consumeRemoteProducer(channelId, producerId).catch((error) => {
+    console.warn("[media] Failed to consume producer; keeping announcement queued", {
+      channelId,
+      producerId,
+      kind,
+      source,
+      routingMode,
+      error: describeConsumeError(error),
+    });
     queuedProducerAnnouncements.set(producerId, { kind, source, routingMode, username });
   });
 }
@@ -367,7 +379,15 @@ export function flushQueuedProducerAnnouncements(channelId: string) {
       producerRoutingModeById.set(producerId, queued.routingMode);
     }
 
-    void consumeRemoteProducer(channelId, producerId).catch(() => {
+    void consumeRemoteProducer(channelId, producerId).catch((error) => {
+      console.warn("[media] Failed to consume queued producer; retrying later", {
+        channelId,
+        producerId,
+        kind: queued.kind,
+        source: queued.source,
+        routingMode: queued.routingMode,
+        error: describeConsumeError(error),
+      });
       queuedProducerAnnouncements.set(producerId, {
         kind: queued.kind,
         source: queued.source,
