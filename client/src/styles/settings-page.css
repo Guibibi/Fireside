@@ -11,6 +11,29 @@
   animation: settingsSlideIn 0.25s var(--ease-soft);
 }
 
+.admin-settings-page {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-2xl);
+  animation: settingsSlideIn 0.25s var(--ease-soft);
+}
+
+.admin-settings-panel {
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+.admin-settings-head {
+  margin-bottom: var(--space-sm);
+}
+
+.admin-settings-head-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+}
+
 @keyframes settingsSlideIn {
   from {
     opacity: 0;

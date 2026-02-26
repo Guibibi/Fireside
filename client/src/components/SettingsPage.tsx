@@ -3,7 +3,7 @@ import { useNavigate } from "@solidjs/router";
 import { patch } from "../api/http";
 import { errorMessage } from "../utils/error";
 import { CloseIcon } from "./icons";
-import { EmojiSettings, InviteSettings } from "./settings-sections";
+import { EmojiSettings } from "./settings-sections";
 import {
   isSpeakerSelectionSupported,
   listAudioDevices,
@@ -93,11 +93,10 @@ interface UploadAvatarResponse {
   avatar_url: string;
 }
 
-const NAV_ITEMS: { key: SettingsSection; label: string; adminOnly?: boolean }[] = [
+const NAV_ITEMS: { key: SettingsSection; label: string }[] = [
   { key: "profile", label: "Profile" },
   { key: "audio", label: "Audio" },
-  { key: "invites", label: "Invites", adminOnly: true },
-  { key: "emojis", label: "Emojis", adminOnly: true },
+  { key: "emojis", label: "Emojis" },
   { key: "notifications", label: "Notifications" },
   { key: "session", label: "Session" },
 ];
@@ -412,17 +411,12 @@ export default function SettingsPage() {
     navigate("/login");
   }
 
-  const visibleNavItems = () => {
-    const userRole = role();
-    return NAV_ITEMS.filter((item) => !item.adminOnly || userRole === "operator" || userRole === "admin");
-  };
-
   return (
     <div class="settings-page">
       <nav class="settings-nav">
         <h4 class="settings-nav-title">Settings</h4>
         <div class="settings-nav-items">
-          <For each={visibleNavItems()}>
+          <For each={NAV_ITEMS}>
             {(item) => (
               <button
                 type="button"
@@ -442,7 +436,7 @@ export default function SettingsPage() {
       <div class="settings-content">
         <div class="settings-content-header">
           <h4 class="settings-content-title">
-            {visibleNavItems().find((i) => i.key === activeSettingsSection())?.label ?? "Settings"}
+            {NAV_ITEMS.find((i) => i.key === activeSettingsSection())?.label ?? "Settings"}
           </h4>
           <button
             type="button"
@@ -613,14 +607,6 @@ export default function SettingsPage() {
             </section>
           </Show>
 
-          <Show when={activeSettingsSection() === "invites"}>
-            <InviteSettings isOperatorOrAdmin={role() === "operator" || role() === "admin"} />
-          </Show>
-
-          <Show when={activeSettingsSection() === "emojis"}>
-            <EmojiSettings isOperatorOrAdmin={role() === "operator" || role() === "admin"} />
-          </Show>
-
           <Show when={activeSettingsSection() === "notifications"}>
             <section class="settings-section">
               <div class="settings-section-head">
@@ -686,6 +672,10 @@ export default function SettingsPage() {
                 <p class="error">{notificationError()}</p>
               </Show>
             </section>
+          </Show>
+
+          <Show when={activeSettingsSection() === "emojis"}>
+            <EmojiSettings isOperatorOrAdmin={role() === "operator" || role() === "admin"} />
           </Show>
 
           <Show when={activeSettingsSection() === "session"}>

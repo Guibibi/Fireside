@@ -1,12 +1,14 @@
 import { onCleanup, onMount } from "solid-js";
+import { useNavigate } from "@solidjs/router";
 import { username as currentUsername } from "../stores/auth";
 import { openSettings } from "../stores/settings";
 import { closeMobileNav } from "../stores/chat";
 import UserAvatar from "./UserAvatar";
 import { displayNameFor, upsertUserProfile } from "../stores/userProfiles";
-import { getApiBaseUrl, token } from "../stores/auth";
+import { getApiBaseUrl, role, token } from "../stores/auth";
 import { hasPendingAppUpdate, startUpdaterPolling } from "../stores/updater";
-import { SettingsIcon } from "./icons";
+import { ExternalLinkIcon, SettingsIcon } from "./icons";
+import { isOperatorOrAdminRole } from "../utils/roles";
 
 interface CurrentUserResponse {
   username: string;
@@ -15,7 +17,9 @@ interface CurrentUserResponse {
 }
 
 export default function UserSettingsDock() {
+  const navigate = useNavigate();
   const currentUsernameValue = () => currentUsername();
+  const canAccessAdminSettings = () => isOperatorOrAdminRole(role());
 
   function avatarFallbackLabel() {
     const usernameValue = currentUsernameValue()?.trim();
@@ -78,6 +82,20 @@ export default function UserSettingsDock() {
       >
         <SettingsIcon />
       </button>
+      {canAccessAdminSettings() && (
+        <button
+          type="button"
+          class="user-dock-settings"
+          onClick={() => {
+            closeMobileNav();
+            navigate("/admin/settings");
+          }}
+          aria-label="Open admin settings"
+          title="Admin settings"
+        >
+          <ExternalLinkIcon width={14} height={14} />
+        </button>
+      )}
     </div>
   );
 }

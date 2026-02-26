@@ -123,3 +123,53 @@ pub fn extract_claims(headers: &axum::http::HeaderMap, secret: &str) -> Result<C
 
     validate_token(token, secret)
 }
+
+pub fn is_operator_or_admin_role(role: &str) -> bool {
+    role == "operator" || role == "admin"
+}
+
+pub fn require_operator_or_admin(claims: &Claims, action: &str) -> Result<(), AppError> {
+    if !is_operator_or_admin_role(&claims.role) {
+        return Err(AppError::Unauthorized(format!(
+            "Only operators and admins can {action}",
+        )));
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn claims_with_role(role: &str) -> Claims {
+        Claims {
+            user_id: Uuid::new_v4(),
+            username: "tester".to_string(),
+            role: role.to_string(),
+            exp: 0,
+        }
+    }
+
+    #[test]
+    fn privileged_roles_are_allowed() {
+        let operator = claims_with_role("operator");
+        let admin = claims_with_role("admin");
+
+        assert!(require_operator_or_admin(&operator, "manage settings").is_ok());
+        assert!(require_operator_or_admin(&admin, "manage settings").is_ok());
+    }
+
+    #[test]
+    fn non_privileged_roles_are_rejected() {
+        let member = claims_with_role("member");
+        let result = require_operator_or_admin(&member, "manage settings");
+
+        match result {
+            Err(AppError::Unauthorized(message)) => {
+                assert_eq!(message, "Only operators and admins can manage settings");
+            }
+            _ => panic!("expected unauthorized error"),
+        }
+    }
+}

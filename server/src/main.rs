@@ -147,6 +147,7 @@ async fn main() {
         .nest("/api", routes::gif_routes::router())
         .nest("/api", routes::invite_routes::router())
         .nest("/api", routes::reaction_routes::router())
+        .nest("/api", routes::settings_routes::router())
         .nest("/api", routes::user_routes::router())
         .route("/ws", axum::routing::get(ws::ws_upgrade))
         .layer(cors)

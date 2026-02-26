@@ -132,11 +132,11 @@ export default function EmojiSettings(props: EmojiSettingsProps) {
   return (
     <section class="settings-section">
       <h5>Custom emojis</h5>
-      <Show
-        when={props.isOperatorOrAdmin}
-        fallback={<p class="settings-help">Only operators/admins can manage server emojis.</p>}
-      >
-        <div class="emoji-settings-layout">
+      <div class="emoji-settings-layout">
+        <Show
+          when={props.isOperatorOrAdmin}
+          fallback={<p class="settings-help">Only operators/admins can upload or delete server emojis.</p>}
+        >
           <form class="settings-audio-row emoji-upload-card" onSubmit={(event) => void handleCreateEmoji(event)}>
             <h6 class="emoji-settings-card-title">Upload emoji</h6>
 
@@ -191,35 +191,37 @@ export default function EmojiSettings(props: EmojiSettingsProps) {
               <button type="submit" disabled={isUploading()}>{isUploading() ? "Uploading..." : "Upload emoji"}</button>
             </div>
           </form>
+        </Show>
 
-          <div class="emoji-library-card">
-            <div class="emoji-library-head">
-              <h6 class="emoji-settings-card-title">Emoji library</h6>
-              <Show when={emojiStore.emojis.length > 0}>
-                <span class="emoji-library-count">{emojiStore.emojis.length} total</span>
-              </Show>
-            </div>
-
-            <Show when={emojiStore.loading}>
-              <p class="settings-help">Loading emojis...</p>
-            </Show>
-
-            <Show when={!emojiStore.loading && emojiStore.emojis.length === 0}>
-              <p class="settings-help">No custom emojis uploaded yet.</p>
-            </Show>
-
+        <div class="emoji-library-card">
+          <div class="emoji-library-head">
+            <h6 class="emoji-settings-card-title">Emoji library</h6>
             <Show when={emojiStore.emojis.length > 0}>
-              <ul class="emoji-settings-list">
-                <For each={emojiStore.emojis}>
-                  {(emoji) => (
-                    <li class="emoji-settings-item">
-                      <div class="emoji-settings-item-main">
-                        <img src={emoji.url} alt={`:${emoji.shortcode}:`} decoding="async" />
-                        <div>
-                          <p class="emoji-settings-shortcode">:{emoji.shortcode}:</p>
-                          <p class="emoji-settings-name">{emoji.name}</p>
-                        </div>
+              <span class="emoji-library-count">{emojiStore.emojis.length} total</span>
+            </Show>
+          </div>
+
+          <Show when={emojiStore.loading}>
+            <p class="settings-help">Loading emojis...</p>
+          </Show>
+
+          <Show when={!emojiStore.loading && emojiStore.emojis.length === 0}>
+            <p class="settings-help">No custom emojis uploaded yet.</p>
+          </Show>
+
+          <Show when={emojiStore.emojis.length > 0}>
+            <ul class="emoji-settings-list">
+              <For each={emojiStore.emojis}>
+                {(emoji) => (
+                  <li class="emoji-settings-item">
+                    <div class="emoji-settings-item-main">
+                      <img src={emoji.url} alt={`:${emoji.shortcode}:`} decoding="async" />
+                      <div>
+                        <p class="emoji-settings-shortcode">:{emoji.shortcode}:</p>
+                        <p class="emoji-settings-name">{emoji.name}</p>
                       </div>
+                    </div>
+                    <Show when={props.isOperatorOrAdmin}>
                       <button
                         type="button"
                         class="settings-secondary"
@@ -228,17 +230,17 @@ export default function EmojiSettings(props: EmojiSettingsProps) {
                       >
                         {deletingEmojiId() === emoji.id ? "Deleting..." : "Delete"}
                       </button>
-                    </li>
-                  )}
-                </For>
-              </ul>
-            </Show>
-          </div>
+                    </Show>
+                  </li>
+                )}
+              </For>
+            </ul>
+          </Show>
         </div>
+      </div>
 
-        <Show when={formError()}>
-          <p class="error">{formError()}</p>
-        </Show>
+      <Show when={formError()}>
+        <p class="error">{formError()}</p>
       </Show>
     </section>
   );

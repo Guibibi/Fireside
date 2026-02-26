@@ -22,9 +22,7 @@ use super::media_signal::{
 use super::messages::{
     ClientMessage, PresenceUser, ServerMessage, VoiceMuteState, VoicePresenceChannel,
 };
-use super::voice::{
-    broadcast_closed_producers, broadcast_voice_activity_to_channel,
-};
+use super::voice::{broadcast_closed_producers, broadcast_voice_activity_to_channel};
 use crate::auth::{validate_token, Claims};
 use crate::message_attachments::{
     load_message_attachments_by_message, persist_message_attachments_in_tx,
@@ -191,17 +189,15 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                 let mute_states = sorted_usernames
                     .iter()
                     .filter_map(|username| {
-                        voice_mute_state_by_username
-                            .get(username)
-                            .map(|state| {
-                                (
-                                    username.clone(),
-                                    VoiceMuteState {
-                                        mic_muted: state.mic_muted,
-                                        speaker_muted: state.speaker_muted,
-                                    },
-                                )
-                            })
+                        voice_mute_state_by_username.get(username).map(|state| {
+                            (
+                                username.clone(),
+                                VoiceMuteState {
+                                    mic_muted: state.mic_muted,
+                                    speaker_muted: state.speaker_muted,
+                                },
+                            )
+                        })
                     })
                     .collect();
                 VoicePresenceChannel {

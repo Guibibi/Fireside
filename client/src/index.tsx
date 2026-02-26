@@ -7,6 +7,7 @@ import Login from "./pages/Login";
 import Setup from "./pages/Setup";
 import Register from "./pages/Register";
 import Chat from "./pages/Chat";
+import AdminSettings from "./pages/AdminSettings";
 import { isAuthenticated, normalizeServerUrl, serverUrl } from "./stores/auth";
 import "./styles/global.css";
 
@@ -87,6 +88,13 @@ function ChatRoute() {
   return <Chat />;
 }
 
+function AdminSettingsRoute() {
+  if (!isAuthenticated()) {
+    return <Navigate href="/login" />;
+  }
+  return <AdminSettings />;
+}
+
 render(
   () => (
     <Router root={App}>
@@ -94,6 +102,7 @@ render(
       <Route path="/setup" component={SetupRoute} />
       <Route path="/invite/:code?" component={RegisterRoute} />
       <Route path="/chat" component={ChatRoute} />
+      <Route path="/admin/settings" component={AdminSettingsRoute} />
       <Route path="/" component={RootRoute} />
     </Router>
   ),
