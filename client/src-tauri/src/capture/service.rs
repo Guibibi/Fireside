@@ -14,8 +14,7 @@ use std::thread::{self, JoinHandle};
 use tauri::{State, Window};
 
 use super::windows_capture::{
-    self, NativeCaptureSource, NativeCaptureSourceKind, NativeCaptureStartRequest,
-    NativeFramePacket,
+    self, NativeCaptureSource, NativeCaptureSourceKind, NativeFramePacket,
 };
 use encoder_backend::create_encoder_backend;
 use metrics::{NativeSenderMetrics, NativeSenderSharedMetrics, NativeSenderSnapshotInput};
@@ -385,11 +384,6 @@ impl NativeCaptureService {
     fn start_dxgi_capture(&self, source_id: &str, target_fps: Option<u32>) -> Result<(), String> {
         self.stop_dxgi_capture();
 
-        let monitor_device_name = source_id
-            .strip_prefix("screen:")
-            .ok_or_else(|| "DXGI capture requires a screen: source".to_string())?
-            .to_string();
-
         let stop_signal = Arc::new(AtomicBool::new(false));
         let thread_stop = Arc::clone(&stop_signal);
         let thread_source_id = source_id.to_string();
@@ -398,7 +392,6 @@ impl NativeCaptureService {
             .name("dxgi-capture".to_string())
             .spawn(move || {
                 dxgi_capture::run_dxgi_capture_loop(
-                    &monitor_device_name,
                     &thread_source_id,
                     thread_stop,
                     target_fps,
@@ -674,27 +667,17 @@ pub fn start_native_capture(
         ssrc,
     )?;
 
-    // Route screen sources through DXGI Desktop Duplication (no yellow border),
-    // while window/application sources continue using windows-capture.
-    let use_dxgi = matches!(selected_source.kind, NativeCaptureSourceKind::Screen);
-
-    if use_dxgi {
-        service
-            .start_dxgi_capture(normalized, fps)
-            .inspect_err(|_| {
-                let _ = service.stop_sender_worker();
-            })?;
-    } else {
-        service.stop_dxgi_capture();
-        windows_capture::start_capture(
-            &window,
-            &NativeCaptureStartRequest {
-                source_id: normalized.to_string(),
-            },
-        )
-        .inspect_err(|_| {
-            let _ = service.stop_sender_worker();
-        })?;
+    match selected_source.kind {
+        NativeCaptureSourceKind::Screen
+        | NativeCaptureSourceKind::Window
+        | NativeCaptureSourceKind::Application => {
+            let _ = windows_capture::stop_capture();
+            service
+                .start_dxgi_capture(normalized, fps)
+                .inspect_err(|_| {
+                    let _ = service.stop_sender_worker();
+                })?;
+        }
     }
 
     let mut active_session = service

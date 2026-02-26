@@ -762,10 +762,8 @@ pub fn run_native_sender_worker(
                         && encoder_selection.requested_backend == "auto"
                         && consecutive_encode_failures >= nvenc_runtime_fallback_encode_failures
                     {
-                        match try_build_x264_backend(
-                            config.target_fps,
-                            config.target_bitrate_kbps,
-                        ) {
+                        match try_build_x264_backend(config.target_fps, config.target_bitrate_kbps)
+                        {
                             Ok(x264) => {
                                 encoder = x264;
                                 active_encoder_backend = "x264";

@@ -49,6 +49,7 @@ pub struct NativeCaptureSource {
     pub height: Option<u32>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct NativeCaptureStartRequest {
     pub source_id: String,
@@ -668,6 +669,7 @@ pub fn list_sources(_window: &Window) -> Result<Vec<NativeCaptureSource>, String
 }
 
 #[cfg(target_os = "windows")]
+#[allow(dead_code)]
 pub fn start_capture(window: &Window, request: &NativeCaptureStartRequest) -> Result<(), String> {
     let source_id = request.source_id.trim();
     if source_id.is_empty() {
@@ -780,6 +782,7 @@ pub fn list_sources(_window: &Window) -> Result<Vec<NativeCaptureSource>, String
 }
 
 #[cfg(not(target_os = "windows"))]
+#[allow(dead_code)]
 pub fn start_capture(_window: &Window, request: &NativeCaptureStartRequest) -> Result<(), String> {
     let _ = request.source_id.len();
     Err("Native capture is currently supported on Windows only. Falling back to browser-based sharing.".to_string())
