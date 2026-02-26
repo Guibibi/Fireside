@@ -8,9 +8,9 @@ use axum::{
 use serde::Serialize;
 use uuid::Uuid;
 
-use crate::auth::extract_claims;
+use crate::auth::{extract_claims, require_operator_or_admin};
 use crate::errors::AppError;
-use crate::models::{Emoji, UserRole};
+use crate::models::Emoji;
 use crate::AppState;
 
 #[derive(Serialize)]
@@ -71,20 +71,8 @@ async fn create_emoji(
     mut multipart: Multipart,
 ) -> Result<Json<CreateEmojiResponse>, AppError> {
     let claims = extract_claims(&headers, &state.config.jwt.secret)?;
-
-    let user: (Uuid, UserRole) = sqlx::query_as("SELECT id, role FROM users WHERE username = $1")
-        .bind(&claims.username)
-        .fetch_optional(&state.db)
-        .await?
-        .ok_or_else(|| AppError::Unauthorized("User not found".into()))?;
-
-    let (user_id, role) = user;
-
-    if !matches!(role, UserRole::Operator | UserRole::Admin) {
-        return Err(AppError::Unauthorized(
-            "Only operators and admins can create emojis".into(),
-        ));
-    }
+    require_operator_or_admin(&claims, "create emojis")?;
+    let user_id = claims.user_id;
 
     let mut shortcode: Option<String> = None;
     let mut name: Option<String> = None;
@@ -173,20 +161,7 @@ async fn delete_emoji(
     Path(emoji_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let claims = extract_claims(&headers, &state.config.jwt.secret)?;
-
-    let user: (Uuid, UserRole) = sqlx::query_as("SELECT id, role FROM users WHERE username = $1")
-        .bind(&claims.username)
-        .fetch_optional(&state.db)
-        .await?
-        .ok_or_else(|| AppError::Unauthorized("User not found".into()))?;
-
-    let (_user_id, role) = user;
-
-    if !matches!(role, UserRole::Operator | UserRole::Admin) {
-        return Err(AppError::Unauthorized(
-            "Only operators and admins can delete emojis".into(),
-        ));
-    }
+    require_operator_or_admin(&claims, "delete emojis")?;
 
     let emoji: Option<(Uuid, Uuid)> =
         sqlx::query_as("SELECT id, media_id FROM emojis WHERE id = $1")

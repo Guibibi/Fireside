@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::time::Instant;
 use uuid::Uuid;
 
-use crate::auth::extract_claims;
+use crate::auth::{extract_claims, require_operator_or_admin};
 use crate::errors::AppError;
 use crate::message_attachments::{
     load_message_attachments_by_message, persist_message_attachments_in_tx,
@@ -110,16 +110,6 @@ pub fn router() -> Router<AppState> {
         )
 }
 
-fn require_admin_or_operator(claims: &crate::auth::Claims) -> Result<(), AppError> {
-    if claims.role != "operator" && claims.role != "admin" {
-        return Err(AppError::Unauthorized(
-            "Only operators and admins can manage channels".into(),
-        ));
-    }
-
-    Ok(())
-}
-
 async fn lookup_user_id(state: &AppState, username: &str) -> Result<Uuid, AppError> {
     let row: Option<(Uuid,)> = sqlx::query_as("SELECT id FROM users WHERE username = $1")
         .bind(username)
@@ -136,7 +126,7 @@ async fn create_channel(
     Json(body): Json<CreateChannelRequest>,
 ) -> Result<Json<Channel>, AppError> {
     let claims = extract_claims(&headers, &state.config.jwt.secret)?;
-    require_admin_or_operator(&claims)?;
+    require_operator_or_admin(&claims, "manage channels")?;
 
     let trimmed_name = body.name.trim();
     if trimmed_name.is_empty() || trimmed_name.len() > 100 {
@@ -293,7 +283,7 @@ async fn update_channel(
     Json(body): Json<UpdateChannelRequest>,
 ) -> Result<Json<Channel>, AppError> {
     let claims = extract_claims(&headers, &state.config.jwt.secret)?;
-    require_admin_or_operator(&claims)?;
+    require_operator_or_admin(&claims, "manage channels")?;
 
     let trimmed_name = body.name.trim();
     if trimmed_name.is_empty() || trimmed_name.len() > 100 {
@@ -372,7 +362,7 @@ async fn delete_channel(
     Path(channel_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let claims = extract_claims(&headers, &state.config.jwt.secret)?;
-    require_admin_or_operator(&claims)?;
+    require_operator_or_admin(&claims, "manage channels")?;
 
     let mut tx = state.db.begin().await?;
 

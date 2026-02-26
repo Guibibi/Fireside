@@ -6,7 +6,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::auth::{extract_claims, generate_invite_code};
+use crate::auth::{extract_claims, generate_invite_code, require_operator_or_admin};
 use crate::errors::AppError;
 use crate::AppState;
 
@@ -42,22 +42,13 @@ pub fn router() -> Router<AppState> {
         .route("/invites/{invite_id}", axum::routing::delete(revoke_invite))
 }
 
-fn require_admin_or_operator(claims: &crate::auth::Claims) -> Result<(), AppError> {
-    if claims.role != "operator" && claims.role != "admin" {
-        return Err(AppError::Unauthorized(
-            "Only operators and admins can manage invites".into(),
-        ));
-    }
-    Ok(())
-}
-
 async fn create_invite(
     State(state): State<AppState>,
     headers: axum::http::HeaderMap,
     Json(body): Json<CreateInviteRequest>,
 ) -> Result<Json<InviteResponse>, AppError> {
     let claims = extract_claims(&headers, &state.config.jwt.secret)?;
-    require_admin_or_operator(&claims)?;
+    require_operator_or_admin(&claims, "manage invites")?;
     let user_id = claims.user_id;
 
     let code = generate_invite_code();
@@ -118,7 +109,7 @@ async fn list_invites(
     headers: axum::http::HeaderMap,
 ) -> Result<Json<Vec<InviteResponse>>, AppError> {
     let claims = extract_claims(&headers, &state.config.jwt.secret)?;
-    require_admin_or_operator(&claims)?;
+    require_operator_or_admin(&claims, "manage invites")?;
 
     let invites: Vec<InviteResponse> = sqlx::query_as(
         "SELECT i.id, i.code, i.created_by, u.username AS creator_username, i.single_use, i.used_count, i.max_uses, i.created_at, i.expires_at, i.revoked
@@ -138,7 +129,7 @@ async fn revoke_invite(
     Path(invite_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let claims = extract_claims(&headers, &state.config.jwt.secret)?;
-    require_admin_or_operator(&claims)?;
+    require_operator_or_admin(&claims, "manage invites")?;
 
     let result = sqlx::query("UPDATE invites SET revoked = true WHERE id = $1 AND revoked = false")
         .bind(invite_id)
