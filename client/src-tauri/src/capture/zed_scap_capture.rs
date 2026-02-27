@@ -1,6 +1,4 @@
 #[cfg(target_os = "windows")]
-use std::collections::HashMap;
-#[cfg(target_os = "windows")]
 use std::ffi::c_void;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
@@ -24,26 +22,6 @@ use super::unix_timestamp_ms;
 use super::windows_capture::NativeCaptureSource;
 #[cfg(target_os = "windows")]
 use super::windows_capture::{self, NativeCaptureSourceKind, NativeFrameData, NativeFramePacket};
-
-#[cfg(target_os = "windows")]
-#[derive(Debug, Clone)]
-struct ApplicationCandidate {
-    process_id: u32,
-    window_id: u32,
-    title: String,
-    is_foreground: bool,
-}
-
-#[cfg(target_os = "windows")]
-impl ApplicationCandidate {
-    fn is_better_than(&self, other: &Self) -> bool {
-        if self.is_foreground != other.is_foreground {
-            return self.is_foreground;
-        }
-
-        self.title.len() > other.title.len()
-    }
-}
 
 #[cfg(target_os = "windows")]
 fn current_foreground_window_id() -> Option<u32> {
@@ -198,9 +176,7 @@ pub fn list_sources() -> Result<Vec<NativeCaptureSource>, String> {
         return Err("No native capture sources are available.".to_string());
     }
 
-    let foreground_window_id = current_foreground_window_id();
     let mut sources = Vec::new();
-    let mut applications: HashMap<u32, ApplicationCandidate> = HashMap::new();
 
     for target in targets {
         match target {
@@ -228,40 +204,8 @@ pub fn list_sources() -> Result<Vec<NativeCaptureSource>, String> {
                     width: None,
                     height: None,
                 });
-
-                let Some(process_id) = process_id_for_window(window.raw_handle.0) else {
-                    continue;
-                };
-
-                let candidate = ApplicationCandidate {
-                    process_id,
-                    window_id: window.id,
-                    title,
-                    is_foreground: foreground_window_id == Some(window.id),
-                };
-
-                match applications.get(&process_id) {
-                    Some(existing) if !candidate.is_better_than(existing) => {}
-                    _ => {
-                        applications.insert(process_id, candidate);
-                    }
-                }
             }
         }
-    }
-
-    for candidate in applications.into_values() {
-        sources.push(NativeCaptureSource {
-            id: format!(
-                "application:{}:{}",
-                candidate.process_id, candidate.window_id
-            ),
-            kind: NativeCaptureSourceKind::Application,
-            title: format!("Application {} ({})", candidate.process_id, candidate.title),
-            app_name: Some(format!("Application {}", candidate.process_id)),
-            width: None,
-            height: None,
-        });
     }
 
     sources.sort_by(|left, right| left.title.to_lowercase().cmp(&right.title.to_lowercase()));
