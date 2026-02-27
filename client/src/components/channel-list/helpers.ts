@@ -1,8 +1,9 @@
-import type { NativeCaptureSource } from "../../api/nativeCapture";
+import type { NativeCaptureSource, NativeCaptureSourceKind } from "../../api/nativeCapture";
 import type {
   ScreenShareBitrateMode,
   ScreenShareFps,
   ScreenShareResolution,
+  ScreenShareSourceKind,
 } from "../../stores/settings";
 
 export function autoBitrateKbps(resolution: ScreenShareResolution, fps: ScreenShareFps): number {
@@ -92,6 +93,45 @@ export function nativeSourceLabel(source: NativeCaptureSource): string {
   }
 
   return source.title;
+}
+
+export function nativeSourceKindLabel(kind: NativeCaptureSourceKind): "Screen" | "Window" | "App" {
+  if (kind === "screen") {
+    return "Screen";
+  }
+  if (kind === "application") {
+    return "App";
+  }
+  return "Window";
+}
+
+export function nativeSourceIdentityLabel(source: NativeCaptureSource): string {
+  if (source.id.startsWith("screen:")) {
+    const raw = source.id.slice("screen:".length).trim();
+    return raw.length > 0 ? raw : source.id;
+  }
+
+  if (source.id.startsWith("window:")) {
+    const raw = source.id.slice("window:".length).trim();
+    return raw.length > 0 ? `HWND ${raw}` : source.id;
+  }
+
+  if (source.id.startsWith("application:")) {
+    const raw = source.id.slice("application:".length).trim();
+    return raw.length > 0 ? `PID ${raw}` : source.id;
+  }
+
+  return source.id;
+}
+
+export function normalizeNativeSourceKind(kind: NativeCaptureSourceKind): ScreenShareSourceKind {
+  if (kind === "screen") {
+    return "screen";
+  }
+  if (kind === "application") {
+    return "application";
+  }
+  return "window";
 }
 
 export function previewResolutionConstraints(resolution: ScreenShareResolution): { width: { ideal: number }; height: { ideal: number } } {

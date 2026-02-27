@@ -1,17 +1,23 @@
-import { createSignal, createEffect, onCleanup } from "solid-js";
-import type { NativeCaptureSource, NativeCaptureStatus } from "../../../api/nativeCapture";
-import { listNativeCaptureSources, nativeCaptureStatus } from "../../../api/nativeCapture";
+import { createEffect, createSignal, untrack } from "solid-js";
+import type { NativeCaptureSource } from "../../../api/nativeCapture";
+import { listNativeCaptureSources } from "../../../api/nativeCapture";
+import type { ScreenShareStartOptions } from "../../../api/media";
 import {
   preferredScreenShareBitrateMode,
   preferredScreenShareCustomBitrateKbps,
   preferredScreenShareFps,
   preferredScreenShareResolution,
   preferredScreenShareSourceKind,
+  type ScreenShareSourceKind,
 } from "../../../stores/settings";
-import { isTauriRuntime } from "../../../utils/platform";
 import { errorMessage } from "../../../utils/error";
-import type { ScreenShareStartOptions } from "../../../api/media";
-import { autoBitrateKbps, manualBitrateKbps, previewResolutionConstraints } from "../helpers";
+import { isTauriRuntime } from "../../../utils/platform";
+import {
+  autoBitrateKbps,
+  manualBitrateKbps,
+  normalizeNativeSourceKind,
+  previewResolutionConstraints,
+} from "../helpers";
 
 export interface UseScreenShareModalReturn {
   nativeSources: () => NativeCaptureSource[];
@@ -20,7 +26,6 @@ export interface UseScreenShareModalReturn {
   selectedNativeSourceId: () => string | null;
   screenSharePreviewStream: () => MediaStream | null;
   screenSharePreviewError: () => string;
-  nativeSenderMetrics: () => NativeCaptureStatus["native_sender"] | null;
   loadNativeCaptureSources: () => Promise<void>;
   setSelectedNativeSourceId: (id: string | null) => void;
   startScreenSharePreview: () => Promise<void>;
@@ -30,6 +35,28 @@ export interface UseScreenShareModalReturn {
   selectedScreenShareBitrateKbps: () => number;
 }
 
+function pickSourceIdForPreferredKind(
+  sources: NativeCaptureSource[],
+  selectedId: string | null,
+  preferredKind: ScreenShareSourceKind,
+): string | null {
+  if (sources.length === 0) {
+    return null;
+  }
+
+  const selected = selectedId ? sources.find((source) => source.id === selectedId) ?? null : null;
+  if (selected && normalizeNativeSourceKind(selected.kind) === preferredKind) {
+    return selected.id;
+  }
+
+  const preferred = sources.find((source) => normalizeNativeSourceKind(source.kind) === preferredKind);
+  if (preferred) {
+    return preferred.id;
+  }
+
+  return selected?.id ?? sources[0]?.id ?? null;
+}
+
 export function useScreenShareModal(): UseScreenShareModalReturn {
   const [nativeSources, setNativeSources] = createSignal<NativeCaptureSource[]>([]);
   const [nativeSourcesLoading, setNativeSourcesLoading] = createSignal(false);
@@ -37,15 +64,13 @@ export function useScreenShareModal(): UseScreenShareModalReturn {
   const [selectedNativeSourceId, setSelectedNativeSourceId] = createSignal<string | null>(null);
   const [screenSharePreviewStream, setScreenSharePreviewStream] = createSignal<MediaStream | null>(null);
   const [screenSharePreviewError, setScreenSharePreviewError] = createSignal("");
-  const [nativeSenderMetrics, setNativeSenderMetrics] = createSignal<NativeCaptureStatus["native_sender"] | null>(null);
 
   const tauriRuntime = isTauriRuntime();
-  const nativeDebugEnabled =
-    tauriRuntime &&
-    (import.meta.env.DEV || window.localStorage.getItem("yankcord_debug_native_sender") === "1");
 
   async function loadNativeCaptureSources() {
-    if (!tauriRuntime) return;
+    if (!tauriRuntime) {
+      return;
+    }
 
     setNativeSourcesLoading(true);
     setNativeSourcesError("");
@@ -53,15 +78,9 @@ export function useScreenShareModal(): UseScreenShareModalReturn {
     try {
       const sources = await listNativeCaptureSources();
       setNativeSources(sources);
-
-      const selectedId = selectedNativeSourceId();
-      if (selectedId && sources.some((source) => source.id === selectedId)) {
-        return;
-      }
-
-      const preferredKind = preferredScreenShareSourceKind();
-      const preferredSource = sources.find((source) => source.kind === preferredKind);
-      setSelectedNativeSourceId(preferredSource?.id ?? sources[0]?.id ?? null);
+      setSelectedNativeSourceId((current) =>
+        pickSourceIdForPreferredKind(sources, current, preferredScreenShareSourceKind())
+      );
     } catch (error) {
       setNativeSources([]);
       setSelectedNativeSourceId(null);
@@ -118,8 +137,9 @@ export function useScreenShareModal(): UseScreenShareModalReturn {
   function selectedScreenShareSourceKind(): "screen" | "window" | "application" {
     const selected = nativeSources().find((source) => source.id === selectedNativeSourceId()) ?? null;
     if (selected) {
-      return selected.kind === "screen" ? "screen" : selected.kind === "application" ? "application" : "window";
+      return normalizeNativeSourceKind(selected.kind);
     }
+
     return preferredScreenShareSourceKind();
   }
 
@@ -127,61 +147,42 @@ export function useScreenShareModal(): UseScreenShareModalReturn {
     const mode = preferredScreenShareBitrateMode();
     const resolution = preferredScreenShareResolution();
     const fps = preferredScreenShareFps();
-    if (mode === "auto") return autoBitrateKbps(resolution, fps);
-    if (mode === "custom") return preferredScreenShareCustomBitrateKbps();
+    if (mode === "auto") {
+      return autoBitrateKbps(resolution, fps);
+    }
+    if (mode === "custom") {
+      return preferredScreenShareCustomBitrateKbps();
+    }
     return manualBitrateKbps(mode, resolution);
   }
 
   function buildScreenShareOptions(): ScreenShareStartOptions {
     const selected = nativeSources().find((source) => source.id === selectedNativeSourceId()) ?? null;
-    const sourceKind = selected
-      ? selected.kind === "screen"
-        ? "screen"
-        : selected.kind === "application"
-          ? "application"
-          : "window"
-      : preferredScreenShareSourceKind();
 
     return {
       resolution: preferredScreenShareResolution(),
       fps: preferredScreenShareFps(),
       bitrateKbps: selectedScreenShareBitrateKbps(),
-      sourceKind,
+      sourceKind: selected ? normalizeNativeSourceKind(selected.kind) : preferredScreenShareSourceKind(),
       sourceId: selected?.id,
       sourceTitle: selected?.title,
     };
   }
 
   createEffect(() => {
-    if (!tauriRuntime || !nativeDebugEnabled) {
-      setNativeSenderMetrics(null);
-      return;
-    }
+    const sources = nativeSources();
+    const preferredKind = preferredScreenShareSourceKind();
 
-    let cancelled = false;
-
-    const pollStatus = async () => {
-      try {
-        const status = await nativeCaptureStatus();
-        if (!cancelled) {
-          setNativeSenderMetrics(status.native_sender);
-        }
-      } catch {
-        if (!cancelled) {
-          setNativeSenderMetrics(null);
-        }
-      }
-    };
-
-    void pollStatus();
-    const timer = window.setInterval(() => {
-      void pollStatus();
-    }, 1000);
-
-    onCleanup(() => {
-      cancelled = true;
-      window.clearInterval(timer);
+    setSelectedNativeSourceId((current) => {
+      const next = pickSourceIdForPreferredKind(sources, current, preferredKind);
+      return current === next ? current : next;
     });
+  });
+
+  createEffect(() => {
+    selectedNativeSourceId();
+    preferredScreenShareSourceKind();
+    untrack(() => stopScreenSharePreview());
   });
 
   return {
@@ -191,7 +192,6 @@ export function useScreenShareModal(): UseScreenShareModalReturn {
     selectedNativeSourceId,
     screenSharePreviewStream,
     screenSharePreviewError,
-    nativeSenderMetrics,
     loadNativeCaptureSources,
     setSelectedNativeSourceId,
     startScreenSharePreview,

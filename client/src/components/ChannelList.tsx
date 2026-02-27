@@ -6,7 +6,6 @@ import {
     createSignal,
     onCleanup,
     onMount,
-    untrack,
 } from "solid-js";
 import { username as currentUsername } from "../stores/auth";
 import { del, patch as patchRequest, post } from "../api/http";
@@ -26,10 +25,8 @@ import {
     subscribeAudioPlaybackError,
 } from "../api/media";
 import {
-    listNativeCaptureSources,
     nativeCaptureStatus,
     type NativeCaptureStatus,
-    type NativeCaptureSource,
 } from "../api/nativeCapture";
 import { connect, onClose, onMessage, send } from "../api/ws";
 import {
@@ -46,12 +43,6 @@ import {
     closeMobileNav,
 } from "../stores/chat";
 import {
-    preferredScreenShareBitrateMode,
-    preferredScreenShareCustomBitrateKbps,
-    preferredScreenShareFps,
-    preferredScreenShareResolution,
-    preferredScreenShareSourceKind,
-    savePreferredScreenShareSourceKind,
     closeSettings,
     settingsOpen,
 } from "../stores/settings";
@@ -113,10 +104,8 @@ import {
     CreateChannelModal,
     EditChannelModal,
     ScreenShareModal,
+    useScreenShareModal,
     VoiceDock,
-    autoBitrateKbps,
-    manualBitrateKbps,
-    previewResolutionConstraints,
 } from "./channel-list";
 import {
     handleLongPressEnd,
@@ -168,18 +157,6 @@ export default function ChannelList() {
     const [cameraActionPending, setCameraActionPending] = createSignal(false);
     const [screenActionPending, setScreenActionPending] = createSignal(false);
     const [screenShareModalOpen, setScreenShareModalOpen] = createSignal(false);
-    const [nativeSourcesLoading, setNativeSourcesLoading] = createSignal(false);
-    const [nativeSourcesError, setNativeSourcesError] = createSignal("");
-    const [nativeSources, setNativeSources] = createSignal<
-        NativeCaptureSource[]
-    >([]);
-    const [selectedNativeSourceId, setSelectedNativeSourceId] = createSignal<
-        string | null
-    >(null);
-    const [screenSharePreviewStream, setScreenSharePreviewStream] =
-        createSignal<MediaStream | null>(null);
-    const [screenSharePreviewError, setScreenSharePreviewError] =
-        createSignal("");
     const [nativeSenderMetrics, setNativeSenderMetrics] = createSignal<
         NativeCaptureStatus["native_sender"] | null
     >(null);
@@ -192,6 +169,19 @@ export default function ChannelList() {
     const pulseTimers = new Map<string, ReturnType<typeof setTimeout>>();
     const readMarkerInFlightByChannel = new Set<string>();
     const tauriRuntime = isTauriRuntime();
+    const {
+        nativeSources,
+        nativeSourcesLoading,
+        nativeSourcesError,
+        selectedNativeSourceId,
+        screenSharePreviewStream,
+        screenSharePreviewError,
+        loadNativeCaptureSources,
+        setSelectedNativeSourceId,
+        startScreenSharePreview,
+        stopScreenSharePreview,
+        buildScreenShareOptions,
+    } = useScreenShareModal();
     const nativeDebugEnabled =
         tauriRuntime &&
         (import.meta.env.DEV ||
@@ -200,150 +190,6 @@ export default function ChannelList() {
     let toastTimer: ReturnType<typeof setTimeout> | null = null;
     let screenSharePreviewVideoRef: HTMLVideoElement | undefined;
     let channelCreateNameInputRef: HTMLInputElement | undefined;
-
-    function selectedScreenShareSourceKind():
-        | "screen"
-        | "window"
-        | "application" {
-        const selected =
-            nativeSources().find(
-                (source) => source.id === selectedNativeSourceId(),
-            ) ?? null;
-        if (selected) {
-            return selected.kind === "screen"
-                ? "screen"
-                : selected.kind === "application"
-                    ? "application"
-                    : "window";
-        }
-
-        return preferredScreenShareSourceKind();
-    }
-
-    function stopScreenSharePreview() {
-        const stream = screenSharePreviewStream();
-        if (stream) {
-            stream.getTracks().forEach((track) => track.stop());
-            setScreenSharePreviewStream(null);
-        }
-
-        setScreenSharePreviewError("");
-    }
-
-    async function startScreenSharePreview() {
-        setScreenSharePreviewError("");
-        stopScreenSharePreview();
-
-        const sourceKind = selectedScreenShareSourceKind();
-        const displaySurface = sourceKind === "screen" ? "monitor" : "window";
-
-        try {
-            const stream = await navigator.mediaDevices.getDisplayMedia({
-                video: {
-                    ...previewResolutionConstraints(
-                        preferredScreenShareResolution(),
-                    ),
-                    frameRate: {
-                        ideal: preferredScreenShareFps(),
-                        max: preferredScreenShareFps(),
-                    },
-                    displaySurface,
-                },
-                audio: false,
-            });
-
-            const [track] = stream.getVideoTracks();
-            if (track) {
-                track.addEventListener("ended", () => {
-                    if (screenSharePreviewStream() === stream) {
-                        stopScreenSharePreview();
-                    }
-                });
-            }
-
-            setScreenSharePreviewStream(stream);
-        } catch (error) {
-            setScreenSharePreviewError(
-                errorMessage(error, "Failed to start preview"),
-            );
-        }
-    }
-
-    function selectedScreenShareBitrateKbps(): number {
-        const mode = preferredScreenShareBitrateMode();
-        const resolution = preferredScreenShareResolution();
-        const fps = preferredScreenShareFps();
-        if (mode === "auto") {
-            return autoBitrateKbps(resolution, fps);
-        }
-
-        if (mode === "custom") {
-            return preferredScreenShareCustomBitrateKbps();
-        }
-
-        return manualBitrateKbps(mode, resolution);
-    }
-
-    function buildScreenShareOptions(): ScreenShareStartOptions {
-        const selected =
-            nativeSources().find(
-                (source) => source.id === selectedNativeSourceId(),
-            ) ?? null;
-        const sourceKind = selected
-            ? selected.kind === "screen"
-                ? "screen"
-                : selected.kind === "application"
-                    ? "application"
-                    : "window"
-            : preferredScreenShareSourceKind();
-
-        return {
-            resolution: preferredScreenShareResolution(),
-            fps: preferredScreenShareFps(),
-            bitrateKbps: selectedScreenShareBitrateKbps(),
-            sourceKind,
-            sourceId: selected?.id,
-            sourceTitle: selected?.title,
-        };
-    }
-
-    async function loadNativeCaptureSources() {
-        if (!tauriRuntime) {
-            return;
-        }
-
-        setNativeSourcesLoading(true);
-        setNativeSourcesError("");
-
-        try {
-            const sources = await listNativeCaptureSources();
-            setNativeSources(sources);
-
-            const selectedId = selectedNativeSourceId();
-            if (
-                selectedId &&
-                sources.some((source) => source.id === selectedId)
-            ) {
-                return;
-            }
-
-            const preferredKind = preferredScreenShareSourceKind();
-            const preferredSource = sources.find(
-                (source) => source.kind === preferredKind,
-            );
-            setSelectedNativeSourceId(
-                preferredSource?.id ?? sources[0]?.id ?? null,
-            );
-        } catch (error) {
-            setNativeSources([]);
-            setSelectedNativeSourceId(null);
-            setNativeSourcesError(
-                errorMessage(error, "Failed to load native capture sources"),
-            );
-        } finally {
-            setNativeSourcesLoading(false);
-        }
-    }
 
     function showErrorToast(message: string) {
         setToastError(message);
@@ -457,20 +303,6 @@ export default function ChannelList() {
         const channelId = joinedVoiceChannelId();
         if (!channelId || screenActionPending()) {
             return;
-        }
-
-        const selected =
-            nativeSources().find(
-                (source) => source.id === selectedNativeSourceId(),
-            ) ?? null;
-        if (selected) {
-            savePreferredScreenShareSourceKind(
-                selected.kind === "screen"
-                    ? "screen"
-                    : selected.kind === "application"
-                        ? "application"
-                        : "window",
-            );
         }
 
         const result = await startScreenShareWithOptions(
@@ -1126,12 +958,6 @@ export default function ChannelList() {
     });
 
     createEffect(() => {
-        selectedNativeSourceId();
-        preferredScreenShareSourceKind();
-        untrack(() => stopScreenSharePreview());
-    });
-
-    createEffect(() => {
         if (!tauriRuntime || !screenShareEnabled()) {
             setNativeSenderMetrics(null);
             return;
@@ -1643,9 +1469,9 @@ export default function ChannelList() {
                         onSelectNativeSource={setSelectedNativeSourceId}
                         screenSharePreviewStream={screenSharePreviewStream()}
                         screenSharePreviewError={screenSharePreviewError()}
-                        screenSharePreviewVideoRef={() =>
-                            screenSharePreviewVideoRef
-                        }
+                        screenSharePreviewVideoRef={(element) => {
+                            screenSharePreviewVideoRef = element;
+                        }}
                         onRefreshSources={() =>
                             void loadNativeCaptureSources()
                         }

@@ -1,4 +1,4 @@
-import { For, Show, type JSX, type Accessor } from "solid-js";
+import { For, Show, createMemo, type JSX } from "solid-js";
 import type { NativeCaptureSource } from "../../api/nativeCapture";
 import {
   preferredScreenShareBitrateMode,
@@ -20,6 +20,9 @@ import {
   autoBitrateKbps,
   effectiveScreenShareBitrateLabel,
   manualBitrateKbps,
+  nativeSourceIdentityLabel,
+  nativeSourceKindLabel,
+  normalizeNativeSourceKind,
   nativeSourceLabel,
 } from "./helpers";
 
@@ -33,7 +36,7 @@ export interface ScreenShareModalProps {
   onSelectNativeSource: (id: string) => void;
   screenSharePreviewStream: MediaStream | null;
   screenSharePreviewError: string;
-  screenSharePreviewVideoRef: Accessor<HTMLVideoElement | undefined>;
+  screenSharePreviewVideoRef: (element: HTMLVideoElement) => void;
   onRefreshSources: () => void;
   onStartPreview: () => void;
   onStopPreview: () => void;
@@ -61,6 +64,13 @@ export default function ScreenShareModal(props: ScreenShareModalProps): JSX.Elem
     const value = (event.currentTarget as HTMLSelectElement).value;
     if (value === "screen" || value === "window" || value === "application") {
       savePreferredScreenShareSourceKind(value);
+
+      const preferredSource = props.nativeSources.find(
+        (source) => normalizeNativeSourceKind(source.kind) === value,
+      );
+      if (preferredSource) {
+        props.onSelectNativeSource(preferredSource.id);
+      }
     }
   }
 
@@ -73,9 +83,7 @@ export default function ScreenShareModal(props: ScreenShareModalProps): JSX.Elem
     props.onSelectNativeSource(value);
     const selected = props.nativeSources.find((source) => source.id === value);
     if (selected) {
-      savePreferredScreenShareSourceKind(
-        selected.kind === "screen" ? "screen" : selected.kind === "application" ? "application" : "window",
-      );
+      savePreferredScreenShareSourceKind(normalizeNativeSourceKind(selected.kind));
     }
   }
 
@@ -109,6 +117,43 @@ export default function ScreenShareModal(props: ScreenShareModalProps): JSX.Elem
     savePreferredScreenShareCustomBitrateKbps(value);
   }
 
+  const filteredNativeSources = createMemo(() => {
+    const preferredKind = preferredScreenShareSourceKind();
+    const matchingSources = props.nativeSources.filter(
+      (source) => normalizeNativeSourceKind(source.kind) === preferredKind,
+    );
+    return matchingSources.length > 0 ? matchingSources : props.nativeSources;
+  });
+
+  const showingAllSourcesFallback = createMemo(() => {
+    const preferredKind = preferredScreenShareSourceKind();
+    const hasPreferredSources = props.nativeSources.some(
+      (source) => normalizeNativeSourceKind(source.kind) === preferredKind,
+    );
+    return props.nativeSources.length > 0 && !hasPreferredSources;
+  });
+
+  const nativeSourceOptions = createMemo(() => {
+    const sources = filteredNativeSources();
+    const counts = new Map<string, number>();
+
+    for (const source of sources) {
+      const baseLabel = `${nativeSourceKindLabel(source.kind)}: ${nativeSourceLabel(source)}`;
+      counts.set(baseLabel, (counts.get(baseLabel) ?? 0) + 1);
+    }
+
+    return sources.map((source) => {
+      const baseLabel = `${nativeSourceKindLabel(source.kind)}: ${nativeSourceLabel(source)}`;
+      const duplicate = (counts.get(baseLabel) ?? 0) > 1;
+      return {
+        id: source.id,
+        label: duplicate
+          ? `${baseLabel} (${nativeSourceIdentityLabel(source)})`
+          : baseLabel,
+      };
+    });
+  });
+
   return (
     <Modal
       open={props.open}
@@ -121,29 +166,33 @@ export default function ScreenShareModal(props: ScreenShareModalProps): JSX.Elem
       <section class="settings-section">
         <h5>Capture Source</h5>
         <Show when={!props.nativeSourcesLoading} fallback={<p class="settings-help">Loading native sources...</p>}>
-          <Show when={props.nativeSources.length > 0} fallback={(
-            <>
-              <label class="settings-label" for="voice-share-source-kind">Source preference</label>
-              <select
-                id="voice-share-source-kind"
-                value={preferredScreenShareSourceKind()}
-                onInput={handleScreenShareSourceKindInput}
-              >
-                <option value="screen">Entire screen</option>
-                <option value="window">Window</option>
-                <option value="application">Application</option>
-              </select>
-            </>
-          )}>
+          <label class="settings-label" for="voice-share-source-kind">Source type</label>
+          <select
+            id="voice-share-source-kind"
+            value={preferredScreenShareSourceKind()}
+            onInput={handleScreenShareSourceKindInput}
+          >
+            <option value="screen">Entire screen</option>
+            <option value="window">Window</option>
+            <option value="application">Application</option>
+          </select>
+
+          <Show
+            when={filteredNativeSources().length > 0}
+            fallback={<p class="settings-help">No native sources found for this type. Try refresh or choose a different type.</p>}
+          >
+            <Show when={showingAllSourcesFallback()}>
+              <p class="settings-help">No sources found for this type right now, so all available sources are shown.</p>
+            </Show>
             <label class="settings-label" for="voice-share-native-source">Native source</label>
             <select
               id="voice-share-native-source"
-              value={props.selectedNativeSourceId ?? ""}
+              value={props.selectedNativeSourceId ?? nativeSourceOptions()[0]?.id ?? ""}
               onInput={handleNativeCaptureSourceInput}
             >
-              <For each={props.nativeSources}>
-                {(source) => (
-                  <option value={source.id}>{nativeSourceLabel(source)}</option>
+              <For each={nativeSourceOptions()}>
+                {(option) => (
+                  <option value={option.id}>{option.label}</option>
                 )}
               </For>
             </select>
@@ -165,7 +214,7 @@ export default function ScreenShareModal(props: ScreenShareModalProps): JSX.Elem
         </div>
 
         <p class="settings-help">
-          Source selection is native in Tauri. Confirm the same source in the OS share prompt if shown.
+          Source selection is native in Tauri, filtered by source type. Confirm the same source in the OS prompt if shown.
         </p>
 
         <label class="settings-label" for="voice-share-preview-video">Preview</label>
@@ -176,7 +225,7 @@ export default function ScreenShareModal(props: ScreenShareModalProps): JSX.Elem
           >
             <video
               id="voice-share-preview-video"
-              ref={props.screenSharePreviewVideoRef()}
+              ref={props.screenSharePreviewVideoRef}
               class="voice-share-preview-video"
               autoplay
               muted

@@ -521,6 +521,35 @@ fn window_and_application_sources() -> Result<Vec<NativeCaptureSource>, String> 
 }
 
 #[cfg(target_os = "windows")]
+fn parse_application_source_id(raw: &str) -> Result<(u32, Option<usize>), String> {
+    let mut segments = raw.splitn(2, ':');
+    let raw_pid = segments.next().unwrap_or_default();
+    let process_id = raw_pid
+        .parse::<u32>()
+        .map_err(|_| "Invalid application source id. Refresh sources and try again.".to_string())?;
+
+    let preferred_hwnd = match segments.next() {
+        Some(raw_hwnd) if !raw_hwnd.trim().is_empty() => {
+            Some(raw_hwnd.parse::<usize>().map_err(|_| {
+                "Invalid application source id. Refresh sources and try again.".to_string()
+            })?)
+        }
+        _ => None,
+    };
+
+    Ok((process_id, preferred_hwnd))
+}
+
+#[cfg(target_os = "windows")]
+fn source_kind_sort_rank(kind: &NativeCaptureSourceKind) -> u8 {
+    match kind {
+        NativeCaptureSourceKind::Screen => 0,
+        NativeCaptureSourceKind::Window => 1,
+        NativeCaptureSourceKind::Application => 2,
+    }
+}
+
+#[cfg(target_os = "windows")]
 fn resolve_capture_item(source_id: &str) -> Result<SelectedCaptureItem, String> {
     if let Some(device_name) = source_id.strip_prefix("screen:") {
         let monitors = Monitor::enumerate()
@@ -549,14 +578,27 @@ fn resolve_capture_item(source_id: &str) -> Result<SelectedCaptureItem, String> 
     }
 
     if let Some(raw_pid) = source_id.strip_prefix("application:") {
-        let process_id = raw_pid.parse::<u32>().map_err(|_| {
-            "Invalid application source id. Refresh sources and try again.".to_string()
-        })?;
+        let (process_id, preferred_hwnd) = parse_application_source_id(raw_pid)?;
+
+        if let Some(hwnd) = preferred_hwnd {
+            let window = WinWindow::from_raw_hwnd(hwnd as *mut c_void);
+            if window.is_valid() && window.process_id().ok() == Some(process_id) {
+                return Ok(SelectedCaptureItem::Window(window));
+            }
+        }
+
         let windows = WinWindow::enumerate()
             .map_err(|error| format!("Failed to enumerate windows: {error}"))?;
         let window = windows
             .into_iter()
-            .find(|window| window.is_valid() && window.process_id().ok() == Some(process_id))
+            .find(|window| {
+                if !window.is_valid() || window.process_id().ok() != Some(process_id) {
+                    return false;
+                }
+
+                let title = window.title().unwrap_or_default();
+                !title.trim().is_empty()
+            })
             .ok_or_else(|| {
                 "Selected capture source is no longer available. Refresh and try again.".to_string()
             })?;
@@ -639,7 +681,23 @@ pub fn list_sources(_window: &Window) -> Result<Vec<NativeCaptureSource>, String
         return Err("No native capture sources are available.".to_string());
     }
 
-    sources.sort_by(|left, right| left.title.to_lowercase().cmp(&right.title.to_lowercase()));
+    sources.sort_by(|left, right| {
+        let kind = source_kind_sort_rank(&left.kind).cmp(&source_kind_sort_rank(&right.kind));
+        if kind != std::cmp::Ordering::Equal {
+            return kind;
+        }
+
+        left.title
+            .to_lowercase()
+            .cmp(&right.title.to_lowercase())
+            .then_with(|| {
+                left.app_name
+                    .as_deref()
+                    .unwrap_or_default()
+                    .to_lowercase()
+                    .cmp(&right.app_name.as_deref().unwrap_or_default().to_lowercase())
+            })
+    });
 
     Ok(sources)
 }
