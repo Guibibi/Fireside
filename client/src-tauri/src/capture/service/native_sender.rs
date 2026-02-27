@@ -19,11 +19,11 @@ const PRESSURE_SAMPLE_WINDOW: usize = 20;
 const DEGRADE_TO_LEVEL1_AVG_DEPTH_DEFAULT: u64 = 2;
 const DEGRADE_TO_LEVEL2_AVG_DEPTH_DEFAULT: u64 = 4;
 const DEGRADE_TO_LEVEL3_AVG_DEPTH_DEFAULT: u64 = 6;
-const DEGRADE_TO_LEVEL1_PEAK_DEPTH_DEFAULT: u64 = 4;
-const DEGRADE_TO_LEVEL2_PEAK_DEPTH_DEFAULT: u64 = 6;
-const DEGRADE_TO_LEVEL3_PEAK_DEPTH_DEFAULT: u64 = 7;
+const DEGRADE_TO_LEVEL1_PEAK_DEPTH_DEFAULT: u64 = 8;
+const DEGRADE_TO_LEVEL2_PEAK_DEPTH_DEFAULT: u64 = 12;
+const DEGRADE_TO_LEVEL3_PEAK_DEPTH_DEFAULT: u64 = 16;
 const DEGRADE_RECOVER_AVG_DEPTH_DEFAULT: u64 = 1;
-const DEGRADE_RECOVER_PEAK_DEPTH_DEFAULT: u64 = 2;
+const DEGRADE_RECOVER_PEAK_DEPTH_DEFAULT: u64 = 4;
 const LEVEL2_SCALE_DIVISOR_DEFAULT: u32 = 2;
 const LEVEL3_SCALE_DIVISOR_DEFAULT: u32 = 2;
 const LEVEL3_BITRATE_NUMERATOR_DEFAULT: u32 = 7;
@@ -321,13 +321,16 @@ impl AdaptiveDegradationState {
         (avg, peak)
     }
 
-    fn should_drop_before_encode(&mut self) -> bool {
+    fn should_drop_before_encode(&mut self, queue_depth: u64) -> bool {
         self.frame_index = self.frame_index.saturating_add(1);
+        if self.level == 0 || queue_depth == 0 {
+            return false;
+        }
+
         match self.level {
-            0 => false,
-            1 => self.frame_index.is_multiple_of(2),
-            2 => !self.frame_index.is_multiple_of(3),
-            _ => !self.frame_index.is_multiple_of(4),
+            1 => self.frame_index.is_multiple_of(4),
+            2 => self.frame_index.is_multiple_of(2),
+            _ => !self.frame_index.is_multiple_of(3),
         }
     }
 
@@ -659,7 +662,7 @@ pub fn run_native_sender_worker(
                     continue;
                 }
 
-                if degradation_state.should_drop_before_encode() {
+                if degradation_state.should_drop_before_encode(queue_depth) {
                     shared.dropped_before_encode.fetch_add(1, Ordering::Relaxed);
                     continue;
                 }
