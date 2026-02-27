@@ -10,6 +10,7 @@ use super::metrics::NativeSenderSharedMetrics;
 #[cfg(all(target_os = "windows", feature = "native-nvenc"))]
 mod imp {
     use std::mem::MaybeUninit;
+    use std::panic::{self, AssertUnwindSafe};
     use std::sync::atomic::Ordering;
 
     /// Zero-initialize an NVENC struct by writing zero bytes directly,
@@ -36,6 +37,20 @@ mod imp {
     const DEFAULT_TARGET_BITRATE_KBPS: u32 = 8_000;
     const BUFFER_POOL_SIZE: usize = 4;
 
+    fn drop_nvenc_resource<T>(resource: &str, value: T) {
+        if panic::catch_unwind(AssertUnwindSafe(|| drop(value))).is_err() {
+            eprintln!(
+                "[native-sender] event=nvenc_drop_panic resource={} detail=\"drop panicked\"",
+                resource,
+            );
+        }
+    }
+
+    fn release_nvenc_guard<T>(resource: &str, value: T) -> Result<(), String> {
+        panic::catch_unwind(AssertUnwindSafe(|| drop(value)))
+            .map_err(|_| format!("NVENC SDK: failed to release {resource} because drop panicked"))
+    }
+
     // ───────────────────── Phase 1: CUDA-based NVENC session ─────────────────
     struct NvencSdkSession {
         // SAFETY INVARIANTS:
@@ -51,7 +66,7 @@ mod imp {
         //    but may exhibit undefined behavior. The safety relies on the crate maintaining
         //    its current API contract.
         // 4. The transmute is only used within this module and is not exposed publicly.
-        session: nvidia_video_codec_sdk::Session,
+        session: Option<nvidia_video_codec_sdk::Session>,
         input_buffers: Vec<Buffer<'static>>,
         output_bitstreams: Vec<Bitstream<'static>>,
         width: u32,
@@ -64,6 +79,19 @@ mod imp {
     unsafe impl Send for NvencSdkSession {}
 
     impl NvencSdkSession {
+        fn recycle_io_buffers(
+            &mut self,
+            input_buffer: &mut Option<Buffer<'static>>,
+            output_bitstream: &mut Option<Bitstream<'static>>,
+        ) {
+            if let Some(buffer) = input_buffer.take() {
+                self.input_buffers.push(buffer);
+            }
+            if let Some(bitstream) = output_bitstream.take() {
+                self.output_bitstreams.push(bitstream);
+            }
+        }
+
         fn open(
             width: u32,
             height: u32,
@@ -146,7 +174,7 @@ mod imp {
             }
 
             Ok(Self {
-                session,
+                session: Some(session),
                 input_buffers,
                 output_bitstreams,
                 width,
@@ -164,20 +192,40 @@ mod imp {
                 ));
             }
 
-            let mut input_buffer = self
-                .input_buffers
-                .pop()
-                .ok_or_else(|| "NVENC SDK: no available input buffers".to_string())?;
-            let mut output_bitstream = self
-                .output_bitstreams
-                .pop()
-                .ok_or_else(|| "NVENC SDK: no available output bitstreams".to_string())?;
+            let mut input_buffer = Some(
+                self.input_buffers
+                    .pop()
+                    .ok_or_else(|| "NVENC SDK: no available input buffers".to_string())?,
+            );
+            let mut output_bitstream = Some(
+                self.output_bitstreams
+                    .pop()
+                    .ok_or_else(|| "NVENC SDK: no available output bitstreams".to_string())?,
+            );
+
+            let input = match input_buffer.as_mut() {
+                Some(buffer) => buffer,
+                None => {
+                    self.recycle_io_buffers(&mut input_buffer, &mut output_bitstream);
+                    return Err("NVENC SDK: input buffer unexpectedly unavailable".to_string());
+                }
+            };
+
+            let mut input_lock = match input.lock() {
+                Ok(lock) => lock,
+                Err(e) => {
+                    self.recycle_io_buffers(&mut input_buffer, &mut output_bitstream);
+                    return Err(format!("NVENC SDK: failed to lock input buffer: {e}"));
+                }
+            };
 
             unsafe {
-                input_buffer
-                    .lock()
-                    .map_err(|e| format!("NVENC SDK: failed to lock input buffer: {e}"))?
-                    .write(bgra);
+                input_lock.write(bgra);
+            }
+
+            if let Err(e) = release_nvenc_guard("input buffer lock", input_lock) {
+                self.recycle_io_buffers(&mut input_buffer, &mut output_bitstream);
+                return Err(e);
             }
 
             let mut params = EncodePictureParams::default();
@@ -186,32 +234,65 @@ mod imp {
                 self.force_idr = false;
             }
 
-            let encode_result =
-                self.session
-                    .encode_picture(&mut input_buffer, &mut output_bitstream, params);
+            let session = match self.session.as_ref() {
+                Some(session) => session,
+                None => {
+                    self.recycle_io_buffers(&mut input_buffer, &mut output_bitstream);
+                    return Err("NVENC SDK: session unavailable".to_string());
+                }
+            };
+
+            let input = match input_buffer.as_mut() {
+                Some(buffer) => buffer,
+                None => {
+                    self.recycle_io_buffers(&mut input_buffer, &mut output_bitstream);
+                    return Err("NVENC SDK: input buffer unexpectedly unavailable".to_string());
+                }
+            };
+            let output = match output_bitstream.as_mut() {
+                Some(bitstream) => bitstream,
+                None => {
+                    self.recycle_io_buffers(&mut input_buffer, &mut output_bitstream);
+                    return Err("NVENC SDK: output bitstream unexpectedly unavailable".to_string());
+                }
+            };
+
+            let encode_result = session.encode_picture(input, output, params);
 
             match encode_result {
                 Ok(()) => {}
                 Err(e) if e.kind() == ErrorKind::NeedMoreInput => {
-                    self.input_buffers.push(input_buffer);
-                    self.output_bitstreams.push(output_bitstream);
+                    self.recycle_io_buffers(&mut input_buffer, &mut output_bitstream);
                     return Ok(Vec::new());
                 }
                 Err(e) => {
-                    self.input_buffers.push(input_buffer);
-                    self.output_bitstreams.push(output_bitstream);
+                    self.recycle_io_buffers(&mut input_buffer, &mut output_bitstream);
                     return Err(format!("NVENC SDK: encode failed: {e}"));
                 }
             }
 
-            let lock = output_bitstream
-                .lock()
-                .map_err(|e| format!("NVENC SDK: failed to lock bitstream: {e}"))?;
-            let data = lock.data().to_vec();
-            drop(lock);
+            let output = match output_bitstream.as_mut() {
+                Some(bitstream) => bitstream,
+                None => {
+                    self.recycle_io_buffers(&mut input_buffer, &mut output_bitstream);
+                    return Err("NVENC SDK: output bitstream unexpectedly unavailable".to_string());
+                }
+            };
 
-            self.input_buffers.push(input_buffer);
-            self.output_bitstreams.push(output_bitstream);
+            let output_lock = match output.lock() {
+                Ok(lock) => lock,
+                Err(e) => {
+                    self.recycle_io_buffers(&mut input_buffer, &mut output_bitstream);
+                    return Err(format!("NVENC SDK: failed to lock bitstream: {e}"));
+                }
+            };
+            let data = output_lock.data().to_vec();
+            if let Err(e) = release_nvenc_guard("output bitstream lock", output_lock) {
+                self.recycle_io_buffers(&mut input_buffer, &mut output_bitstream);
+                return Err(e);
+            }
+
+            self.recycle_io_buffers(&mut input_buffer, &mut output_bitstream);
 
             Ok(data)
         }
@@ -223,8 +304,19 @@ mod imp {
 
     impl Drop for NvencSdkSession {
         fn drop(&mut self) {
-            self.input_buffers.clear();
-            self.output_bitstreams.clear();
+            let mut input_buffers = std::mem::take(&mut self.input_buffers);
+            while let Some(buffer) = input_buffers.pop() {
+                drop_nvenc_resource("input_buffer", buffer);
+            }
+
+            let mut output_bitstreams = std::mem::take(&mut self.output_bitstreams);
+            while let Some(bitstream) = output_bitstreams.pop() {
+                drop_nvenc_resource("output_bitstream", bitstream);
+            }
+
+            if let Some(session) = self.session.take() {
+                drop_nvenc_resource("session", session);
+            }
         }
     }
 
@@ -288,7 +380,9 @@ mod imp {
                 self.session = Some(s);
             }
 
-            self.session.as_mut().ok_or_else(|| "NVENC SDK session unavailable".to_string())
+            self.session
+                .as_mut()
+                .ok_or_else(|| "NVENC SDK session unavailable".to_string())
         }
     }
 
