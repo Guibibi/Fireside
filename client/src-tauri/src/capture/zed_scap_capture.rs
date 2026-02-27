@@ -1,5 +1,7 @@
 #[cfg(target_os = "windows")]
 use std::collections::HashMap;
+#[cfg(target_os = "windows")]
+use std::ffi::c_void;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 #[cfg(target_os = "windows")]
@@ -47,7 +49,7 @@ impl ApplicationCandidate {
 fn current_foreground_window_id() -> Option<u32> {
     let hwnd = unsafe { GetForegroundWindow() };
     let raw = hwnd.0;
-    if raw == 0 {
+    if raw.is_null() {
         return None;
     }
 
@@ -55,10 +57,15 @@ fn current_foreground_window_id() -> Option<u32> {
 }
 
 #[cfg(target_os = "windows")]
-fn process_id_for_window(raw_handle: windows::Win32::Foundation::HWND) -> Option<u32> {
+fn process_id_for_window(raw_handle: *mut c_void) -> Option<u32> {
+    if raw_handle.is_null() {
+        return None;
+    }
+
+    let hwnd = windows::Win32::Foundation::HWND(raw_handle);
     let mut process_id = 0u32;
     unsafe {
-        let _ = GetWindowThreadProcessId(raw_handle, Some(&mut process_id));
+        let _ = GetWindowThreadProcessId(hwnd, Some(&mut process_id));
     }
     if process_id == 0 {
         None
@@ -150,7 +157,7 @@ fn resolve_capture_target(source_id: &str) -> Result<Target, String> {
                 continue;
             };
 
-            let Some(window_process_id) = process_id_for_window(window.raw_handle) else {
+            let Some(window_process_id) = process_id_for_window(window.raw_handle.0) else {
                 continue;
             };
             if window_process_id != process_id {
@@ -222,7 +229,7 @@ pub fn list_sources() -> Result<Vec<NativeCaptureSource>, String> {
                     height: None,
                 });
 
-                let Some(process_id) = process_id_for_window(window.raw_handle) else {
+                let Some(process_id) = process_id_for_window(window.raw_handle.0) else {
                     continue;
                 };
 
