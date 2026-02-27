@@ -454,10 +454,9 @@ dependencies = [
 
 [[package]]
 name = "client"
-version = "0.1.16"
+version = "0.1.18"
 dependencies = [
  "cudarc",
- "dxgi-capture-rs",
  "nvidia-video-codec-sdk",
  "openh264",
  "serde",
@@ -833,15 +832,6 @@ name = "dunce"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "92773504d58c093f6de2459af4af33faa518c13451eb8f2b5698ed3d36e7c813"
-
-[[package]]
-name = "dxgi-capture-rs"
-version = "1.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "10f4dff36b0b360f70095df1ad9fcd49b5efcb57d3292d44f4e2ffdad671fc60"
-dependencies = [
- "windows 0.61.3",
-]
 
 [[package]]
 name = "dyn-clone"

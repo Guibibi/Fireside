@@ -629,9 +629,9 @@ impl MediaService {
             if *other_conn_id == connection_id || other_entry.channel_id != channel_id {
                 continue;
             }
-            other_entry.consumers.retain(|_cid, consumer| {
-                consumer.producer_id().to_string() != producer_id
-            });
+            other_entry
+                .consumers
+                .retain(|_cid, consumer| consumer.producer_id().to_string() != producer_id);
         }
 
         Ok(ClosedProducer {

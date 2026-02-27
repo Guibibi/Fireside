@@ -9,7 +9,6 @@ use super::metrics::NativeSenderSharedMetrics;
 
 #[cfg(all(target_os = "windows", feature = "native-nvenc"))]
 mod imp {
-    use std::ffi::c_void;
     use std::mem::MaybeUninit;
     use std::sync::atomic::Ordering;
 
@@ -24,19 +23,14 @@ mod imp {
 
     use cudarc::driver::CudaContext;
     use nvidia_video_codec_sdk::sys::nvEncodeAPI::{
-        NVENCSTATUS, NV_ENC_BUFFER_FORMAT, NV_ENC_CODEC_H264_GUID, NV_ENC_CONFIG,
-        NV_ENC_CREATE_BITSTREAM_BUFFER, NV_ENC_DEVICE_TYPE, NV_ENC_INITIALIZE_PARAMS,
-        NV_ENC_INPUT_RESOURCE_TYPE, NV_ENC_LOCK_BITSTREAM, NV_ENC_MAP_INPUT_RESOURCE,
-        NV_ENC_OPEN_ENCODE_SESSION_EX_PARAMS, NV_ENC_PIC_PARAMS, NV_ENC_PIC_TYPE,
-        NV_ENC_PRESET_CONFIG, NV_ENC_PRESET_P4_GUID, NV_ENC_REGISTER_RESOURCE, NV_ENC_TUNING_INFO,
+        NV_ENC_BUFFER_FORMAT, NV_ENC_CODEC_H264_GUID, NV_ENC_CONFIG, NV_ENC_PIC_TYPE,
+        NV_ENC_PRESET_P4_GUID, NV_ENC_TUNING_INFO,
     };
     use nvidia_video_codec_sdk::{
-        Bitstream, Buffer, EncodePictureParams, Encoder, EncoderInitParams, ErrorKind, ENCODE_API,
+        Bitstream, Buffer, EncodePictureParams, Encoder, EncoderInitParams, ErrorKind,
     };
 
     use super::{CodecDescriptor, NativeSenderSharedMetrics, VideoEncoderBackend};
-    use crate::capture::gpu_frame::GpuTextureHandle;
-    use crate::capture::service::encoder_backend::GpuEncodeResult;
 
     const DEFAULT_TARGET_FPS: u32 = 30;
     const DEFAULT_TARGET_BITRATE_KBPS: u32 = 8_000;
@@ -76,10 +70,8 @@ mod imp {
             target_fps: u32,
             target_bitrate_kbps: u32,
         ) -> Result<Self, String> {
-            // TODO: On multi-GPU systems, we should match the CUDA device to the
-            // GPU where the D3D11 capture device resides. Currently using device 0
-            // which works for single-GPU setups but may cause issues if the display
-            // is on a non-NVIDIA GPU or a different NVIDIA GPU.
+            // TODO: On multi-GPU systems, device 0 may not be the display adapter.
+            // Consider matching the CUDA device to the display adapter in the future.
             let cuda_ctx = CudaContext::new(0)
                 .map_err(|e| format!("NVENC SDK: failed to create CUDA context: {e}"))?;
 
@@ -236,316 +228,21 @@ mod imp {
         }
     }
 
-    // ───────────────── Phase 3: D3D11 zero-copy NVENC session ────────────────
-
-    /// Raw NVENC session opened with a D3D11 device for zero-copy encoding
-    /// of GPU-resident textures.
-    struct NvencD3D11Session {
-        encoder: *mut c_void,
-        output_bitstream: *mut c_void,
-        width: u32,
-        height: u32,
-        force_idr: bool,
-        /// Cached NVENC resource registration for the current texture.
-        /// Avoids per-frame register/unregister overhead. The texture
-        /// pointer is stable because DxgiCaptureSession reuses its copy
-        /// texture (same COM object across frames).
-        registered_texture_ptr: *mut c_void,
-        registered_resource: *mut c_void,
-    }
-
-    // SAFETY: Used from a single thread (sender worker). The D3D11 device has
-    // multithread protection enabled.
-    unsafe impl Send for NvencD3D11Session {}
-
-    fn nvenc_status_ok(status: NVENCSTATUS) -> bool {
-        status == NVENCSTATUS::NV_ENC_SUCCESS
-    }
-
-    impl NvencD3D11Session {
-        fn open(
-            d3d11_device: *mut c_void,
-            width: u32,
-            height: u32,
-            target_fps: u32,
-            target_bitrate_kbps: u32,
-        ) -> Result<Self, String> {
-            unsafe {
-                let api = &*ENCODE_API;
-
-                // Open encoder session with D3D11 device
-                let mut open_params: NV_ENC_OPEN_ENCODE_SESSION_EX_PARAMS = nvenc_zeroed();
-                open_params.version =
-                    nvidia_video_codec_sdk::sys::nvEncodeAPI::NV_ENC_OPEN_ENCODE_SESSION_EX_PARAMS_VER;
-                open_params.deviceType = NV_ENC_DEVICE_TYPE::NV_ENC_DEVICE_TYPE_DIRECTX;
-                open_params.device = d3d11_device;
-                open_params.apiVersion = nvidia_video_codec_sdk::sys::nvEncodeAPI::NVENCAPI_VERSION;
-
-                let mut encoder: *mut c_void = std::ptr::null_mut();
-                let status = (api.open_encode_session_ex)(&mut open_params, &mut encoder);
-                if !nvenc_status_ok(status) {
-                    return Err(format!(
-                        "NVENC D3D11: open_encode_session_ex failed: {:?}",
-                        status
-                    ));
-                }
-
-                // Get preset config for H264 baseline
-                let mut preset_config: NV_ENC_PRESET_CONFIG = nvenc_zeroed();
-                preset_config.version =
-                    nvidia_video_codec_sdk::sys::nvEncodeAPI::NV_ENC_PRESET_CONFIG_VER;
-                preset_config.presetCfg.version =
-                    nvidia_video_codec_sdk::sys::nvEncodeAPI::NV_ENC_CONFIG_VER;
-
-                let status = (api.get_encode_preset_config_ex)(
-                    encoder,
-                    NV_ENC_CODEC_H264_GUID,
-                    NV_ENC_PRESET_P4_GUID,
-                    NV_ENC_TUNING_INFO::NV_ENC_TUNING_INFO_ULTRA_LOW_LATENCY,
-                    &mut preset_config,
-                );
-                if !nvenc_status_ok(status) {
-                    let _ = (api.destroy_encoder)(encoder);
-                    return Err(format!(
-                        "NVENC D3D11: get_preset_config_ex failed: {:?}",
-                        status
-                    ));
-                }
-
-                let mut encode_config = preset_config.presetCfg;
-                // Disable B-frames for low latency
-                encode_config.frameIntervalP = 1;
-                encode_config.gopLength = target_fps;
-
-                // Configure CBR rate control at the requested bitrate
-                let bitrate_bps = target_bitrate_kbps * 1_000;
-                encode_config.rcParams.rateControlMode =
-                    nvidia_video_codec_sdk::sys::nvEncodeAPI::NV_ENC_PARAMS_RC_MODE::NV_ENC_PARAMS_RC_CBR;
-                encode_config.rcParams.averageBitRate = bitrate_bps;
-                encode_config.rcParams.maxBitRate = bitrate_bps;
-                encode_config.rcParams.vbvBufferSize = bitrate_bps / target_fps;
-
-                // Initialize encoder
-                let mut init_params: NV_ENC_INITIALIZE_PARAMS = nvenc_zeroed();
-                init_params.version =
-                    nvidia_video_codec_sdk::sys::nvEncodeAPI::NV_ENC_INITIALIZE_PARAMS_VER;
-                init_params.encodeGUID = NV_ENC_CODEC_H264_GUID;
-                init_params.presetGUID = NV_ENC_PRESET_P4_GUID;
-                init_params.encodeWidth = width;
-                init_params.encodeHeight = height;
-                init_params.darWidth = width;
-                init_params.darHeight = height;
-                init_params.frameRateNum = target_fps;
-                init_params.frameRateDen = 1;
-                init_params.enablePTD = 1;
-                init_params.tuningInfo = NV_ENC_TUNING_INFO::NV_ENC_TUNING_INFO_ULTRA_LOW_LATENCY;
-                init_params.encodeConfig = &mut encode_config;
-
-                let status = (api.initialize_encoder)(encoder, &mut init_params);
-                if !nvenc_status_ok(status) {
-                    let _ = (api.destroy_encoder)(encoder);
-                    return Err(format!(
-                        "NVENC D3D11: initialize_encoder failed: {:?}",
-                        status
-                    ));
-                }
-
-                // Create output bitstream buffer
-                let mut create_bitstream: NV_ENC_CREATE_BITSTREAM_BUFFER = nvenc_zeroed();
-                create_bitstream.version =
-                    nvidia_video_codec_sdk::sys::nvEncodeAPI::NV_ENC_CREATE_BITSTREAM_BUFFER_VER;
-
-                let status = (api.create_bitstream_buffer)(encoder, &mut create_bitstream);
-                if !nvenc_status_ok(status) {
-                    let _ = (api.destroy_encoder)(encoder);
-                    return Err(format!(
-                        "NVENC D3D11: create_bitstream_buffer failed: {:?}",
-                        status
-                    ));
-                }
-
-                Ok(Self {
-                    encoder,
-                    output_bitstream: create_bitstream.bitstreamBuffer,
-                    width,
-                    height,
-                    force_idr: false,
-                    registered_texture_ptr: std::ptr::null_mut(),
-                    registered_resource: std::ptr::null_mut(),
-                })
-            }
-        }
-
-        /// Ensure the given texture is registered with NVENC. Reuses the
-        /// cached registration when the texture pointer hasn't changed
-        /// (which is the common case since DxgiCaptureSession reuses its
-        /// copy texture).
-        fn ensure_registered(&mut self, texture_ptr: *mut c_void) -> Result<(), String> {
-            if self.registered_texture_ptr == texture_ptr && !self.registered_resource.is_null() {
-                return Ok(());
-            }
-
-            // Unregister previous resource if any
-            self.unregister_current();
-
-            unsafe {
-                let api = &*ENCODE_API;
-
-                let mut register: NV_ENC_REGISTER_RESOURCE = nvenc_zeroed();
-                register.version =
-                    nvidia_video_codec_sdk::sys::nvEncodeAPI::NV_ENC_REGISTER_RESOURCE_VER;
-                register.resourceType =
-                    NV_ENC_INPUT_RESOURCE_TYPE::NV_ENC_INPUT_RESOURCE_TYPE_DIRECTX;
-                register.resourceToRegister = texture_ptr;
-                register.width = self.width;
-                register.height = self.height;
-                register.pitch = 0; // D3D11 manages pitch internally
-                register.bufferFormat = NV_ENC_BUFFER_FORMAT::NV_ENC_BUFFER_FORMAT_ARGB;
-                register.bufferUsage =
-                    nvidia_video_codec_sdk::sys::nvEncodeAPI::NV_ENC_BUFFER_USAGE::NV_ENC_INPUT_IMAGE;
-
-                let status = (api.register_resource)(self.encoder, &mut register);
-                if !nvenc_status_ok(status) {
-                    return Err(format!(
-                        "NVENC D3D11: register_resource failed: {:?}",
-                        status
-                    ));
-                }
-
-                self.registered_texture_ptr = texture_ptr;
-                self.registered_resource = register.registeredResource;
-            }
-            Ok(())
-        }
-
-        fn unregister_current(&mut self) {
-            if !self.registered_resource.is_null() && !self.encoder.is_null() {
-                unsafe {
-                    let api = &*ENCODE_API;
-                    let _ = (api.unregister_resource)(self.encoder, self.registered_resource);
-                }
-                self.registered_resource = std::ptr::null_mut();
-                self.registered_texture_ptr = std::ptr::null_mut();
-            }
-        }
-
-        fn encode_texture(&mut self, texture_ptr: *mut c_void) -> Result<Vec<u8>, String> {
-            self.ensure_registered(texture_ptr)?;
-
-            unsafe {
-                let api = &*ENCODE_API;
-
-                // Map the registered resource for encoding
-                let mut map_input: NV_ENC_MAP_INPUT_RESOURCE = nvenc_zeroed();
-                map_input.version =
-                    nvidia_video_codec_sdk::sys::nvEncodeAPI::NV_ENC_MAP_INPUT_RESOURCE_VER;
-                map_input.registeredResource = self.registered_resource;
-
-                let status = (api.map_input_resource)(self.encoder, &mut map_input);
-                if !nvenc_status_ok(status) {
-                    // Registration may be stale — clear cache so next call re-registers
-                    self.unregister_current();
-                    return Err(format!(
-                        "NVENC D3D11: map_input_resource failed: {:?}",
-                        status
-                    ));
-                }
-
-                let mapped_resource = map_input.mappedResource;
-                let mapped_buffer_fmt = map_input.mappedBufferFmt;
-
-                // Encode the picture
-                let mut pic_params: NV_ENC_PIC_PARAMS = nvenc_zeroed();
-                pic_params.version =
-                    nvidia_video_codec_sdk::sys::nvEncodeAPI::NV_ENC_PIC_PARAMS_VER;
-                pic_params.inputWidth = self.width;
-                pic_params.inputHeight = self.height;
-                pic_params.inputBuffer = mapped_resource;
-                pic_params.outputBitstream = self.output_bitstream;
-                pic_params.bufferFmt = mapped_buffer_fmt;
-                pic_params.pictureStruct =
-                    nvidia_video_codec_sdk::sys::nvEncodeAPI::NV_ENC_PIC_STRUCT::NV_ENC_PIC_STRUCT_FRAME;
-
-                if self.force_idr {
-                    pic_params.pictureType = NV_ENC_PIC_TYPE::NV_ENC_PIC_TYPE_IDR;
-                    pic_params.encodePicFlags =
-                        nvidia_video_codec_sdk::sys::nvEncodeAPI::_NV_ENC_PIC_FLAGS::NV_ENC_PIC_FLAG_FORCEIDR as u32
-                            | nvidia_video_codec_sdk::sys::nvEncodeAPI::_NV_ENC_PIC_FLAGS::NV_ENC_PIC_FLAG_OUTPUT_SPSPPS as u32;
-                    self.force_idr = false;
-                }
-
-                let status = (api.encode_picture)(self.encoder, &mut pic_params);
-                let encode_ok =
-                    nvenc_status_ok(status) || status == NVENCSTATUS::NV_ENC_ERR_NEED_MORE_INPUT;
-
-                // Unmap regardless of encode result
-                let _ = (api.unmap_input_resource)(self.encoder, mapped_resource);
-
-                if status == NVENCSTATUS::NV_ENC_ERR_NEED_MORE_INPUT {
-                    return Ok(Vec::new());
-                }
-                if !encode_ok {
-                    return Err(format!("NVENC D3D11: encode_picture failed: {:?}", status));
-                }
-
-                // Lock and read the bitstream output
-                let mut lock_bitstream: NV_ENC_LOCK_BITSTREAM = nvenc_zeroed();
-                lock_bitstream.version =
-                    nvidia_video_codec_sdk::sys::nvEncodeAPI::NV_ENC_LOCK_BITSTREAM_VER;
-                lock_bitstream.outputBitstream = self.output_bitstream;
-
-                let status = (api.lock_bitstream)(self.encoder, &mut lock_bitstream);
-                if !nvenc_status_ok(status) {
-                    return Err(format!("NVENC D3D11: lock_bitstream failed: {:?}", status));
-                }
-
-                let data = std::slice::from_raw_parts(
-                    lock_bitstream.bitstreamBufferPtr as *const u8,
-                    lock_bitstream.bitstreamSizeInBytes as usize,
-                )
-                .to_vec();
-
-                let _ = (api.unlock_bitstream)(self.encoder, self.output_bitstream);
-
-                Ok(data)
-            }
-        }
-
-        fn request_keyframe(&mut self) {
-            self.force_idr = true;
-        }
-    }
-
-    impl Drop for NvencD3D11Session {
-        fn drop(&mut self) {
-            if !self.encoder.is_null() {
-                self.unregister_current();
-                unsafe {
-                    let api = &*ENCODE_API;
-                    let _ = (api.destroy_bitstream_buffer)(self.encoder, self.output_bitstream);
-                    let _ = (api.destroy_encoder)(self.encoder);
-                }
-            }
-        }
-    }
-
     // ───────────────── Unified encoder backend ─────────────────
 
-    enum NvencSessionMode {
-        Cuda(NvencSdkSession),
-        D3D11(NvencD3D11Session),
-    }
+    // (NvencD3D11Session removed: zero-copy GPU path was tied to DXGI capture
+    //  which has been replaced by windows-capture. NVENC SDK now uses the CUDA
+    //  CPU-BGRA path exclusively, which is simpler and still hardware-accelerated.)
 
     pub(super) struct NvencSdkEncoderBackend {
         target_fps: u32,
         target_bitrate_kbps: u32,
-        session: Option<NvencSessionMode>,
+        session: Option<NvencSdkSession>,
     }
 
     impl NvencSdkEncoderBackend {
         fn new(target_fps: Option<u32>, target_bitrate_kbps: Option<u32>) -> Result<Self, String> {
             // Probe that CUDA + NVENC SDK is available.
-            // TODO: On multi-GPU systems, consider matching CUDA device to the D3D11 device GPU.
             let cuda_ctx =
                 CudaContext::new(0).map_err(|e| format!("NVENC SDK: CUDA not available: {e}"))?;
             let encoder = Encoder::initialize_with_cuda(cuda_ctx)
@@ -567,14 +264,13 @@ mod imp {
             })
         }
 
-        fn ensure_cuda_session(
+        fn ensure_session(
             &mut self,
             width: u32,
             height: u32,
         ) -> Result<&mut NvencSdkSession, String> {
             let need_restart = match &self.session {
-                Some(NvencSessionMode::Cuda(s)) => s.width != width || s.height != height,
-                Some(NvencSessionMode::D3D11(_)) => true,
+                Some(s) => s.width != width || s.height != height,
                 None => false,
             };
 
@@ -589,46 +285,10 @@ mod imp {
                     self.target_fps,
                     self.target_bitrate_kbps,
                 )?;
-                self.session = Some(NvencSessionMode::Cuda(s));
+                self.session = Some(s);
             }
 
-            match &mut self.session {
-                Some(NvencSessionMode::Cuda(s)) => Ok(s),
-                _ => Err("NVENC SDK CUDA session unavailable".to_string()),
-            }
-        }
-
-        fn ensure_d3d11_session(
-            &mut self,
-            device_ptr: *mut c_void,
-            width: u32,
-            height: u32,
-        ) -> Result<&mut NvencD3D11Session, String> {
-            let need_restart = match &self.session {
-                Some(NvencSessionMode::D3D11(s)) => s.width != width || s.height != height,
-                Some(NvencSessionMode::Cuda(_)) => true,
-                None => false,
-            };
-
-            if need_restart {
-                self.session = None;
-            }
-
-            if self.session.is_none() {
-                let s = NvencD3D11Session::open(
-                    device_ptr,
-                    width,
-                    height,
-                    self.target_fps,
-                    self.target_bitrate_kbps,
-                )?;
-                self.session = Some(NvencSessionMode::D3D11(s));
-            }
-
-            match &mut self.session {
-                Some(NvencSessionMode::D3D11(s)) => Ok(s),
-                _ => Err("NVENC SDK D3D11 session unavailable".to_string()),
-            }
+            self.session.as_mut().ok_or_else(|| "NVENC SDK session unavailable".to_string())
         }
     }
 
@@ -654,7 +314,7 @@ mod imp {
                 return None;
             }
 
-            let session = match self.ensure_cuda_session(width, height) {
+            let session = match self.ensure_session(width, height) {
                 Ok(s) => s,
                 Err(e) => {
                     shared.encode_errors.fetch_add(1, Ordering::Relaxed);
@@ -687,73 +347,11 @@ mod imp {
         }
 
         fn request_keyframe(&mut self) -> bool {
-            match &mut self.session {
-                Some(NvencSessionMode::Cuda(s)) => {
-                    s.request_keyframe();
-                    true
-                }
-                Some(NvencSessionMode::D3D11(s)) => {
-                    s.request_keyframe();
-                    true
-                }
-                None => false,
-            }
-        }
-
-        fn encode_gpu_frame(
-            &mut self,
-            handle: &GpuTextureHandle,
-            shared: &NativeSenderSharedMetrics,
-        ) -> GpuEncodeResult {
-            use windows::core::Interface;
-
-            // Validate dimensions before creating D3D11 session to avoid
-            // creating a session with invalid dimensions
-            if handle.width == 0
-                || handle.height == 0
-                || !handle.width.is_multiple_of(2)
-                || !handle.height.is_multiple_of(2)
-            {
-                shared.encode_errors.fetch_add(1, Ordering::Relaxed);
-                return GpuEncodeResult::NotSupported;
-            }
-
-            // Get raw D3D11 device pointer for NVENC
-            let device_ptr = handle.device.as_raw() as *mut c_void;
-            let texture_ptr = handle.texture.as_raw() as *mut c_void;
-
-            let session = match self.ensure_d3d11_session(device_ptr, handle.width, handle.height) {
-                Ok(s) => s,
-                Err(e) => {
-                    shared.encode_errors.fetch_add(1, Ordering::Relaxed);
-                    eprintln!(
-                        "[native-sender] event=encode_error backend=nvenc_sdk_d3d11 \
-                         detail=\"{e}\""
-                    );
-                    // Fall back to CPU readback path
-                    return GpuEncodeResult::NotSupported;
-                }
-            };
-
-            match session.encode_texture(texture_ptr) {
-                Ok(data) if data.is_empty() => GpuEncodeResult::NoOutput,
-                Ok(data) => {
-                    let nals = split_annex_b_nals(&data);
-                    if nals.is_empty() {
-                        GpuEncodeResult::NoOutput
-                    } else {
-                        GpuEncodeResult::Encoded(nals)
-                    }
-                }
-                Err(e) => {
-                    shared.encode_errors.fetch_add(1, Ordering::Relaxed);
-                    eprintln!(
-                        "[native-sender] event=encode_error backend=nvenc_sdk_d3d11 \
-                         detail=\"{e}\""
-                    );
-                    self.session = None;
-                    GpuEncodeResult::NotSupported
-                }
+            if let Some(s) = &mut self.session {
+                s.request_keyframe();
+                true
+            } else {
+                false
             }
         }
     }

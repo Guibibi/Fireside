@@ -1,9 +1,7 @@
 mod encoder_backend;
-mod ffmpeg_ivf_encoder;
 mod h264_encoder;
 mod metrics;
 mod native_sender;
-mod nvenc_encoder;
 mod nvenc_sdk;
 mod rtp_packetizer;
 mod rtp_sender;
@@ -22,9 +20,6 @@ use super::windows_capture::{
 use encoder_backend::{create_encoder_backend_for_codec, NativeCodecTarget};
 use metrics::{NativeSenderMetrics, NativeSenderSharedMetrics, NativeSenderSnapshotInput};
 use native_sender::{run_native_sender_worker, NativeSenderRuntimeConfig};
-
-#[cfg(target_os = "windows")]
-use super::dxgi_capture;
 
 const DEFAULT_FRAME_QUEUE_CAPACITY: usize = 16;
 
@@ -64,27 +59,6 @@ pub struct NativeCaptureService {
     active_session: Mutex<Option<ActiveCaptureSession>>,
     sender_worker: Mutex<Option<NativeSenderWorker>>,
     last_sender_metrics: Mutex<Option<NativeSenderMetrics>>,
-    dxgi_capture: Mutex<Option<DxgiCaptureThread>>,
-}
-
-struct DxgiCaptureThread {
-    stop_signal: Arc<AtomicBool>,
-    handle: Option<JoinHandle<()>>,
-}
-
-impl std::fmt::Debug for DxgiCaptureThread {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("DxgiCaptureThread")
-            .field(
-                "active",
-                &self
-                    .handle
-                    .as_ref()
-                    .map(|h| !h.is_finished())
-                    .unwrap_or(false),
-            )
-            .finish()
-    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -122,12 +96,7 @@ static CODEC_CAPABILITIES_CACHE: OnceLock<Vec<NativeCodecCapability>> = OnceLock
 fn native_codec_capabilities_snapshot() -> Vec<NativeCodecCapability> {
     CODEC_CAPABILITIES_CACHE
         .get_or_init(|| {
-            [
-                (NativeCodecTarget::H264, "video/H264"),
-                (NativeCodecTarget::Vp8, "video/VP8"),
-                (NativeCodecTarget::Vp9, "video/VP9"),
-                (NativeCodecTarget::Av1, "video/AV1"),
-            ]
+            [(NativeCodecTarget::H264, "video/H264")]
             .into_iter()
             .map(
                 |(codec, mime_type)| match probe_native_codec_support(codec) {
@@ -379,71 +348,6 @@ impl NativeCaptureService {
         }
 
         Ok(())
-    }
-
-    fn stop_dxgi_capture(&self) {
-        // Even if the lock is poisoned, we should still try to stop the capture
-        // thread to avoid leaving zombie threads. Poisoning only affects the
-        // state value, not our ability to signal the stop flag.
-        let mut dxgi = match self.dxgi_capture.lock() {
-            Ok(lock) => lock,
-            Err(poisoned) => {
-                eprintln!("[native-capture] warning=lock_poisoned location=stop_dxgi_capture");
-                poisoned.into_inner()
-            }
-        };
-
-        if let Some(mut thread) = dxgi.take() {
-            thread.stop_signal.store(true, Ordering::Relaxed);
-            if let Some(handle) = thread.handle.take() {
-                let _ = handle.join();
-            }
-        }
-    }
-
-    #[cfg(target_os = "windows")]
-    fn start_dxgi_capture(&self, source_id: &str, target_fps: Option<u32>) -> Result<(), String> {
-        self.stop_dxgi_capture();
-
-        let monitor_device_name = source_id
-            .strip_prefix("screen:")
-            .ok_or_else(|| "DXGI capture requires a screen: source".to_string())?
-            .to_string();
-
-        let stop_signal = Arc::new(AtomicBool::new(false));
-        let thread_stop = Arc::clone(&stop_signal);
-        let thread_source_id = source_id.to_string();
-
-        let handle = thread::Builder::new()
-            .name("dxgi-capture".to_string())
-            .spawn(move || {
-                dxgi_capture::run_dxgi_capture_loop(
-                    &monitor_device_name,
-                    &thread_source_id,
-                    thread_stop,
-                    target_fps,
-                    |packet| {
-                        windows_capture::dispatch_frame_external(packet);
-                    },
-                );
-            })
-            .map_err(|e| format!("Failed to start DXGI capture thread: {e}"))?;
-
-        let mut dxgi = self
-            .dxgi_capture
-            .lock()
-            .map_err(|_| "DXGI capture lock was poisoned".to_string())?;
-        *dxgi = Some(DxgiCaptureThread {
-            stop_signal,
-            handle: Some(handle),
-        });
-
-        Ok(())
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    fn start_dxgi_capture(&self, _source_id: &str, _target_fps: Option<u32>) -> Result<(), String> {
-        Err("DXGI capture is only supported on Windows".to_string())
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -701,28 +605,15 @@ pub fn start_native_capture(
         ssrc,
     )?;
 
-    // Route screen sources through DXGI Desktop Duplication (no yellow border),
-    // while window/application sources continue using windows-capture.
-    let use_dxgi = matches!(selected_source.kind, NativeCaptureSourceKind::Screen);
-
-    if use_dxgi {
-        service
-            .start_dxgi_capture(normalized, fps)
-            .inspect_err(|_| {
-                let _ = service.stop_sender_worker();
-            })?;
-    } else {
-        service.stop_dxgi_capture();
-        windows_capture::start_capture(
-            &window,
-            &NativeCaptureStartRequest {
-                source_id: normalized.to_string(),
-            },
-        )
-        .inspect_err(|_| {
-            let _ = service.stop_sender_worker();
-        })?;
-    }
+    windows_capture::start_capture(
+        &window,
+        &NativeCaptureStartRequest {
+            source_id: normalized.to_string(),
+        },
+    )
+    .inspect_err(|_| {
+        let _ = service.stop_sender_worker();
+    })?;
 
     let mut active_session = service
         .active_session
@@ -747,7 +638,6 @@ pub fn start_native_capture(
 pub fn stop_native_capture(
     service: State<NativeCaptureService>,
 ) -> Result<NativeCaptureStatus, String> {
-    service.stop_dxgi_capture();
     windows_capture::stop_capture()?;
     service.stop_sender_worker()?;
 

@@ -10,7 +10,7 @@ use super::encoder_backend::{
     create_encoder_backend_for_codec, create_openh264_backend, NativeCodecTarget,
 };
 use super::metrics::NativeSenderSharedMetrics;
-use super::rtp_packetizer::{CodecRtpPacketizer, RtpCodecKind, RtpPacketizer};
+use super::rtp_packetizer::{CodecRtpPacketizer, RtpPacketizer};
 
 const FAILURE_WINDOW_MS: u64 = 12_000;
 const ENCODE_FAILURE_THRESHOLD: u64 = 18;
@@ -43,27 +43,14 @@ fn create_packetizer_for_codec(
     payload_type: u8,
     ssrc: u32,
 ) -> Result<Box<dyn RtpPacketizer>, String> {
-    let codec = if mime_type.eq_ignore_ascii_case("video/h264") {
-        RtpCodecKind::H264
-    } else if mime_type.eq_ignore_ascii_case("video/vp8") {
-        RtpCodecKind::Vp8
-    } else if mime_type.eq_ignore_ascii_case("video/vp9") {
-        RtpCodecKind::Vp9
-    } else if mime_type.eq_ignore_ascii_case("video/av1") {
-        RtpCodecKind::Av1
-    } else {
+    if !mime_type.eq_ignore_ascii_case("video/h264") {
         return Err(format!(
             "Unsupported native RTP packetizer codec: {}",
             mime_type
         ));
-    };
+    }
 
-    Ok(Box::new(CodecRtpPacketizer::new(
-        codec,
-        target_rtp,
-        payload_type,
-        ssrc,
-    )))
+    Ok(Box::new(CodecRtpPacketizer::new(target_rtp, payload_type, ssrc)))
 }
 
 #[derive(Debug, Clone)]
@@ -697,70 +684,8 @@ pub fn run_native_sender_worker(
                     continue;
                 }
 
-                // Phase 3: Try GPU encode first for GPU-resident textures
-                if let NativeFrameData::GpuTexture(handle) = frame_data {
-                    use super::encoder_backend::GpuEncodeResult;
-                    match encoder.encode_gpu_frame(handle, &shared) {
-                        GpuEncodeResult::Encoded(nals) => {
-                            // GPU encode succeeded — packetize and send
-                            let encoded_bytes: usize = nals.iter().map(|n| n.len()).sum();
-                            let bitrate_cap_kbps = degradation_state
-                                .bitrate_cap_kbps(config.target_bitrate_kbps, &degradation_tuning);
-                            if !bitrate_limiter.allow(
-                                encoded_bytes,
-                                unix_timestamp_ms(),
-                                bitrate_cap_kbps,
-                            ) {
-                                shared.dropped_during_send.fetch_add(1, Ordering::Relaxed);
-                                continue;
-                            }
-
-                            shared.encoded_frames.fetch_add(1, Ordering::Relaxed);
-                            shared
-                                .encoded_bytes
-                                .fetch_add(encoded_bytes as u64, Ordering::Relaxed);
-                            shared
-                                .last_frame_width
-                                .store(handle.width as u64, Ordering::Relaxed);
-                            shared
-                                .last_frame_height
-                                .store(handle.height as u64, Ordering::Relaxed);
-
-                            let rtp_packets =
-                                packetizer.send_encoded_frames(&nals, packet.timestamp_ms);
-                            shared
-                                .rtp_packets_sent
-                                .fetch_add(rtp_packets as u64, Ordering::Relaxed);
-
-                            shared.processed_packets.fetch_add(1, Ordering::Relaxed);
-                            continue;
-                        }
-                        GpuEncodeResult::NoOutput => {
-                            // Pipeline ramp-up, no output yet
-                            continue;
-                        }
-                        GpuEncodeResult::NotSupported => {
-                            // Fall through to CPU readback path below
-                        }
-                    }
-                }
-
                 // Resolve frame data to CPU BGRA bytes
-                let bgra_owned;
-                let bgra: &[u8] = match frame_data {
-                    NativeFrameData::CpuBgra(data) => data,
-                    NativeFrameData::GpuTexture(handle) => match handle.readback_bgra() {
-                        Ok(data) => {
-                            bgra_owned = data;
-                            &bgra_owned
-                        }
-                        Err(e) => {
-                            shared.encode_errors.fetch_add(1, Ordering::Relaxed);
-                            eprintln!("[native-sender] event=gpu_readback_error detail=\"{e}\"");
-                            continue;
-                        }
-                    },
-                };
+                let NativeFrameData::CpuBgra(bgra) = frame_data;
 
                 if let Some(expected_len) = packet.bgra_len {
                     if expected_len != bgra.len() {
@@ -813,7 +738,7 @@ pub fn run_native_sender_worker(
                     encoder.encode_frame(encode_input, encode_width, encode_height, &shared);
                 let Some(frames) = encoded_frames else {
                     consecutive_encode_failures = consecutive_encode_failures.saturating_add(1);
-                    if (active_encoder_backend == "nvenc" || active_encoder_backend == "nvenc_sdk")
+                    if active_encoder_backend == "nvenc_sdk"
                         && encoder_selection.requested_backend == "auto"
                         && consecutive_encode_failures >= nvenc_runtime_fallback_encode_failures
                     {

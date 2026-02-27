@@ -54,20 +54,17 @@ pub struct NativeCaptureStartRequest {
     pub source_id: String,
 }
 
-use super::gpu_frame::GpuTextureHandle;
-
-/// Frame payload: either CPU bytes or a GPU-resident texture.
+/// Frame payload: CPU BGRA bytes from Windows Graphics Capture.
+// CpuBgra is constructed inside cfg(target_os = "windows") blocks only.
 #[allow(dead_code)]
 pub enum NativeFrameData {
     CpuBgra(Vec<u8>),
-    GpuTexture(GpuTextureHandle),
 }
 
 impl std::fmt::Debug for NativeFrameData {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::CpuBgra(data) => f.debug_tuple("CpuBgra").field(&data.len()).finish(),
-            Self::GpuTexture(_) => f.debug_tuple("GpuTexture").finish(),
         }
     }
 }
@@ -95,21 +92,12 @@ impl std::fmt::Debug for NativeFramePacket {
 }
 
 impl NativeFramePacket {
-    /// Get the CPU BGRA bytes, performing GPU readback if needed.
+    /// Get the CPU BGRA bytes from this frame.
     #[allow(dead_code)]
     pub fn as_cpu_bgra(&self) -> Option<&[u8]> {
         match &self.frame_data {
             Some(NativeFrameData::CpuBgra(data)) => Some(data),
-            _ => None,
-        }
-    }
-
-    /// Get a reference to the GPU texture handle, if this frame is GPU-resident.
-    #[allow(dead_code)]
-    pub fn gpu_texture(&self) -> Option<&GpuTextureHandle> {
-        match &self.frame_data {
-            Some(NativeFrameData::GpuTexture(handle)) => Some(handle),
-            _ => None,
+            None => None,
         }
     }
 }
@@ -170,17 +158,6 @@ fn dispatch_frame(packet: NativeFramePacket) {
         }
     }
 }
-
-/// Dispatch a frame from an external capture source (e.g. DXGI DD)
-/// into the shared frame channel.
-#[cfg(target_os = "windows")]
-pub fn dispatch_frame_external(packet: NativeFramePacket) {
-    dispatch_frame(packet);
-}
-
-#[cfg(not(target_os = "windows"))]
-#[allow(dead_code)]
-pub fn dispatch_frame_external(_packet: NativeFramePacket) {}
 
 #[cfg(target_os = "windows")]
 pub fn install_frame_sink(sender: SyncSender<NativeFramePacket>) -> Result<(), String> {
