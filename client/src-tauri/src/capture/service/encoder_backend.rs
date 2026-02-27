@@ -9,7 +9,7 @@ pub struct CodecDescriptor {
     pub profile_level_id: Option<&'static str>,
 }
 
-pub trait VideoEncoderBackend: Send {
+pub trait VideoEncoderBackend {
     fn codec_descriptor(&self) -> CodecDescriptor;
     fn encode_frame(
         &mut self,
