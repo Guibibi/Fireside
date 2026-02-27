@@ -496,11 +496,8 @@ fn normalize_codec_mime_type(codec_mime_type: Option<String>) -> Result<Option<S
     }
 
     match normalized.as_str() {
-        "video/h264" | "video/vp8" | "video/vp9" | "video/av1" => Ok(Some(normalized)),
-        _ => Err(
-            "Unsupported native sender codec. Use video/H264, video/VP8, video/VP9, or video/AV1."
-                .to_string(),
-        ),
+        "video/h264" => Ok(Some(normalized)),
+        _ => Err("Unsupported native sender codec. Use video/H264.".to_string()),
     }
 }
 

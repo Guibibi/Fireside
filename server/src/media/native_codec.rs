@@ -8,7 +8,7 @@ use uuid::Uuid;
 pub(super) const NATIVE_H264_CLOCK_RATE: u32 = 90_000;
 pub(super) const NATIVE_H264_PT: u8 = 96;
 pub(super) const NATIVE_H264_PACKETIZATION_MODE: u8 = 1;
-pub(super) const NATIVE_H264_PROFILE_LEVEL_ID: &str = "640028";
+pub(super) const NATIVE_H264_PROFILE_LEVEL_ID: &str = "42e01f";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]

@@ -554,9 +554,6 @@ pub fn run_native_sender_worker(
                     .unwrap_or("auto"),
             );
             shared.set_encoder_backend_fallback_reason(Some(error.as_str()));
-            if codec_target != NativeCodecTarget::H264 {
-                shared.set_recent_fallback_reason(Some("native_sender_codec_not_ready"));
-            }
             trigger_native_fallback("encoder_init_failed", &config.source_id, &shared);
             stop_signal.store(true, Ordering::Relaxed);
             return;
