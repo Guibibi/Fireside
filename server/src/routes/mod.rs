@@ -7,4 +7,5 @@ pub mod gif_routes;
 pub mod invite_routes;
 pub mod media_routes;
 pub mod reaction_routes;
+pub mod settings_routes;
 pub mod user_routes;
