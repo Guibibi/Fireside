@@ -159,28 +159,3 @@ export function reportVoiceMuteState(channelId: string, micMuted: boolean, speak
     speaker_muted: speakerMuted,
   });
 }
-
-export function reportNativeSenderDiagnostic(channelId: string, event: string, detail?: string) {
-  send({
-    type: "media_signal",
-    channel_id: channelId,
-    payload: {
-      action: "client_diagnostic",
-      event,
-      detail,
-    },
-  });
-}
-
-export function reportCodecDecision(
-  channelId: string,
-  codecRequested: string,
-  codecNegotiated: string,
-  codecFallbackReason: string,
-) {
-  reportNativeSenderDiagnostic(
-    channelId,
-    "screen_share_codec_decision",
-    `codec_requested=${codecRequested};codec_negotiated=${codecNegotiated};codec_fallback_reason=${codecFallbackReason}`,
-  );
-}

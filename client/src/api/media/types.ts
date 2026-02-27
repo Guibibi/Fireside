@@ -1,5 +1,3 @@
-import type { ScreenShareFps, ScreenShareResolution, ScreenShareSourceKind } from "../../stores/settings";
-
 export interface IceParameters {
   usernameFragment: string;
   password: string;
@@ -41,12 +39,11 @@ export type MediaSignalAction =
   | "new_producer"
   | "media_consumer_created"
   | "media_consumer_resumed"
-  | "native_sender_session_created"
   | "producer_closed"
   | "signal_error";
 
 export type MediaKind = "audio" | "video";
-export type MediaSource = "microphone" | "camera" | "screen";
+export type MediaSource = "microphone" | "camera";
 export type RoutingMode = "sfu";
 
 export interface MediaConsumerDescription {
@@ -76,29 +73,6 @@ export interface MediaSignalPayload {
   routing_mode?: RoutingMode;
   consumer?: MediaConsumerDescription;
   consumer_id?: string;
-  rtp_target?: string;
-  payload_type?: number;
-  ssrc?: number;
-  mime_type?: string;
-  clock_rate?: number;
-  packetization_mode?: number;
-  profile_level_id?: string;
-  codec?: {
-    mime_type?: string;
-    clock_rate?: number;
-    payload_type?: number;
-    packetization_mode?: number;
-    profile_level_id?: string;
-    readiness?: "ready" | "planned" | string;
-  };
-  available_codecs?: Array<{
-    mime_type?: string;
-    clock_rate?: number;
-    payload_type?: number;
-    packetization_mode?: number;
-    profile_level_id?: string;
-    readiness?: "ready" | "planned" | string;
-  }>;
 }
 
 export interface PendingRequest {
@@ -129,33 +103,17 @@ export interface CameraActionResult {
   error?: string;
 }
 
-export interface ScreenShareStartOptions {
-  resolution: ScreenShareResolution;
-  fps: ScreenShareFps;
-  bitrateKbps: number;
-  sourceKind: ScreenShareSourceKind;
-  sourceId?: string;
-  sourceTitle?: string;
-}
-
 export interface CameraStateSnapshot {
   enabled: boolean;
   error: string | null;
   stream: MediaStream | null;
 }
 
-export interface ScreenShareStateSnapshot {
-  enabled: boolean;
-  error: string | null;
-  stream: MediaStream | null;
-  routingMode: RoutingMode | null;
-}
-
 export interface RemoteVideoTile {
   producerId: string;
   username: string;
   stream: MediaStream;
-  source: "camera" | "screen";
+  source: "camera";
   routingMode: RoutingMode;
 }
 

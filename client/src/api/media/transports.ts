@@ -4,7 +4,6 @@ import type { TransportHealthState } from "./types";
 import { isObject } from "./codecs";
 import { flushQueuedProducerAnnouncements, disposeRemoteConsumer } from "./consumers";
 import { registerDeviceChangeListener, unregisterDeviceChangeListener } from "./devices";
-import { disarmNativeCapture } from "./native";
 import { startLocalAudioProducer } from "./producers";
 import {
   reportVoiceActivity,
@@ -32,9 +31,6 @@ import {
   recvTransport,
   remoteAudioElements,
   remoteConsumers,
-  screenProducer,
-  screenStream,
-  screenTrack,
   sendTransport,
   speakersMuted,
   setCameraEnabled,
@@ -50,18 +46,12 @@ import {
   setMicStream,
   setMicTrack,
   setRecvTransport,
-  setScreenEnabled,
-  setScreenError,
-  setScreenProducer,
-  setScreenRoutingMode,
-  setScreenStream,
-  setScreenTrack,
   setSendTransport,
   setMicrophoneMutedState,
   setSpeakersMutedState,
   setTransportHealthState,
 } from "./state";
-import { clearRemoteVideoTiles, notifyCameraStateSubscribers, notifyScreenStateSubscribers, notifyTransportHealthSubscribers } from "./subscriptions";
+import { clearRemoteVideoTiles, notifyCameraStateSubscribers, notifyTransportHealthSubscribers } from "./subscriptions";
 import { stopMicLevelMonitoring } from "./voiceActivity";
 import { disposeMicrophoneProcessing, updateOutgoingMicrophoneMuted } from "./microphoneProcessing";
 
@@ -209,26 +199,6 @@ export function closeTransports() {
   setCameraEnabled(false);
   setCameraError(null);
   notifyCameraStateSubscribers();
-
-  screenProducer?.close();
-  setScreenProducer(null);
-
-  if (screenTrack) {
-    screenTrack.stop();
-    setScreenTrack(null);
-  }
-
-  if (screenStream) {
-    for (const track of screenStream.getTracks()) {
-      track.stop();
-    }
-    setScreenStream(null);
-  }
-  setScreenEnabled(false);
-  setScreenError(null);
-  setScreenRoutingMode(null);
-  notifyScreenStateSubscribers();
-  void disarmNativeCapture();
 
   for (const consumerId of remoteConsumers.keys()) {
     disposeRemoteConsumer(consumerId);

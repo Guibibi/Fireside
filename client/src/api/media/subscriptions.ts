@@ -5,16 +5,11 @@ import {
   cameraStateSubscribers,
   cameraStream,
   remoteVideoTilesByProducerId,
-  screenEnabled,
-  screenError,
-  screenRoutingMode,
-  screenStateSubscribers,
-  screenStream,
   transportHealthState,
   transportHealthSubscribers,
   videoTilesSubscribers,
 } from "./state";
-import type { CameraStateSnapshot, RemoteVideoTile, ScreenShareStateSnapshot, TransportHealthState } from "./types";
+import type { CameraStateSnapshot, RemoteVideoTile, TransportHealthState } from "./types";
 
 export function videoTilesSnapshot(): RemoteVideoTile[] {
   return Array.from(remoteVideoTilesByProducerId.values()).sort((left, right) => {
@@ -49,22 +44,6 @@ export function notifyCameraStateSubscribers() {
   }
 }
 
-export function screenStateSnapshot(): ScreenShareStateSnapshot {
-  return {
-    enabled: screenEnabled,
-    error: screenError,
-    stream: screenStream,
-    routingMode: screenRoutingMode,
-  };
-}
-
-export function notifyScreenStateSubscribers() {
-  const snapshot = screenStateSnapshot();
-  for (const subscriber of screenStateSubscribers) {
-    subscriber(snapshot);
-  }
-}
-
 export function clearRemoteVideoTiles() {
   if (remoteVideoTilesByProducerId.size === 0) {
     return;
@@ -93,15 +72,6 @@ export function subscribeCameraState(subscriber: (snapshot: CameraStateSnapshot)
 
   return () => {
     cameraStateSubscribers.delete(subscriber);
-  };
-}
-
-export function subscribeScreenState(subscriber: (snapshot: ScreenShareStateSnapshot) => void): () => void {
-  screenStateSubscribers.add(subscriber);
-  subscriber(screenStateSnapshot());
-
-  return () => {
-    screenStateSubscribers.delete(subscriber);
   };
 }
 

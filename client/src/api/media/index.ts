@@ -7,8 +7,6 @@ export type {
   CameraStateSnapshot,
   RemoteVideoTile,
   RoutingMode,
-  ScreenShareStartOptions,
-  ScreenShareStateSnapshot,
   TransportHealthState,
 } from "./types";
 
@@ -28,13 +26,8 @@ export {
   localCameraEnabled,
   localCameraError,
   localCameraStream,
-  localScreenShareEnabled,
-  localScreenShareError,
-  localScreenShareStream,
   startLocalCameraProducer,
-  startLocalScreenProducer,
   stopLocalCameraProducer,
-  stopLocalScreenProducer,
 } from "./producers";
 
 // Re-export consumer functions
@@ -45,7 +38,6 @@ export {
   remoteVideoTiles,
   subscribeAudioPlaybackError,
   subscribeCameraState,
-  subscribeScreenState,
   subscribeTransportHealth,
   subscribeVideoTiles,
 } from "./subscriptions";

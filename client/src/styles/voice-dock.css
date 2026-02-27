@@ -113,25 +113,21 @@
   transform: none;
 }
 
-.voice-dock-camera,
-.voice-dock-screen {
+.voice-dock-camera {
   background: var(--gray-5);
 }
 
-.voice-dock-camera:hover:not(:disabled),
-.voice-dock-screen:hover:not(:disabled) {
+.voice-dock-camera:hover:not(:disabled) {
   background: var(--accent-dim);
   color: var(--accent);
 }
 
-.voice-dock-camera.is-active,
-.voice-dock-screen.is-active {
+.voice-dock-camera.is-active {
   background: var(--success);
   color: var(--gray-1);
 }
 
-.voice-dock-camera:disabled,
-.voice-dock-screen:disabled {
+.voice-dock-camera:disabled {
   opacity: 0.5;
 }
 
@@ -175,36 +171,4 @@
   margin-top: var(--space-xs);
   font-size: 0.75rem;
   color: var(--danger);
-}
-
-.voice-dock-native-debug {
-  margin-top: var(--space-md);
-  padding: var(--space-md);
-  border-radius: var(--radius-md);
-  border: 1px solid var(--info-dim);
-  background: rgba(122, 158, 196, 0.05);
-  font-family: var(--font-mono);
-  font-size: 0.7rem;
-}
-
-.voice-dock-native-debug-title {
-  font-size: 0.65rem;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--info);
-  margin-bottom: var(--space-sm);
-}
-
-.voice-dock-screen-controls {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-xs);
-}
-
-.voice-dock-screen-mode {
-  min-width: 4rem;
-  padding: var(--space-xs) var(--space-sm);
-  font-size: 0.7rem;
-  border-radius: var(--radius-full);
-  background: var(--gray-5);
 }

@@ -1,17 +1,13 @@
 use mediasoup::prelude::{
     Consumer, ConsumerId, ConsumerOptions, DtlsParameters, IceCandidate, IceParameters, MediaKind,
-    PlainTransport, PlainTransportOptions, Producer, ProducerId, ProducerOptions, RtpCapabilities,
-    RtpCapabilitiesFinalized, RtpParameters, Transport, WebRtcTransport,
-    WebRtcTransportListenInfos, WebRtcTransportOptions, WebRtcTransportRemoteParameters,
+    Producer, ProducerId, ProducerOptions, RtpCapabilities, RtpCapabilitiesFinalized,
+    RtpParameters, Transport, WebRtcTransport, WebRtcTransportListenInfos, WebRtcTransportOptions,
+    WebRtcTransportRemoteParameters,
 };
 use serde::Serialize;
 use std::collections::HashMap;
 use uuid::Uuid;
 
-use super::native_codec::{
-    canonical_native_ssrc, native_rtp_parameters, NativeSenderSession, NativeVideoCodec,
-    NATIVE_H264_PACKETIZATION_MODE, NATIVE_H264_PROFILE_LEVEL_ID,
-};
 use super::router::OpusConfig;
 use super::MediaService;
 
@@ -26,7 +22,6 @@ pub enum TransportDirection {
 pub enum ProducerSource {
     Microphone,
     Camera,
-    Screen,
 }
 
 impl ProducerSource {
@@ -34,7 +29,6 @@ impl ProducerSource {
         match self {
             Self::Microphone => "microphone",
             Self::Camera => "camera",
-            Self::Screen => "screen",
         }
     }
 }
@@ -83,7 +77,6 @@ pub(crate) struct ConnectionMediaState {
     pub send_transport_id: Option<String>,
     pub recv_transport_id: Option<String>,
     pub transports: HashMap<String, WebRtcTransport>,
-    pub native_transports_by_producer: HashMap<String, PlainTransport>,
     pub producers: HashMap<String, ProducerEntry>,
     pub consumers: HashMap<String, Consumer>,
 }
@@ -95,7 +88,6 @@ impl ConnectionMediaState {
             send_transport_id: None,
             recv_transport_id: None,
             transports: HashMap::new(),
-            native_transports_by_producer: HashMap::new(),
             producers: HashMap::new(),
             consumers: HashMap::new(),
         }
@@ -272,15 +264,6 @@ impl MediaService {
                 return Err("Only one active camera producer is allowed per connection".into());
             }
 
-            if source == ProducerSource::Screen
-                && entry
-                    .producers
-                    .values()
-                    .any(|producer| producer.source == ProducerSource::Screen)
-            {
-                return Err("Only one active screen producer is allowed per connection".into());
-            }
-
             transport.clone()
         };
 
@@ -311,15 +294,6 @@ impl MediaService {
                 return Err("Only one active camera producer is allowed per connection".into());
             }
 
-            if source == ProducerSource::Screen
-                && entry
-                    .producers
-                    .values()
-                    .any(|existing| existing.source == ProducerSource::Screen)
-            {
-                return Err("Only one active screen producer is allowed per connection".into());
-            }
-
             entry.producers.insert(
                 producer_id.clone(),
                 ProducerEntry {
@@ -335,119 +309,6 @@ impl MediaService {
             kind: media_kind_as_str(kind).to_string(),
             source: source.as_str().to_string(),
             routing_mode: routing_mode.as_str().to_string(),
-            owner_connection_id: connection_id,
-        })
-    }
-
-    pub async fn create_native_sender_session_for_connection(
-        &self,
-        connection_id: Uuid,
-        channel_id: Uuid,
-        preferred_codecs: Option<Vec<String>>,
-        opus_config: OpusConfig,
-    ) -> Result<NativeSenderSession, String> {
-        {
-            let media_state_lock = self.connection_media();
-            let media_state = media_state_lock.lock().await;
-            let Some(entry) = media_state.get(&connection_id) else {
-                return Err("No media session exists for this connection".into());
-            };
-
-            if entry.channel_id != channel_id {
-                return Err("Native sender does not belong to this voice channel".into());
-            }
-
-            if entry
-                .producers
-                .values()
-                .any(|producer| producer.source == ProducerSource::Screen)
-            {
-                return Err("Only one active screen producer is allowed per connection".into());
-            }
-        }
-
-        let router = self.get_or_create_router(channel_id, opus_config).await;
-        let listen_info = self.native_rtp_listen_info();
-
-        let mut plain_transport_options = PlainTransportOptions::new(listen_info);
-        plain_transport_options.comedia = true;
-        plain_transport_options.rtcp_mux = true;
-
-        let plain_transport = router
-            .create_plain_transport(plain_transport_options)
-            .await
-            .map_err(|error| format!("Failed to create native sender transport: {error}"))?;
-
-        let tuple = plain_transport.tuple();
-        let rtp_target = self.native_rtp_target_for_port(tuple.local_port());
-        let ssrc = canonical_native_ssrc(connection_id);
-        let codec = NativeVideoCodec::from_preference_list(preferred_codecs.as_deref());
-        let codec_descriptor = codec.descriptor();
-
-        let producer = plain_transport
-            .produce(ProducerOptions::new(
-                MediaKind::Video,
-                native_rtp_parameters(codec, ssrc),
-            ))
-            .await
-            .map_err(|error| format!("Failed to create native sender producer: {error}"))?;
-
-        let producer_id = producer.id().to_string();
-
-        {
-            let media_state_lock = self.connection_media();
-            let mut media_state = media_state_lock.lock().await;
-            let Some(entry) = media_state.get_mut(&connection_id) else {
-                return Err("Media session was closed while creating native sender".into());
-            };
-
-            if entry.channel_id != channel_id {
-                return Err("Media session moved to a different channel".into());
-            }
-
-            if entry
-                .producers
-                .values()
-                .any(|existing| existing.source == ProducerSource::Screen)
-            {
-                return Err("Only one active screen producer is allowed per connection".into());
-            }
-
-            entry.producers.insert(
-                producer_id.clone(),
-                ProducerEntry {
-                    producer,
-                    source: ProducerSource::Screen,
-                    routing_mode: RoutingMode::Sfu,
-                },
-            );
-            entry
-                .native_transports_by_producer
-                .insert(producer_id.clone(), plain_transport);
-        }
-
-        Ok(NativeSenderSession {
-            producer_id,
-            kind: "video".to_string(),
-            source: ProducerSource::Screen.as_str().to_string(),
-            routing_mode: RoutingMode::Sfu.as_str().to_string(),
-            rtp_target,
-            payload_type: codec_descriptor.payload_type,
-            ssrc,
-            mime_type: codec_descriptor.mime_type.clone(),
-            clock_rate: codec_descriptor.clock_rate,
-            packetization_mode: codec_descriptor
-                .packetization_mode
-                .unwrap_or(NATIVE_H264_PACKETIZATION_MODE),
-            profile_level_id: codec_descriptor
-                .profile_level_id
-                .clone()
-                .unwrap_or_else(|| NATIVE_H264_PROFILE_LEVEL_ID.to_string()),
-            codec: codec_descriptor,
-            available_codecs: NativeVideoCodec::all_for_advertisement()
-                .iter()
-                .map(|codec| codec.descriptor())
-                .collect(),
             owner_connection_id: connection_id,
         })
     }
@@ -622,8 +483,6 @@ impl MediaService {
             .producers
             .remove(producer_id)
             .ok_or_else(|| "Producer not found for this connection".to_string())?;
-
-        entry.native_transports_by_producer.remove(producer_id);
 
         for (other_conn_id, other_entry) in media_state.iter_mut() {
             if *other_conn_id == connection_id || other_entry.channel_id != channel_id {

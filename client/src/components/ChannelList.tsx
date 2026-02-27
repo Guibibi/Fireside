@@ -1,5 +1,4 @@
 import {
-    createMemo,
     For,
     Show,
     createEffect,
@@ -14,20 +13,13 @@ import { listDmThreads } from "../api/dms";
 import {
     cleanupMediaTransports,
     initializeMediaTransports,
-    type ScreenShareStartOptions,
     retryAudioPlayback,
     startLocalCameraProducer,
-    startLocalScreenProducer,
     stopLocalCameraProducer,
-    stopLocalScreenProducer,
     setMicrophoneMuted,
     setSpeakersMuted,
     subscribeAudioPlaybackError,
 } from "../api/media";
-import {
-    nativeCaptureStatus,
-    type NativeCaptureStatus,
-} from "../api/nativeCapture";
 import { connect, onClose, onMessage, send } from "../api/ws";
 import {
     activeChannelId,
@@ -47,7 +39,6 @@ import {
     settingsOpen,
 } from "../stores/settings";
 import { errorMessage } from "../utils/error";
-import { isTauriRuntime } from "../utils/platform";
 import {
     playVoiceJoinCue,
     playVoiceLeaveCue,
@@ -80,21 +71,16 @@ import {
     speakerMuted,
     startCameraStateSubscription,
     startConnectionStatusSubscription,
-    startScreenStateSubscription,
     startTransportHealthSubscription,
     startVideoTilesSubscription,
     stopConnectionStatusSubscription,
     stopTransportHealthSubscription,
-    screenShareEnabled,
     showVoiceRejoinNotice,
     toggleMicMuted,
     toggleSpeakerMuted,
     voiceMemberMuteState,
     voiceRejoinNotice,
     voiceActionState,
-    videoTiles,
-    watchedStreamProducerId,
-    startWatchingStream,
 } from "../stores/voice";
 import AsyncContent from "./AsyncContent";
 import UserSettingsDock from "./UserSettingsDock";
@@ -103,8 +89,6 @@ import {
     ChannelRow,
     CreateChannelModal,
     EditChannelModal,
-    ScreenShareModal,
-    useScreenShareModal,
     VoiceDock,
 } from "./channel-list";
 import {
@@ -155,40 +139,12 @@ export default function ChannelList() {
     const [toastError, setToastError] = createSignal("");
     const [audioFixNeeded, setAudioFixNeeded] = createSignal(false);
     const [cameraActionPending, setCameraActionPending] = createSignal(false);
-    const [screenActionPending, setScreenActionPending] = createSignal(false);
-    const [screenShareModalOpen, setScreenShareModalOpen] = createSignal(false);
-    const [nativeSenderMetrics, setNativeSenderMetrics] = createSignal<
-        NativeCaptureStatus["native_sender"] | null
-    >(null);
     const [pulsingByChannel, setPulsingByChannel] = createSignal<
         Record<string, boolean>
     >({});
-    const [memberHoverPopoverKey, setMemberHoverPopoverKey] = createSignal<
-        string | null
-    >(null);
     const pulseTimers = new Map<string, ReturnType<typeof setTimeout>>();
     const readMarkerInFlightByChannel = new Set<string>();
-    const tauriRuntime = isTauriRuntime();
-    const {
-        nativeSources,
-        nativeSourcesLoading,
-        nativeSourcesError,
-        selectedNativeSourceId,
-        screenSharePreviewStream,
-        screenSharePreviewError,
-        loadNativeCaptureSources,
-        setSelectedNativeSourceId,
-        startScreenSharePreview,
-        stopScreenSharePreview,
-        buildScreenShareOptions,
-    } = useScreenShareModal();
-    const nativeDebugEnabled =
-        tauriRuntime &&
-        (import.meta.env.DEV ||
-            window.localStorage.getItem("yankcord_debug_native_sender") ===
-            "1");
     let toastTimer: ReturnType<typeof setTimeout> | null = null;
-    let screenSharePreviewVideoRef: HTMLVideoElement | undefined;
     let channelCreateNameInputRef: HTMLInputElement | undefined;
 
     function showErrorToast(message: string) {
@@ -201,11 +157,6 @@ export default function ChannelList() {
             toastTimer = null;
             setToastError("");
         }, 3500);
-    }
-
-    function closeScreenShareModal() {
-        stopScreenSharePreview();
-        setScreenShareModalOpen(false);
     }
 
     function ensureValidActiveChannel(nextChannels: Channel[]) {
@@ -282,66 +233,6 @@ export default function ChannelList() {
         }
     }
 
-    async function startScreenShareWithOptions(
-        channelId: string,
-        options?: ScreenShareStartOptions,
-    ) {
-        setScreenActionPending(true);
-
-        try {
-            const result = await startLocalScreenProducer(channelId, options);
-            if (!result.ok && result.error) {
-                showErrorToast(result.error);
-            }
-            return result;
-        } finally {
-            setScreenActionPending(false);
-        }
-    }
-
-    async function handleConfirmTauriScreenShare() {
-        const channelId = joinedVoiceChannelId();
-        if (!channelId || screenActionPending()) {
-            return;
-        }
-
-        const result = await startScreenShareWithOptions(
-            channelId,
-            buildScreenShareOptions(),
-        );
-        if (result.ok) {
-            closeScreenShareModal();
-        }
-    }
-
-    async function handleToggleScreenShare() {
-        const channelId = joinedVoiceChannelId();
-        if (!channelId || screenActionPending()) {
-            return;
-        }
-
-        try {
-            if (screenShareEnabled()) {
-                setScreenActionPending(true);
-                const result = await stopLocalScreenProducer(channelId);
-                if (!result.ok && result.error) {
-                    showErrorToast(result.error);
-                }
-                return;
-            }
-
-            if (tauriRuntime) {
-                await loadNativeCaptureSources();
-                setScreenShareModalOpen(true);
-                return;
-            }
-
-            await startScreenShareWithOptions(channelId);
-        } finally {
-            setScreenActionPending(false);
-        }
-    }
-
     function selectChannel(channel: Channel) {
         if (channel.kind === "voice") {
             joinVoiceChannel(channel.id);
@@ -407,31 +298,6 @@ export default function ChannelList() {
 
     function voiceMembers(channelId: string) {
         return participantsByChannel()[channelId] ?? [];
-    }
-
-    const liveScreenTilesByUsername = createMemo(() => {
-        const next = new Map<string, { producerId: string }>();
-        for (const tile of videoTiles()) {
-            if (tile.source !== "screen") {
-                continue;
-            }
-
-            next.set(tile.username, { producerId: tile.producerId });
-        }
-
-        return next;
-    });
-
-    function streamTileForVoiceMember(channelId: string, memberUsername: string) {
-        if (channelId !== joinedVoiceChannelId()) {
-            return null;
-        }
-
-        return liveScreenTilesByUsername().get(memberUsername) ?? null;
-    }
-
-    function voiceMemberPopoverKey(channelId: string, memberUsername: string) {
-        return `${channelId}:${memberUsername}`;
     }
 
     function pulseBadge(channelId: string) {
@@ -778,7 +644,6 @@ export default function ChannelList() {
                 playVoiceJoinCue();
                 setJoinedVoiceChannel(msg.channel_id);
                 startCameraStateSubscription();
-                startScreenStateSubscription();
                 startVideoTilesSubscription();
                 clearVoiceRejoinNotice();
                 setVoiceActionState("idle");
@@ -891,7 +756,6 @@ export default function ChannelList() {
             unsubscribeAudioError();
             stopConnectionStatusSubscription();
             stopTransportHealthSubscription();
-            stopScreenSharePreview();
         });
     });
 
@@ -926,67 +790,6 @@ export default function ChannelList() {
             channelCreateNameInputRef.focus();
             channelCreateNameInputRef.select();
         }
-    });
-
-    createEffect(() => {
-        if (!joinedVoiceChannelId()) {
-            closeScreenShareModal();
-        }
-    });
-
-    createEffect(() => {
-        if (!screenShareModalOpen()) {
-            stopScreenSharePreview();
-        }
-    });
-
-    createEffect(() => {
-        const stream = screenSharePreviewStream();
-        if (!screenSharePreviewVideoRef) {
-            return;
-        }
-
-        if (!stream) {
-            screenSharePreviewVideoRef.srcObject = null;
-            return;
-        }
-
-        screenSharePreviewVideoRef.srcObject = stream;
-        screenSharePreviewVideoRef.muted = true;
-        screenSharePreviewVideoRef.playsInline = true;
-        void screenSharePreviewVideoRef.play().catch(() => undefined);
-    });
-
-    createEffect(() => {
-        if (!tauriRuntime || !screenShareEnabled()) {
-            setNativeSenderMetrics(null);
-            return;
-        }
-
-        let cancelled = false;
-
-        const pollStatus = async () => {
-            try {
-                const status = await nativeCaptureStatus();
-                if (!cancelled) {
-                    setNativeSenderMetrics(status.native_sender);
-                }
-            } catch {
-                if (!cancelled) {
-                    setNativeSenderMetrics(null);
-                }
-            }
-        };
-
-        void pollStatus();
-        const timer = window.setInterval(() => {
-            void pollStatus();
-        }, 1000);
-
-        onCleanup(() => {
-            cancelled = true;
-            window.clearInterval(timer);
-        });
     });
 
     return (
@@ -1202,56 +1005,6 @@ export default function ChannelList() {
                                                                 }}
                                                                 onFocus={() => {
                                                                     setContextMenuTarget("member", memberUsername, { username: memberUsername });
-                                                                    if (streamTileForVoiceMember(channel.id, memberUsername)) {
-                                                                        setMemberHoverPopoverKey(
-                                                                            voiceMemberPopoverKey(channel.id, memberUsername),
-                                                                        );
-                                                                    }
-                                                                }}
-                                                                onBlur={(event) => {
-                                                                    const nextTarget = event.relatedTarget;
-                                                                    if (
-                                                                        nextTarget instanceof Node &&
-                                                                        event.currentTarget.contains(nextTarget)
-                                                                    ) {
-                                                                        return;
-                                                                    }
-
-                                                                    if (
-                                                                        memberHoverPopoverKey() ===
-                                                                        voiceMemberPopoverKey(channel.id, memberUsername)
-                                                                    ) {
-                                                                        setMemberHoverPopoverKey(null);
-                                                                    }
-                                                                }}
-                                                                onMouseEnter={() => {
-                                                                    if (streamTileForVoiceMember(channel.id, memberUsername)) {
-                                                                        setMemberHoverPopoverKey(
-                                                                            voiceMemberPopoverKey(channel.id, memberUsername),
-                                                                        );
-                                                                    }
-                                                                }}
-                                                                onMouseLeave={() => {
-                                                                    if (
-                                                                        memberHoverPopoverKey() ===
-                                                                        voiceMemberPopoverKey(channel.id, memberUsername)
-                                                                    ) {
-                                                                        setMemberHoverPopoverKey(null);
-                                                                    }
-                                                                }}
-                                                                onKeyDown={(event) => {
-                                                                    if (event.key !== "Enter" && event.key !== " ") {
-                                                                        return;
-                                                                    }
-
-                                                                    const liveTile = streamTileForVoiceMember(channel.id, memberUsername);
-                                                                    if (!liveTile) {
-                                                                        return;
-                                                                    }
-
-                                                                    event.preventDefault();
-                                                                    startWatchingStream(liveTile.producerId);
-                                                                    setMemberHoverPopoverKey(null);
                                                                 }}
                                                                 onTouchStart={(event) => {
                                                                     const touch = event.touches[0];
@@ -1312,58 +1065,6 @@ export default function ChannelList() {
                                                                             </span>
                                                                         </Show>
                                                                     </span>
-                                                                </Show>
-                                                                <Show
-                                                                    when={streamTileForVoiceMember(channel.id, memberUsername)}
-                                                                >
-                                                                    {(liveTile) => (
-                                                                        <>
-                                                                            <span
-                                                                                class="channel-voice-live-badge"
-                                                                                aria-label={`${displayNameFor(memberUsername)} is streaming live`}
-                                                                            >
-                                                                                LIVE
-                                                                            </span>
-                                                                            <Show
-                                                                                when={
-                                                                                    memberHoverPopoverKey() ===
-                                                                                    voiceMemberPopoverKey(channel.id, memberUsername)
-                                                                                }
-                                                                            >
-                                                                                <div
-                                                                                    class="channel-stream-hover-popover"
-                                                                                    role="dialog"
-                                                                                    aria-label={`Watch ${displayNameFor(memberUsername)} stream`}
-                                                                                >
-                                                                                    <p class="channel-stream-hover-title">
-                                                                                        {displayNameFor(memberUsername)}
-                                                                                    </p>
-                                                                                    <p class="channel-stream-hover-text">
-                                                                                        Live screen share
-                                                                                    </p>
-                                                                                    <button
-                                                                                        type="button"
-                                                                                        class="channel-stream-watch-button"
-                                                                                        onClick={(event) => {
-                                                                                            event.preventDefault();
-                                                                                            event.stopPropagation();
-                                                                                            startWatchingStream(liveTile().producerId);
-                                                                                            setMemberHoverPopoverKey(null);
-                                                                                        }}
-                                                                                        disabled={
-                                                                                            watchedStreamProducerId() ===
-                                                                                            liveTile().producerId
-                                                                                        }
-                                                                                    >
-                                                                                        {watchedStreamProducerId() ===
-                                                                                            liveTile().producerId
-                                                                                            ? "Watching"
-                                                                                            : "Watch Stream"}
-                                                                                    </button>
-                                                                                </div>
-                                                                            </Show>
-                                                                        </>
-                                                                    )}
                                                                 </Show>
                                                             </li>
                                                         )}
@@ -1442,44 +1143,13 @@ export default function ChannelList() {
                     <Show when={joinedVoiceChannelId()}>
                         <VoiceDock
                             connectedChannelName={connectedVoiceChannelName()}
-                            nativeDebugEnabled={nativeDebugEnabled}
-                            nativeSenderMetrics={nativeSenderMetrics()}
                             cameraActionPending={cameraActionPending()}
-                            screenActionPending={screenActionPending()}
                             onDisconnect={leaveVoiceChannel}
                             onToggleMicMuted={handleToggleMicMuted}
                             onToggleSpeakerMuted={handleToggleSpeakerMuted}
                             onToggleCamera={() => void handleToggleCamera()}
-                            onToggleScreenShare={() =>
-                                void handleToggleScreenShare()
-                            }
                         />
                     </Show>
-                    <ScreenShareModal
-                        open={
-                            tauriRuntime &&
-                            screenShareModalOpen() &&
-                            !screenShareEnabled()
-                        }
-                        onClose={closeScreenShareModal}
-                        nativeSourcesLoading={nativeSourcesLoading()}
-                        nativeSourcesError={nativeSourcesError()}
-                        nativeSources={nativeSources()}
-                        selectedNativeSourceId={selectedNativeSourceId()}
-                        onSelectNativeSource={setSelectedNativeSourceId}
-                        screenSharePreviewStream={screenSharePreviewStream()}
-                        screenSharePreviewError={screenSharePreviewError()}
-                        screenSharePreviewVideoRef={(element) => {
-                            screenSharePreviewVideoRef = element;
-                        }}
-                        onRefreshSources={() =>
-                            void loadNativeCaptureSources()
-                        }
-                        onStartPreview={() => void startScreenSharePreview()}
-                        onStopPreview={stopScreenSharePreview}
-                        onConfirm={() => void handleConfirmTauriScreenShare()}
-                        screenActionPending={screenActionPending()}
-                    />
                     <UserSettingsDock />
                 </div>
             </AsyncContent>

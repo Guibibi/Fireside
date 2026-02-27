@@ -6,7 +6,6 @@ import SettingsPage from "../components/SettingsPage";
 import ContextMenuContainer from "../components/ContextMenuContainer";
 import UserProfileModal from "../components/UserProfileModal";
 import { handleContextMenuKeyDown } from "../stores/contextMenu";
-import { isStreamWatchFocused } from "../stores/voice";
 import { settingsOpen } from "../stores/settings";
 import { isMobileNavOpen, closeMobileNav } from "../stores/chat";
 
@@ -30,9 +29,7 @@ export default function Chat() {
           <div class="main-content">
             <MessageArea />
           </div>
-          <Show when={!isStreamWatchFocused()}>
-            <MemberList />
-          </Show>
+          <MemberList />
         </>
       }>
         <SettingsPage />

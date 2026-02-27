@@ -1,9 +1,7 @@
 import { For, Show, createEffect, onCleanup } from "solid-js";
 import {
   cameraEnabled,
-  localScreenShareStream,
   localVideoStream,
-  screenShareEnabled,
   videoTiles,
 } from "../stores/voice";
 
@@ -38,7 +36,7 @@ function StreamVideo(props: StreamVideoProps) {
 
 export default function VideoStage() {
   const cameraTiles = () => videoTiles().filter((tile) => tile.source === "camera");
-  const hasVideo = () => cameraEnabled() || screenShareEnabled() || cameraTiles().length > 0;
+  const hasVideo = () => cameraEnabled() || cameraTiles().length > 0;
 
   return (
     <Show when={hasVideo()}>
@@ -49,15 +47,6 @@ export default function VideoStage() {
               <article class="video-stage-tile is-local">
                 <StreamVideo stream={stream()} muted />
                 <p class="video-stage-label">You - Camera</p>
-              </article>
-            )}
-          </Show>
-
-          <Show when={screenShareEnabled() && localScreenShareStream()}>
-            {(stream) => (
-              <article class="video-stage-tile is-local is-screen-share">
-                <StreamVideo stream={stream()} muted />
-                <p class="video-stage-label">You - Screen</p>
               </article>
             )}
           </Show>

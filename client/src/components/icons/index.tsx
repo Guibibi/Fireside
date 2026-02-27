@@ -129,37 +129,6 @@ export function CameraIcon(props: IconBaseProps & { enabled?: boolean }): JSX.El
   );
 }
 
-export function ScreenShareIcon(props: IconBaseProps): JSX.Element {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width={props.width ?? 16}
-      height={props.height ?? 16}
-      class={props.class}
-      aria-hidden="true"
-    >
-      <path
-        d="M3.5 5A1.5 1.5 0 0 1 5 3.5h14A1.5 1.5 0 0 1 20.5 5v10A1.5 1.5 0 0 1 19 16.5H5A1.5 1.5 0 0 1 3.5 15z"
-        fill="currentColor"
-      />
-      <path
-        d="M8.5 20h7"
-        stroke="currentColor"
-        stroke-width="1.8"
-        stroke-linecap="round"
-        fill="none"
-      />
-      <path
-        d="M12 16.5V20"
-        stroke="currentColor"
-        stroke-width="1.8"
-        stroke-linecap="round"
-        fill="none"
-      />
-    </svg>
-  );
-}
-
 export function CloseIcon(props: IconBaseProps): JSX.Element {
   return (
     <svg

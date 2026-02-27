@@ -11,7 +11,7 @@ help:
 	@echo "Client (Tauri):"
 	@echo "  tauri-dev            - Run Tauri in development mode"
 	@echo "  tauri-build          - Build Tauri app (debug)"
-	@echo "  tauri-build-release  - Build Tauri app (release, with native-nvenc on Windows)"
+	@echo "  tauri-build-release  - Build Tauri app (release)"
 	@echo ""
 	@echo "Client (Web):"
 	@echo "  dev                  - Run web dev server"
@@ -34,13 +34,6 @@ help:
 	@echo "  db-down              - Stop PostgreSQL container"
 	@echo "  db-logs              - Follow PostgreSQL logs"
 
-# Detect Windows for feature flags
-ifeq ($(OS),Windows_NT)
-    TAURI_FEATURES := --features native-nvenc
-else
-    TAURI_FEATURES :=
-endif
-
 # Client web targets
 dev:
 	npm --prefix client run dev
@@ -59,7 +52,7 @@ tauri-build:
 	cd client && npm run tauri build
 
 tauri-build-release:
-	cd client && npm run tauri build -- $(TAURI_FEATURES)
+	cd client && npm run tauri build
 
 # Server targets
 server-dev:

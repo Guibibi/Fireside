@@ -60,11 +60,11 @@ cargo test --manifest-path client/src-tauri/Cargo.toml
 
 ### Server
 
-Axum HTTP + WebSocket server with mediasoup-based SFU for WebRTC voice/video/screen sharing.
+Axum HTTP + WebSocket server with mediasoup-based SFU for WebRTC voice/video.
 
 - **Routes** (`server/src/routes/`): auth, channels, messages, users, DMs, media uploads, reactions, embeds, invites, emojis, GIFs
 - **WebSocket** (`server/src/ws/`): real-time messaging, presence, voice state, media signaling. Tagged JSON protocol with `type` discriminator.
-- **Media** (`server/src/media/`): mediasoup workers/routers/transports/producers/consumers. Native RTP ingestion for desktop screen share.
+- **Media** (`server/src/media/`): mediasoup workers/routers/transports/producers/consumers.
 - **Database**: PostgreSQL 15+ with SQLx. Migrations in `server/migrations/` auto-run at startup.
 - **Auth**: JWT + Argon2 password hashing with rate-limited auth endpoints.
 - **Config**: `server/src/config.rs` (AppConfig struct); env vars from `.env`.
@@ -82,8 +82,7 @@ SolidJS SPA with WebRTC media handling.
 
 ### Tauri Desktop
 
-- Native DXGI screen capture with H.264 encoding (OpenH264, optional NVENC via `native-nvenc` feature)
-- RTP packetizer for sending native captures to mediasoup
+- Tauri host for desktop shell and plugin integrations
 - Plugins: notification, updater, opener
 
 ### WebSocket Protocol Contract

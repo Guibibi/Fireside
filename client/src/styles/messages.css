@@ -10,10 +10,6 @@
   position: relative;
 }
 
-.message-area.is-stream-focused {
-  background: rgba(0, 0, 0, 0.18);
-}
-
 .message-area-header {
   padding: var(--space-xl);
   border-bottom: 1px solid var(--cloud-dark);

@@ -7,7 +7,6 @@ import type {
   QueuedProducerAnnouncement,
   RemoteVideoTile,
   RoutingMode,
-  ScreenShareStateSnapshot,
   TransportHealthState,
 } from "./types";
 
@@ -27,20 +26,6 @@ export let cameraStream: MediaStream | null = null;
 export let cameraTrack: MediaStreamTrack | null = null;
 export let cameraEnabled = false;
 export let cameraError: string | null = null;
-
-// Screen share state
-export let screenProducer: Producer | null = null;
-export let screenStream: MediaStream | null = null;
-export let screenTrack: MediaStreamTrack | null = null;
-export let screenEnabled = false;
-export let screenError: string | null = null;
-export let screenRoutingMode: RoutingMode | null = null;
-
-// Native capture state
-export let nativeScreenProducerId: string | null = null;
-export let nativeFallbackMonitorTimer: ReturnType<typeof setInterval> | null = null;
-export let nativeFallbackMonitorRunning = false;
-export let nativeCaptureAttempted = false;
 
 // Initialization state
 export let initializedForChannelId: string | null = null;
@@ -92,7 +77,6 @@ export const transportHealthSubscribers = new Set<(state: TransportHealthState) 
 // Subscribers
 export const videoTilesSubscribers = new Set<(tiles: RemoteVideoTile[]) => void>();
 export const cameraStateSubscribers = new Set<(snapshot: CameraStateSnapshot) => void>();
-export const screenStateSubscribers = new Set<(snapshot: ScreenShareStateSnapshot) => void>();
 export const audioPlaybackErrorSubscribers = new Set<(username: string | undefined) => void>();
 
 // State setters
@@ -109,18 +93,6 @@ export function setCameraStream(value: MediaStream | null) { cameraStream = valu
 export function setCameraTrack(value: MediaStreamTrack | null) { cameraTrack = value; }
 export function setCameraEnabled(value: boolean) { cameraEnabled = value; }
 export function setCameraError(value: string | null) { cameraError = value; }
-
-export function setScreenProducer(value: Producer | null) { screenProducer = value; }
-export function setScreenStream(value: MediaStream | null) { screenStream = value; }
-export function setScreenTrack(value: MediaStreamTrack | null) { screenTrack = value; }
-export function setScreenEnabled(value: boolean) { screenEnabled = value; }
-export function setScreenError(value: string | null) { screenError = value; }
-export function setScreenRoutingMode(value: RoutingMode | null) { screenRoutingMode = value; }
-
-export function setNativeScreenProducerId(value: string | null) { nativeScreenProducerId = value; }
-export function setNativeFallbackMonitorTimer(value: ReturnType<typeof setInterval> | null) { nativeFallbackMonitorTimer = value; }
-export function setNativeFallbackMonitorRunning(value: boolean) { nativeFallbackMonitorRunning = value; }
-export function setNativeCaptureAttempted(value: boolean) { nativeCaptureAttempted = value; }
 
 export function setInitializedForChannelId(value: string | null) { initializedForChannelId = value; }
 export function setInitializingForChannelId(value: string | null) { initializingForChannelId = value; }

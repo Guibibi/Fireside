@@ -79,10 +79,6 @@ pub enum MediaSignalRequest {
         request_id: Option<String>,
         producer_id: String,
     },
-    CreateNativeSenderSession {
-        request_id: Option<String>,
-        preferred_codecs: Option<Vec<String>>,
-    },
     ClientDiagnostic {
         request_id: Option<String>,
         event: String,
@@ -99,7 +95,6 @@ pub fn request_id_for(request: &MediaSignalRequest) -> Option<String> {
         | MediaSignalRequest::MediaConsume { request_id, .. }
         | MediaSignalRequest::MediaResumeConsumer { request_id, .. }
         | MediaSignalRequest::MediaCloseProducer { request_id, .. }
-        | MediaSignalRequest::CreateNativeSenderSession { request_id, .. }
         | MediaSignalRequest::ClientDiagnostic { request_id, .. } => request_id.clone(),
     }
 }
@@ -198,7 +193,6 @@ pub fn validate_media_signal_request_fields(
                 }
             }
         }
-        MediaSignalRequest::CreateNativeSenderSession { .. } => {}
         MediaSignalRequest::GetRouterRtpCapabilities { .. } => {}
     }
 
@@ -246,13 +240,7 @@ pub fn resolve_producer_source(
             }
             Ok(ProducerSource::Camera)
         }
-        Some("screen") => {
-            if kind != MediaKind::Video {
-                return Err("source 'screen' requires kind 'video'".into());
-            }
-            Ok(ProducerSource::Screen)
-        }
-        Some(_) => Err("source must be 'microphone', 'camera', or 'screen'".into()),
+        Some(_) => Err("source must be 'microphone' or 'camera'".into()),
         None => Ok(match kind {
             MediaKind::Audio => ProducerSource::Microphone,
             MediaKind::Video => ProducerSource::Camera,
@@ -928,85 +916,6 @@ pub async fn handle_media_signal_message(
 
                     broadcast_closed_producers(state, &[closed_producer], Some(connection_id))
                         .await;
-                }
-                Err(error_message) => {
-                    if send_media_signal_error(
-                        state,
-                        connection_id,
-                        username,
-                        out_tx,
-                        channel_id,
-                        request_id,
-                        &error_message,
-                    )
-                    .should_disconnect()
-                    {
-                        return true;
-                    }
-                }
-            }
-        }
-        MediaSignalRequest::CreateNativeSenderSession {
-            request_id,
-            preferred_codecs,
-        } => {
-            let opus_config = get_channel_opus_config(state, channel_id).await;
-            match state
-                .media
-                .create_native_sender_session_for_connection(
-                    connection_id,
-                    channel_id,
-                    preferred_codecs,
-                    opus_config,
-                )
-                .await
-            {
-                Ok(session) => {
-                    let send_outcome = send_media_signal_payload(
-                        state,
-                        connection_id,
-                        username,
-                        out_tx,
-                        channel_id,
-                        serde_json::json!({
-                            "action": "native_sender_session_created",
-                            "request_id": request_id,
-                            "producer_id": session.producer_id,
-                            "kind": session.kind,
-                            "source": session.source,
-                            "routing_mode": session.routing_mode,
-                            "rtp_target": session.rtp_target,
-                            "payload_type": session.payload_type,
-                            "ssrc": session.ssrc,
-                            "mime_type": session.mime_type,
-                            "clock_rate": session.clock_rate,
-                            "packetization_mode": session.packetization_mode,
-                            "profile_level_id": session.profile_level_id,
-                            "codec": session.codec,
-                            "available_codecs": session.available_codecs,
-                        }),
-                    );
-                    if send_outcome.should_disconnect() {
-                        return true;
-                    }
-                    if send_outcome.should_stop_processing() {
-                        return false;
-                    }
-
-                    broadcast_media_signal_to_voice_channel(
-                        state,
-                        channel_id,
-                        serde_json::json!({
-                            "action": "new_producer",
-                            "producer_id": session.producer_id,
-                            "kind": session.kind,
-                            "source": session.source,
-                            "routing_mode": session.routing_mode,
-                            "username": username,
-                        }),
-                        Some(connection_id),
-                    )
-                    .await;
                 }
                 Err(error_message) => {
                     if send_media_signal_error(

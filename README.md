@@ -21,8 +21,7 @@ There currently no roles or permissions, so make sure that only people you trust
 ## What You Get
 
 - Real-time text channels
-- Voice, video, and screen share
-- NVENC-powered screen streaming on Windows
+- Voice and video chat
 - Presence and typing indicators
 - Lightweight join flow (server URL + password + username)
 - Self-hosted deployment on infrastructure you control

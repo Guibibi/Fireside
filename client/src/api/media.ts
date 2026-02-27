@@ -9,8 +9,6 @@ export type {
   CameraStateSnapshot,
   RemoteVideoTile,
   RoutingMode,
-  ScreenShareStartOptions,
-  ScreenShareStateSnapshot,
   TransportHealthState,
 } from "./media/index";
 
@@ -23,9 +21,6 @@ export {
   localCameraEnabled,
   localCameraError,
   localCameraStream,
-  localScreenShareEnabled,
-  localScreenShareError,
-  localScreenShareStream,
   remoteVideoTiles,
   resetPreferredAudioDevices,
   retryAudioPlayback,
@@ -35,12 +30,9 @@ export {
   setPreferredSpeakerDevice,
   setSpeakersMuted,
   startLocalCameraProducer,
-  startLocalScreenProducer,
   stopLocalCameraProducer,
-  stopLocalScreenProducer,
   subscribeCameraState,
   subscribeAudioPlaybackError,
-  subscribeScreenState,
   subscribeTransportHealth,
   subscribeVideoTiles,
 } from "./media/index";

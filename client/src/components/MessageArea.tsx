@@ -30,8 +30,6 @@ import { sendDesktopNotification } from "../utils/desktopNotifications";
 import MessageComposer from "./MessageComposer";
 import MessageTimeline from "./MessageTimeline";
 import VideoStage from "./VideoStage";
-import StreamWatchOverlay from "./StreamWatchOverlay";
-import { isStreamWatchFocused } from "../stores/voice";
 import { useTypingPresence } from "./useTypingPresence";
 import { clearDmTypingUsers, dmThreadById, dmTypingUsernames, removeDmTypingUser, setDmUnreadCount, touchDmTypingUser } from "../stores/dms";
 import {
@@ -1282,7 +1280,7 @@ export default function MessageArea() {
   });
 
   return (
-    <div class={`message-area${isStreamWatchFocused() ? " is-stream-focused" : ""}`}>
+    <div class="message-area">
       <MessageTimeline
         activeChannel={activeChannel()}
         loading={historyLoading()}
@@ -1366,7 +1364,6 @@ export default function MessageArea() {
       <Show when={wsError()}>
         <p class="error message-error">{wsError()}</p>
       </Show>
-      <StreamWatchOverlay />
     </div>
   );
 }

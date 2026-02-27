@@ -261,13 +261,12 @@ export async function consumeRemoteProducer(channelId: string, producerId: strin
       }
     } else {
       const username = producerUsernameById.get(description.producer_id) ?? "Unknown";
-      const source = producerSourceById.get(description.producer_id) === "screen" ? "screen" : "camera";
       const routingMode = producerRoutingModeById.get(description.producer_id) ?? "sfu";
       remoteVideoTilesByProducerId.set(description.producer_id, {
         producerId: description.producer_id,
         username,
         stream: new MediaStream([consumer.track]),
-        source,
+        source: "camera",
         routingMode,
       });
       notifyVideoTilesSubscribers();

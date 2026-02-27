@@ -1,18 +1,15 @@
 import { createSignal } from "solid-js";
 import {
   type CameraStateSnapshot,
-  type ScreenShareStateSnapshot,
   type RemoteVideoTile,
   type TransportHealthState,
   subscribeCameraState,
-  subscribeScreenState,
   subscribeTransportHealth,
   subscribeVideoTiles,
 } from "../api/media";
 import { onConnectionStatus, type WsConnectionStatus } from "../api/ws";
 
 export type VoiceActionState = "idle" | "joining" | "leaving";
-export type StreamWatchMode = "none" | "focused" | "mini";
 
 export interface VoicePresenceChannel {
   channel_id: string;
@@ -36,15 +33,8 @@ const [voiceRejoinNotice, setVoiceRejoinNotice] = createSignal(false);
 const [cameraEnabled, setCameraEnabled] = createSignal(false);
 const [cameraError, setCameraError] = createSignal<string | null>(null);
 const [localVideoStream, setLocalVideoStream] = createSignal<MediaStream | null>(null);
-const [screenShareEnabled, setScreenShareEnabled] = createSignal(false);
-const [screenShareError, setScreenShareError] = createSignal<string | null>(null);
-const [localScreenShareStream, setLocalScreenShareStream] = createSignal<MediaStream | null>(null);
-const [screenShareRoutingMode, setScreenShareRoutingMode] = createSignal<"sfu" | null>(null);
 const [videoTiles, setVideoTiles] = createSignal<RemoteVideoTile[]>([]);
 const [voiceConnectionStatus, setVoiceConnectionStatus] = createSignal<WsConnectionStatus>("disconnected");
-const [streamWatchMode, setStreamWatchMode] = createSignal<StreamWatchMode>("none");
-const [watchedStreamProducerId, setWatchedStreamProducerId] = createSignal<string | null>(null);
-const [streamWatchNotice, setStreamWatchNotice] = createSignal<string | null>(null);
 const [transportHealth, setTransportHealth] = createSignal<TransportHealthState>("new");
 let lastVoiceChannelBeforeDisconnect: string | null = null;
 
@@ -58,7 +48,6 @@ export function getLastVoiceChannelBeforeDisconnect(): string | null {
 
 let unsubscribeVideoTiles: (() => void) | null = null;
 let unsubscribeCameraState: (() => void) | null = null;
-let unsubscribeScreenState: (() => void) | null = null;
 let unsubscribeConnectionStatus: (() => void) | null = null;
 let unsubscribeTransportHealth: (() => void) | null = null;
 
@@ -341,13 +330,6 @@ function applyCameraStateSnapshot(snapshot: CameraStateSnapshot) {
   setLocalVideoStream(snapshot.stream);
 }
 
-function applyScreenStateSnapshot(snapshot: ScreenShareStateSnapshot) {
-  setScreenShareEnabled(snapshot.enabled);
-  setScreenShareError(snapshot.error);
-  setLocalScreenShareStream(snapshot.stream);
-  setScreenShareRoutingMode(snapshot.routingMode);
-}
-
 export function startCameraStateSubscription() {
   if (unsubscribeCameraState) {
     return;
@@ -358,27 +340,10 @@ export function startCameraStateSubscription() {
   });
 }
 
-export function startScreenStateSubscription() {
-  if (unsubscribeScreenState) {
-    return;
-  }
-
-  unsubscribeScreenState = subscribeScreenState((snapshot) => {
-    applyScreenStateSnapshot(snapshot);
-  });
-}
-
 export function stopCameraStateSubscription() {
   if (unsubscribeCameraState) {
     unsubscribeCameraState();
     unsubscribeCameraState = null;
-  }
-}
-
-export function stopScreenStateSubscription() {
-  if (unsubscribeScreenState) {
-    unsubscribeScreenState();
-    unsubscribeScreenState = null;
   }
 }
 
@@ -394,16 +359,9 @@ export function stopVideoTilesSubscription() {
 export function resetVoiceMediaState() {
   stopVideoTilesSubscription();
   stopCameraStateSubscription();
-  stopScreenStateSubscription();
   setCameraEnabled(false);
   setCameraError(null);
   setLocalVideoStream(null);
-  setScreenShareEnabled(false);
-  setScreenShareError(null);
-  setLocalScreenShareStream(null);
-  setScreenShareRoutingMode(null);
-  setStreamWatchMode("none");
-  setWatchedStreamProducerId(null);
 }
 
 export function resetVoiceState() {
@@ -417,50 +375,9 @@ export function resetVoiceState() {
   setVoiceRejoinNotice(false);
   lastVoiceChannelBeforeDisconnect = null;
   setVoiceConnectionStatus("disconnected");
-  setStreamWatchNotice(null);
   stopTransportHealthSubscription();
   setTransportHealth("new");
   resetVoiceMediaState();
-}
-
-export function startWatchingStream(producerId: string) {
-  setWatchedStreamProducerId(producerId);
-  setStreamWatchMode("focused");
-  setStreamWatchNotice(null);
-}
-
-export function minimizeWatchingStream() {
-  if (!watchedStreamProducerId()) {
-    setStreamWatchMode("none");
-    return;
-  }
-
-  setStreamWatchMode("mini");
-}
-
-export function focusWatchingStream() {
-  if (!watchedStreamProducerId()) {
-    return;
-  }
-
-  setStreamWatchMode("focused");
-}
-
-export function stopWatchingStream() {
-  setStreamWatchMode("none");
-  setWatchedStreamProducerId(null);
-}
-
-export function isStreamWatchFocused(): boolean {
-  return streamWatchMode() === "focused" && watchedStreamProducerId() !== null;
-}
-
-export function showStreamWatchNotice(message: string) {
-  setStreamWatchNotice(message);
-}
-
-export function clearStreamWatchNotice() {
-  setStreamWatchNotice(null);
 }
 
 export function showVoiceRejoinNotice() {
@@ -485,19 +402,12 @@ export {
   cameraError,
   joinedVoiceChannelId,
   localVideoStream,
-  localScreenShareStream,
   participantsByChannel,
   muteStateByChannel,
-  screenShareEnabled,
-  screenShareError,
-  screenShareRoutingMode,
   speakingByChannel,
   transportHealth,
   videoTiles,
   voiceConnectionStatus,
-  streamWatchMode,
-  watchedStreamProducerId,
-  streamWatchNotice,
   voiceActionState,
   setVoiceActionState,
   micMuted,

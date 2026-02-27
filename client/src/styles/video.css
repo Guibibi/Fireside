@@ -39,10 +39,6 @@
   border-color: var(--accent);
 }
 
-.video-stage-tile.is-screen-share {
-  border-color: var(--warning);
-}
-
 .video-stage-stream {
   width: 100%;
   aspect-ratio: 16 / 9;
