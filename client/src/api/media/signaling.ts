@@ -6,6 +6,8 @@ import {
   initializedForChannelId,
   initializingForChannelId,
   pendingRequests,
+  producerScreenCaptureKindById,
+  producerScreenCaptureLabelById,
   producerRoutingModeById,
   producerSourceById,
   producerUsernameById,
@@ -78,6 +80,12 @@ export function ensureSignalListener() {
       if (payload.routing_mode) {
         producerRoutingModeById.set(payload.producer_id, payload.routing_mode);
       }
+      if (payload.screen_capture_kind) {
+        producerScreenCaptureKindById.set(payload.producer_id, payload.screen_capture_kind);
+      }
+      if (payload.screen_capture_label) {
+        producerScreenCaptureLabelById.set(payload.producer_id, payload.screen_capture_label);
+      }
       queueOrConsumeProducer(
         msg.channel_id,
         payload.producer_id,
@@ -85,6 +93,8 @@ export function ensureSignalListener() {
         payload.source,
         payload.routing_mode,
         payload.username,
+        payload.screen_capture_kind,
+        payload.screen_capture_label,
       );
       return;
     }
@@ -93,6 +103,8 @@ export function ensureSignalListener() {
       producerUsernameById.delete(payload.producer_id);
       producerSourceById.delete(payload.producer_id);
       producerRoutingModeById.delete(payload.producer_id);
+      producerScreenCaptureKindById.delete(payload.producer_id);
+      producerScreenCaptureLabelById.delete(payload.producer_id);
       if (remoteVideoTilesByProducerId.delete(payload.producer_id)) {
         notifyVideoTilesSubscribers();
       }

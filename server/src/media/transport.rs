@@ -57,6 +57,8 @@ pub(crate) struct ProducerEntry {
     pub producer: Producer,
     pub source: ProducerSource,
     pub routing_mode: RoutingMode,
+    pub screen_capture_kind: Option<String>,
+    pub screen_capture_label: Option<String>,
 }
 
 impl TransportDirection {
@@ -117,7 +119,19 @@ pub struct PublishedProducer {
     pub kind: String,
     pub source: String,
     pub routing_mode: String,
+    pub screen_capture_kind: Option<String>,
+    pub screen_capture_label: Option<String>,
     pub owner_connection_id: Uuid,
+}
+
+#[derive(Debug, Clone)]
+pub struct ProducerPublishRequest {
+    pub kind: MediaKind,
+    pub source: ProducerSource,
+    pub routing_mode: RoutingMode,
+    pub screen_capture_kind: Option<String>,
+    pub screen_capture_label: Option<String>,
+    pub rtp_parameters: RtpParameters,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -341,11 +355,17 @@ impl MediaService {
         &self,
         connection_id: Uuid,
         channel_id: Uuid,
-        kind: MediaKind,
-        source: ProducerSource,
-        routing_mode: RoutingMode,
-        rtp_parameters: RtpParameters,
+        request: ProducerPublishRequest,
     ) -> Result<PublishedProducer, String> {
+        let ProducerPublishRequest {
+            kind,
+            source,
+            routing_mode,
+            screen_capture_kind,
+            screen_capture_label,
+            rtp_parameters,
+        } = request;
+
         enum TransportForProduce {
             WebRtc(WebRtcTransport),
             Plain(PlainTransport),
@@ -410,6 +430,17 @@ impl MediaService {
         .map_err(|error| format!("Failed to create producer: {error}"))?;
 
         let producer_id = producer.id().to_string();
+        let screen_capture_kind = if source == ProducerSource::Screen {
+            screen_capture_kind
+        } else {
+            None
+        };
+
+        let screen_capture_label = if source == ProducerSource::Screen {
+            screen_capture_label
+        } else {
+            None
+        };
 
         {
             let media_state_lock = self.connection_media();
@@ -446,6 +477,8 @@ impl MediaService {
                     producer,
                     source,
                     routing_mode,
+                    screen_capture_kind: screen_capture_kind.clone(),
+                    screen_capture_label: screen_capture_label.clone(),
                 },
             );
         }
@@ -455,6 +488,8 @@ impl MediaService {
             kind: media_kind_as_str(kind).to_string(),
             source: source.as_str().to_string(),
             routing_mode: routing_mode.as_str().to_string(),
+            screen_capture_kind,
+            screen_capture_label,
             owner_connection_id: connection_id,
         })
     }
@@ -483,6 +518,8 @@ impl MediaService {
                             kind: media_kind_as_str(producer.producer.kind()).to_string(),
                             source: producer.source.as_str().to_string(),
                             routing_mode: producer.routing_mode.as_str().to_string(),
+                            screen_capture_kind: producer.screen_capture_kind.clone(),
+                            screen_capture_label: producer.screen_capture_label.clone(),
                             owner_connection_id: *connection_id,
                         })
                         .collect::<Vec<_>>(),

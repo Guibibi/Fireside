@@ -15,6 +15,8 @@ import {
   device,
   initializedForChannelId,
   producerRoutingModeById,
+  producerScreenCaptureKindById,
+  producerScreenCaptureLabelById,
   producerSourceById,
   producerUsernameById,
   queuedProducerAnnouncements,
@@ -27,7 +29,13 @@ import {
   speakersMuted,
 } from "./state";
 import { notifyAudioPlaybackError, notifyVideoTilesSubscribers } from "./subscriptions";
-import type { MediaKind, MediaSource, RoutingMode, SinkableAudioElement } from "./types";
+import type {
+  MediaKind,
+  MediaSource,
+  RoutingMode,
+  ScreenCaptureKind,
+  SinkableAudioElement,
+} from "./types";
 
 const consumeInFlight = new Set<string>();
 
@@ -131,6 +139,8 @@ export function disposeRemoteConsumer(consumerId: string) {
       consumerIdByProducerId.delete(producerId);
       producerSourceById.delete(producerId);
       producerRoutingModeById.delete(producerId);
+      producerScreenCaptureKindById.delete(producerId);
+      producerScreenCaptureLabelById.delete(producerId);
       producerUsernameById.delete(producerId);
       if (remoteVideoTilesByProducerId.delete(producerId)) {
         notifyVideoTilesSubscribers();
@@ -174,6 +184,8 @@ export async function consumeRemoteProducer(channelId: string, producerId: strin
       source: producerSourceById.get(producerId),
       routingMode: producerRoutingModeById.get(producerId),
       username: producerUsernameById.get(producerId),
+      screenCaptureKind: producerScreenCaptureKindById.get(producerId),
+      screenCaptureLabel: producerScreenCaptureLabelById.get(producerId),
     });
     return;
   }
@@ -270,6 +282,8 @@ export async function consumeRemoteProducer(channelId: string, producerId: strin
         stream: new MediaStream([consumer.track]),
         source: tileSource,
         routingMode,
+        screenCaptureKind: producerScreenCaptureKindById.get(description.producer_id),
+        screenCaptureLabel: producerScreenCaptureLabelById.get(description.producer_id),
       });
       notifyVideoTilesSubscribers();
 
@@ -324,6 +338,8 @@ export function queueOrConsumeProducer(
   source: MediaSource | undefined,
   routingMode: RoutingMode | undefined,
   username?: string,
+  screenCaptureKind?: ScreenCaptureKind,
+  screenCaptureLabel?: string,
 ) {
   if (username) {
     producerUsernameById.set(producerId, username);
@@ -337,17 +353,39 @@ export function queueOrConsumeProducer(
     producerRoutingModeById.set(producerId, routingMode);
   }
 
+  if (screenCaptureKind) {
+    producerScreenCaptureKindById.set(producerId, screenCaptureKind);
+  }
+
+  if (screenCaptureLabel) {
+    producerScreenCaptureLabelById.set(producerId, screenCaptureLabel);
+  }
+
   if (isConsumingProducer(producerId)) {
     return;
   }
 
   if (!device || !recvTransport || initializedForChannelId !== channelId) {
-    queuedProducerAnnouncements.set(producerId, { kind, source, routingMode, username });
+    queuedProducerAnnouncements.set(producerId, {
+      kind,
+      source,
+      routingMode,
+      username,
+      screenCaptureKind,
+      screenCaptureLabel,
+    });
     return;
   }
 
   void consumeRemoteProducer(channelId, producerId).catch(() => {
-    queuedProducerAnnouncements.set(producerId, { kind, source, routingMode, username });
+    queuedProducerAnnouncements.set(producerId, {
+      kind,
+      source,
+      routingMode,
+      username,
+      screenCaptureKind,
+      screenCaptureLabel,
+    });
   });
 }
 
@@ -368,12 +406,22 @@ export function flushQueuedProducerAnnouncements(channelId: string) {
       producerRoutingModeById.set(producerId, queued.routingMode);
     }
 
+    if (queued.screenCaptureKind) {
+      producerScreenCaptureKindById.set(producerId, queued.screenCaptureKind);
+    }
+
+    if (queued.screenCaptureLabel) {
+      producerScreenCaptureLabelById.set(producerId, queued.screenCaptureLabel);
+    }
+
     void consumeRemoteProducer(channelId, producerId).catch(() => {
       queuedProducerAnnouncements.set(producerId, {
         kind: queued.kind,
         source: queued.source,
         routingMode: queued.routingMode,
         username: queued.username,
+        screenCaptureKind: queued.screenCaptureKind,
+        screenCaptureLabel: queued.screenCaptureLabel,
       });
     });
   }

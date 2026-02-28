@@ -270,6 +270,44 @@
   white-space: nowrap;
 }
 
+.channel-voice-member-live-badge {
+  margin-left: auto;
+  padding: 0.1rem 0.4rem;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--danger);
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  color: var(--danger);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1;
+}
+
+.channel-voice-member-watch {
+  margin-left: var(--space-xs);
+  padding: 0.12rem 0.5rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--cloud);
+  background: color-mix(in srgb, var(--cloud) 14%, transparent);
+  color: var(--snow);
+  font-size: 0.65rem;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+  transition: all 0.15s var(--ease-soft);
+}
+
+.channel-voice-member-watch:hover {
+  border-color: var(--snow);
+  background: color-mix(in srgb, var(--cloud) 28%, transparent);
+}
+
+.channel-voice-member-watch.is-active {
+  border-color: var(--success);
+  color: var(--success);
+  background: color-mix(in srgb, var(--success) 16%, transparent);
+}
+
 .channel-voice-member-mute-icons {
   margin-left: var(--space-xs);
   display: inline-flex;

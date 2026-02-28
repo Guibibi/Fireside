@@ -47,6 +47,7 @@ export type MediaSignalAction =
 export type MediaKind = "audio" | "video";
 export type MediaSource = "microphone" | "camera" | "screen";
 export type RoutingMode = "sfu";
+export type ScreenCaptureKind = "monitor" | "window";
 
 export interface MediaConsumerDescription {
   id: string;
@@ -73,6 +74,8 @@ export interface MediaSignalPayload {
   kind?: MediaKind;
   source?: MediaSource;
   routing_mode?: RoutingMode;
+  screen_capture_kind?: ScreenCaptureKind;
+  screen_capture_label?: string;
   consumer?: MediaConsumerDescription;
   consumer_id?: string;
   id?: string;
@@ -121,6 +124,8 @@ export interface RemoteVideoTile {
   stream: MediaStream;
   source: "camera" | "screen";
   routingMode: RoutingMode;
+  screenCaptureKind?: ScreenCaptureKind;
+  screenCaptureLabel?: string;
 }
 
 export interface PlainTransportInfo {
@@ -135,6 +140,8 @@ export interface QueuedProducerAnnouncement {
   source?: MediaSource;
   routingMode?: RoutingMode;
   username?: string;
+  screenCaptureKind?: ScreenCaptureKind;
+  screenCaptureLabel?: string;
 }
 
 export type TransportHealthState = "new" | "connected" | "disconnected" | "failed" | "closed";

@@ -7,6 +7,7 @@ import type {
   QueuedProducerAnnouncement,
   RemoteVideoTile,
   RoutingMode,
+  ScreenCaptureKind,
   TransportHealthState,
 } from "./types";
 
@@ -59,6 +60,8 @@ export const queuedProducerAnnouncements = new Map<string, QueuedProducerAnnounc
 export const producerUsernameById = new Map<string, string>();
 export const producerSourceById = new Map<string, MediaSource>();
 export const producerRoutingModeById = new Map<string, RoutingMode>();
+export const producerScreenCaptureKindById = new Map<string, ScreenCaptureKind>();
+export const producerScreenCaptureLabelById = new Map<string, string>();
 export const remoteVideoTilesByProducerId = new Map<string, RemoteVideoTile>();
 export const pendingRequests = new Map<string, PendingRequest>();
 

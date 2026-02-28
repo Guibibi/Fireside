@@ -95,6 +95,9 @@ import {
     screenSharing,
     setScreenSharing,
     setScreenShareError,
+    setWatchedScreenProducerId,
+    videoTiles,
+    watchedScreenProducerId,
 } from "../stores/voice";
 import AsyncContent from "./AsyncContent";
 import UserSettingsDock from "./UserSettingsDock";
@@ -295,6 +298,9 @@ export default function ChannelList() {
                     kind: "video",
                     source: "screen",
                     routing_mode: "sfu",
+                    screen_capture_kind: source.kind,
+                    screen_capture_label:
+                        source.kind === "window" ? source.title : source.name,
                     rtp_parameters: buildScreenRtpParameters(),
                 },
             );
@@ -393,6 +399,34 @@ export default function ChannelList() {
                 reducedSize: true,
             },
         };
+    }
+
+    function liveScreenTileForMember(memberUsername: string) {
+        return (
+            videoTiles().find(
+                (tile) =>
+                    tile.source === "screen" &&
+                    tile.username === memberUsername,
+            ) ?? null
+        );
+    }
+
+    function liveStreamTooltip(tile: {
+        username: string;
+        screenCaptureKind?: string;
+        screenCaptureLabel?: string;
+    }): string {
+        if (tile.screenCaptureLabel) {
+            if (tile.screenCaptureKind === "window") {
+                return `Window: ${tile.screenCaptureLabel}`;
+            }
+            if (tile.screenCaptureKind === "monitor") {
+                return `Screen: ${tile.screenCaptureLabel}`;
+            }
+            return `Source: ${tile.screenCaptureLabel}`;
+        }
+
+        return `${displayNameFor(tile.username)} is streaming live`;
     }
 
     function selectChannel(channel: Channel) {
@@ -1195,6 +1229,49 @@ export default function ChannelList() {
                                                                 <span class="channel-voice-member-name">
                                                                     {displayNameFor(memberUsername)}
                                                                 </span>
+                                                                <Show
+                                                                    when={liveScreenTileForMember(memberUsername)}
+                                                                >
+                                                                    {(tile) => {
+                                                                        const isWatching = () =>
+                                                                            watchedScreenProducerId() ===
+                                                                            tile().producerId;
+
+                                                                        return (
+                                                                            <>
+                                                                                <span
+                                                                                    class="channel-voice-member-live-badge"
+                                                                                    title={liveStreamTooltip(tile())}
+                                                                                    aria-label={`${displayNameFor(memberUsername)} is live`}
+                                                                                >
+                                                                                    LIVE
+                                                                                </span>
+                                                                                <button
+                                                                                    type="button"
+                                                                                    class={`channel-voice-member-watch${isWatching() ? " is-active" : ""}`}
+                                                                                    title={
+                                                                                        isWatching()
+                                                                                            ? "Stop watching stream"
+                                                                                            : `Watch stream (${liveStreamTooltip(tile())})`
+                                                                                    }
+                                                                                    onClick={(event) => {
+                                                                                        event.preventDefault();
+                                                                                        event.stopPropagation();
+                                                                                        setWatchedScreenProducerId(
+                                                                                            isWatching()
+                                                                                                ? null
+                                                                                                : tile().producerId,
+                                                                                        );
+                                                                                    }}
+                                                                                >
+                                                                                    {isWatching()
+                                                                                        ? "Watching"
+                                                                                        : "Watch"}
+                                                                                </button>
+                                                                            </>
+                                                                        );
+                                                                    }}
+                                                                </Show>
                                                                 <Show
                                                                     when={
                                                                         voiceMemberMuteState(channel.id, memberUsername)

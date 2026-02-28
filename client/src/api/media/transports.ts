@@ -24,6 +24,8 @@ import {
   micTrack,
   microphoneMuted,
   pendingRequests,
+  producerScreenCaptureKindById,
+  producerScreenCaptureLabelById,
   producerRoutingModeById,
   producerSourceById,
   producerUsernameById,
@@ -217,6 +219,8 @@ export function closeTransports() {
   producerUsernameById.clear();
   producerSourceById.clear();
   producerRoutingModeById.clear();
+  producerScreenCaptureKindById.clear();
+  producerScreenCaptureLabelById.clear();
   clearRemoteVideoTiles();
 }
 

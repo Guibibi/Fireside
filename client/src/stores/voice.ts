@@ -38,6 +38,7 @@ const [voiceConnectionStatus, setVoiceConnectionStatus] = createSignal<WsConnect
 const [transportHealth, setTransportHealth] = createSignal<TransportHealthState>("new");
 const [screenSharing, setScreenSharing] = createSignal(false);
 const [screenShareError, setScreenShareError] = createSignal<string | null>(null);
+const [watchedScreenProducerId, setWatchedScreenProducerId] = createSignal<string | null>(null);
 let lastVoiceChannelBeforeDisconnect: string | null = null;
 
 export function setLastVoiceChannelBeforeDisconnect(channelId: string | null) {
@@ -366,6 +367,7 @@ export function resetVoiceMediaState() {
   setLocalVideoStream(null);
   setScreenSharing(false);
   setScreenShareError(null);
+  setWatchedScreenProducerId(null);
 }
 
 export function resetVoiceState() {
@@ -421,4 +423,6 @@ export {
   setScreenSharing,
   screenShareError,
   setScreenShareError,
+  watchedScreenProducerId,
+  setWatchedScreenProducerId,
 };

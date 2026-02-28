@@ -1,8 +1,10 @@
-import { createSignal, For, Show, createEffect, onCleanup } from "solid-js";
+import { For, Show, createEffect, onCleanup } from "solid-js";
 import {
   cameraEnabled,
   localVideoStream,
+  setWatchedScreenProducerId,
   videoTiles,
+  watchedScreenProducerId,
 } from "../stores/voice";
 import { username as currentUsername } from "../stores/auth";
 
@@ -40,29 +42,35 @@ export default function VideoStage() {
 
   const cameraTiles = () => videoTiles().filter((tile) => tile.source === "camera");
   // Exclude the local user's own screen share from the viewer.
-  const screenTiles = () =>
+  const availableScreenTiles = () =>
     videoTiles().filter((tile) => tile.source === "screen" && tile.username !== me());
 
   const hasCamera = () => cameraEnabled() || cameraTiles().length > 0;
-  const hasScreenShare = () => screenTiles().length > 0;
+  const watchedScreenTile = () => {
+    const watchedProducerId = watchedScreenProducerId();
+    if (!watchedProducerId) {
+      return null;
+    }
+
+    return (
+      availableScreenTiles().find((tile) => tile.producerId === watchedProducerId)
+      ?? null
+    );
+  };
+
+  const hasScreenShare = () => watchedScreenTile() !== null;
   const hasVideo = () => hasCamera() || hasScreenShare();
 
-  // When multiple screen shares exist, the user can pick which to spotlight.
-  const [spotlightIndex, setSpotlightIndex] = createSignal(0);
-
-  // Reset spotlight index when screen tiles change.
   createEffect(() => {
-    const count = screenTiles().length;
-    if (spotlightIndex() >= count) {
-      setSpotlightIndex(Math.max(0, count - 1));
+    const watchedProducerId = watchedScreenProducerId();
+    if (!watchedProducerId) {
+      return;
+    }
+
+    if (!availableScreenTiles().some((tile) => tile.producerId === watchedProducerId)) {
+      setWatchedScreenProducerId(null);
     }
   });
-
-  const spotlightTile = () => {
-    const tiles = screenTiles();
-    if (tiles.length === 0) return null;
-    return tiles[spotlightIndex()] ?? tiles[0];
-  };
 
   return (
     <Show when={hasVideo()}>
@@ -72,7 +80,7 @@ export default function VideoStage() {
           <div class="video-stage-spotlight-layout">
             {/* Main spotlight area */}
             <div class="video-stage-spotlight">
-              <Show when={spotlightTile()}>
+              <Show when={watchedScreenTile()}>
                 {(tile) => (
                   <article class="video-stage-tile is-screen">
                     <StreamVideo stream={tile().stream} muted={false} />
@@ -85,13 +93,13 @@ export default function VideoStage() {
             {/* Sidebar: screen selector + camera tiles */}
             <div class="video-stage-sidebar">
               {/* Screen selector (when multiple screen shares) */}
-              <Show when={screenTiles().length > 1}>
-                <For each={screenTiles()}>
-                  {(tile, idx) => (
+              <Show when={availableScreenTiles().length > 1}>
+                <For each={availableScreenTiles()}>
+                  {(tile) => (
                     <button
                       type="button"
-                      class={`video-stage-sidebar-thumb${spotlightIndex() === idx() ? " is-selected" : ""}`}
-                      onClick={() => setSpotlightIndex(idx())}
+                      class={`video-stage-sidebar-thumb${watchedScreenProducerId() === tile.producerId ? " is-selected" : ""}`}
+                      onClick={() => setWatchedScreenProducerId(tile.producerId)}
                       aria-label={`Switch to ${tile.username}'s screen`}
                     >
                       <StreamVideo stream={tile.stream} muted={false} />

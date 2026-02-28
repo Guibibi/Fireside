@@ -8,7 +8,9 @@ use super::broadcast::{send_server_message, WsEnqueueResult};
 use super::messages::ServerMessage;
 use super::voice::{broadcast_closed_producers, broadcast_media_signal_to_voice_channel};
 use crate::media::router::OpusConfig;
-use crate::media::transport::{ProducerSource, RoutingMode, TransportDirection};
+use crate::media::transport::{
+    ProducerPublishRequest, ProducerSource, RoutingMode, TransportDirection,
+};
 use crate::AppState;
 
 pub const MAX_MEDIA_SIGNAL_PAYLOAD_BYTES: usize = 32 * 1024;
@@ -74,6 +76,8 @@ pub enum MediaSignalRequest {
         kind: String,
         source: Option<String>,
         routing_mode: Option<String>,
+        screen_capture_kind: Option<String>,
+        screen_capture_label: Option<String>,
         rtp_parameters: RtpParameters,
     },
     MediaConsume {
@@ -178,6 +182,8 @@ pub fn validate_media_signal_request_fields(
             kind,
             source,
             routing_mode,
+            screen_capture_kind,
+            screen_capture_label,
             ..
         } => {
             if kind.is_empty() || kind.len() > 16 {
@@ -193,6 +199,24 @@ pub fn validate_media_signal_request_fields(
             if let Some(routing_mode) = routing_mode {
                 if routing_mode.is_empty() || routing_mode.len() > 16 {
                     return Err("routing_mode is invalid");
+                }
+            }
+
+            if source.as_deref() != Some("screen")
+                && (screen_capture_kind.is_some() || screen_capture_label.is_some())
+            {
+                return Err("screen capture metadata requires source 'screen'");
+            }
+
+            if let Some(screen_capture_kind) = screen_capture_kind {
+                if screen_capture_kind != "window" && screen_capture_kind != "monitor" {
+                    return Err("screen_capture_kind must be 'window' or 'monitor'");
+                }
+            }
+
+            if let Some(screen_capture_label) = screen_capture_label {
+                if screen_capture_label.is_empty() || screen_capture_label.len() > 256 {
+                    return Err("screen_capture_label is invalid");
                 }
             }
         }
@@ -609,6 +633,8 @@ pub async fn handle_media_signal_message(
                                     "kind": producer.kind,
                                     "source": producer.source,
                                     "routing_mode": producer.routing_mode,
+                                    "screen_capture_kind": producer.screen_capture_kind,
+                                    "screen_capture_label": producer.screen_capture_label,
                                     "username": producer_owner_username,
                                 }),
                             );
@@ -791,6 +817,8 @@ pub async fn handle_media_signal_message(
             kind,
             source,
             routing_mode,
+            screen_capture_kind,
+            screen_capture_label,
             rtp_parameters,
         } => {
             let kind = match kind.as_str() {
@@ -854,15 +882,30 @@ pub async fn handle_media_signal_message(
                 }
             };
 
+            let screen_capture_kind = if source == ProducerSource::Screen {
+                screen_capture_kind
+            } else {
+                None
+            };
+            let screen_capture_label = if source == ProducerSource::Screen {
+                screen_capture_label
+            } else {
+                None
+            };
+
             match state
                 .media
                 .create_producer_for_connection(
                     connection_id,
                     channel_id,
-                    kind,
-                    source,
-                    routing_mode,
-                    rtp_parameters,
+                    ProducerPublishRequest {
+                        kind,
+                        source,
+                        routing_mode,
+                        screen_capture_kind,
+                        screen_capture_label,
+                        rtp_parameters,
+                    },
                 )
                 .await
             {
@@ -880,6 +923,8 @@ pub async fn handle_media_signal_message(
                             "kind": producer.kind,
                             "source": producer.source,
                             "routing_mode": producer.routing_mode,
+                            "screen_capture_kind": producer.screen_capture_kind,
+                            "screen_capture_label": producer.screen_capture_label,
                         }),
                     );
                     if send_outcome.should_disconnect() {
@@ -898,6 +943,8 @@ pub async fn handle_media_signal_message(
                             "kind": producer.kind,
                             "source": producer.source,
                             "routing_mode": producer.routing_mode,
+                            "screen_capture_kind": producer.screen_capture_kind,
+                            "screen_capture_label": producer.screen_capture_label,
                             "username": username,
                         }),
                         Some(connection_id),
