@@ -128,6 +128,7 @@ pub fn is_operator_or_admin_role(role: &str) -> bool {
     role == "operator" || role == "admin"
 }
 
+#[allow(dead_code)]
 pub fn require_operator_or_admin(claims: &Claims, action: &str) -> Result<(), AppError> {
     if !is_operator_or_admin_role(&claims.role) {
         return Err(AppError::Unauthorized(format!(

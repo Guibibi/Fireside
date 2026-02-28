@@ -36,6 +36,8 @@ const [localVideoStream, setLocalVideoStream] = createSignal<MediaStream | null>
 const [videoTiles, setVideoTiles] = createSignal<RemoteVideoTile[]>([]);
 const [voiceConnectionStatus, setVoiceConnectionStatus] = createSignal<WsConnectionStatus>("disconnected");
 const [transportHealth, setTransportHealth] = createSignal<TransportHealthState>("new");
+const [screenSharing, setScreenSharing] = createSignal(false);
+const [screenShareError, setScreenShareError] = createSignal<string | null>(null);
 let lastVoiceChannelBeforeDisconnect: string | null = null;
 
 export function setLastVoiceChannelBeforeDisconnect(channelId: string | null) {
@@ -362,6 +364,8 @@ export function resetVoiceMediaState() {
   setCameraEnabled(false);
   setCameraError(null);
   setLocalVideoStream(null);
+  setScreenSharing(false);
+  setScreenShareError(null);
 }
 
 export function resetVoiceState() {
@@ -413,4 +417,8 @@ export {
   micMuted,
   speakerMuted,
   voiceRejoinNotice,
+  screenSharing,
+  setScreenSharing,
+  screenShareError,
+  setScreenShareError,
 };

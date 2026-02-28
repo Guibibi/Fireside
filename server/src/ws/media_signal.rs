@@ -59,6 +59,16 @@ pub enum MediaSignalRequest {
         transport_id: String,
         dtls_parameters: DtlsParameters,
     },
+    CreatePlainTransport {
+        request_id: Option<String>,
+    },
+    ConnectPlainTransport {
+        request_id: Option<String>,
+        transport_id: String,
+        ip: String,
+        port: u16,
+        rtcp_port: Option<u16>,
+    },
     MediaProduce {
         request_id: Option<String>,
         kind: String,
@@ -91,6 +101,8 @@ pub fn request_id_for(request: &MediaSignalRequest) -> Option<String> {
         MediaSignalRequest::GetRouterRtpCapabilities { request_id }
         | MediaSignalRequest::CreateWebrtcTransport { request_id, .. }
         | MediaSignalRequest::ConnectWebrtcTransport { request_id, .. }
+        | MediaSignalRequest::CreatePlainTransport { request_id, .. }
+        | MediaSignalRequest::ConnectPlainTransport { request_id, .. }
         | MediaSignalRequest::MediaProduce { request_id, .. }
         | MediaSignalRequest::MediaConsume { request_id, .. }
         | MediaSignalRequest::MediaResumeConsumer { request_id, .. }
@@ -143,6 +155,23 @@ pub fn validate_media_signal_request_fields(
         MediaSignalRequest::ConnectWebrtcTransport { transport_id, .. } => {
             if transport_id.is_empty() || transport_id.len() > MAX_ENTITY_ID_CHARS {
                 return Err("transport_id is invalid");
+            }
+        }
+        MediaSignalRequest::CreatePlainTransport { .. } => {}
+        MediaSignalRequest::ConnectPlainTransport {
+            transport_id,
+            ip,
+            port,
+            ..
+        } => {
+            if transport_id.is_empty() || transport_id.len() > MAX_ENTITY_ID_CHARS {
+                return Err("transport_id is invalid");
+            }
+            if ip.is_empty() || ip.len() > 64 {
+                return Err("ip is invalid");
+            }
+            if *port == 0 {
+                return Err("port is invalid");
             }
         }
         MediaSignalRequest::MediaProduce {
@@ -240,7 +269,13 @@ pub fn resolve_producer_source(
             }
             Ok(ProducerSource::Camera)
         }
-        Some(_) => Err("source must be 'microphone' or 'camera'".into()),
+        Some("screen") => {
+            if kind != MediaKind::Video {
+                return Err("source 'screen' requires kind 'video'".into());
+            }
+            Ok(ProducerSource::Screen)
+        }
+        Some(_) => Err("source must be 'microphone', 'camera', or 'screen'".into()),
         None => Ok(match kind {
             MediaKind::Audio => ProducerSource::Microphone,
             MediaKind::Video => ProducerSource::Camera,
@@ -628,6 +663,104 @@ pub async fn handle_media_signal_message(
                         channel_id,
                         serde_json::json!({
                             "action": "webrtc_transport_connected",
+                            "request_id": request_id,
+                            "transport_id": transport_id,
+                        }),
+                    )
+                    .should_disconnect()
+                    {
+                        return true;
+                    }
+                }
+                Err(error_message) => {
+                    if send_media_signal_error(
+                        state,
+                        connection_id,
+                        username,
+                        out_tx,
+                        channel_id,
+                        request_id,
+                        &error_message,
+                    )
+                    .should_disconnect()
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+        MediaSignalRequest::CreatePlainTransport { request_id } => {
+            match state
+                .media
+                .create_plain_transport_for_connection(connection_id, channel_id)
+                .await
+            {
+                Ok(transport) => {
+                    if send_media_signal_payload(
+                        state,
+                        connection_id,
+                        username,
+                        out_tx,
+                        channel_id,
+                        serde_json::json!({
+                            "action": "plain_transport_created",
+                            "request_id": request_id,
+                            "id": transport.id,
+                            "ip": transport.ip,
+                            "port": transport.port,
+                            "rtcp_port": transport.rtcp_port,
+                        }),
+                    )
+                    .should_disconnect()
+                    {
+                        return true;
+                    }
+                }
+                Err(error_message) => {
+                    if send_media_signal_error(
+                        state,
+                        connection_id,
+                        username,
+                        out_tx,
+                        channel_id,
+                        request_id,
+                        &error_message,
+                    )
+                    .should_disconnect()
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+        MediaSignalRequest::ConnectPlainTransport {
+            request_id,
+            transport_id,
+            ip,
+            port,
+            rtcp_port,
+        } => {
+            match state
+                .media
+                .connect_plain_transport_for_connection(
+                    connection_id,
+                    channel_id,
+                    &transport_id,
+                    &ip,
+                    port,
+                    rtcp_port,
+                )
+                .await
+            {
+                Ok(()) => {
+                    if send_media_signal_payload(
+                        state,
+                        connection_id,
+                        username,
+                        out_tx,
+                        channel_id,
+                        serde_json::json!({
+                            "action": "plain_transport_connected",
                             "request_id": request_id,
                             "transport_id": transport_id,
                         }),

@@ -287,6 +287,24 @@ export function ExternalLinkIcon(props: IconBaseProps): JSX.Element {
   );
 }
 
+export function ScreenShareIcon(props: IconBaseProps & { active?: boolean }): JSX.Element {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width={props.width ?? 16}
+      height={props.height ?? 16}
+      class={props.class}
+      aria-hidden="true"
+    >
+      <rect x="2" y="4" width="20" height="13" rx="2" fill="none" stroke="currentColor" stroke-width="2" />
+      <path d="M8 21h8M12 17v4" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+      {props.active && (
+        <circle cx="12" cy="10.5" r="3" fill="currentColor" opacity="0.9" />
+      )}
+    </svg>
+  );
+}
+
 export function MenuIcon(props: IconBaseProps): JSX.Element {
   return (
     <svg

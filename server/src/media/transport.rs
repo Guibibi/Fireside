@@ -1,11 +1,14 @@
 use mediasoup::prelude::{
     Consumer, ConsumerId, ConsumerOptions, DtlsParameters, IceCandidate, IceParameters, MediaKind,
-    Producer, ProducerId, ProducerOptions, RtpCapabilities, RtpCapabilitiesFinalized,
-    RtpParameters, Transport, WebRtcTransport, WebRtcTransportListenInfos, WebRtcTransportOptions,
+    PlainTransport, PlainTransportOptions, PlainTransportRemoteParameters, Producer, ProducerId,
+    ProducerOptions, RtpCapabilities, RtpCapabilitiesFinalized, RtpParameters, Transport,
+    WebRtcTransport, WebRtcTransportListenInfos, WebRtcTransportOptions,
     WebRtcTransportRemoteParameters,
 };
 use serde::Serialize;
 use std::collections::HashMap;
+use std::net::IpAddr;
+use std::str::FromStr;
 use uuid::Uuid;
 
 use super::router::OpusConfig;
@@ -22,6 +25,7 @@ pub enum TransportDirection {
 pub enum ProducerSource {
     Microphone,
     Camera,
+    Screen,
 }
 
 impl ProducerSource {
@@ -29,6 +33,7 @@ impl ProducerSource {
         match self {
             Self::Microphone => "microphone",
             Self::Camera => "camera",
+            Self::Screen => "screen",
         }
     }
 }
@@ -79,6 +84,8 @@ pub(crate) struct ConnectionMediaState {
     pub transports: HashMap<String, WebRtcTransport>,
     pub producers: HashMap<String, ProducerEntry>,
     pub consumers: HashMap<String, Consumer>,
+    pub plain_transports: HashMap<String, PlainTransport>,
+    pub screen_plain_transport_id: Option<String>,
 }
 
 impl ConnectionMediaState {
@@ -90,8 +97,18 @@ impl ConnectionMediaState {
             transports: HashMap::new(),
             producers: HashMap::new(),
             consumers: HashMap::new(),
+            plain_transports: HashMap::new(),
+            screen_plain_transport_id: None,
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CreatedPlainTransport {
+    pub id: String,
+    pub ip: String,
+    pub port: u16,
+    pub rtcp_port: Option<u16>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -227,6 +244,99 @@ impl MediaService {
             .map_err(|error| format!("Failed to connect WebRTC transport: {error}"))
     }
 
+    pub async fn create_plain_transport_for_connection(
+        &self,
+        connection_id: Uuid,
+        channel_id: Uuid,
+    ) -> Result<CreatedPlainTransport, String> {
+        let router = self
+            .get_or_create_router(channel_id, Default::default())
+            .await;
+
+        let mut options = PlainTransportOptions::new(self.webrtc_listen_info());
+        options.comedia = true;
+        options.rtcp_mux = true;
+
+        let transport = router
+            .create_plain_transport(options)
+            .await
+            .map_err(|error| format!("Failed to create PlainTransport: {error}"))?;
+
+        let transport_id = transport.id().to_string();
+        let tuple = transport.tuple();
+        let rtcp_port = transport.rtcp_tuple().map(|t| t.local_port());
+        let created = CreatedPlainTransport {
+            id: transport_id.clone(),
+            ip: tuple.local_address().clone(),
+            port: tuple.local_port(),
+            rtcp_port,
+        };
+
+        {
+            let media_state_lock = self.connection_media();
+            let mut media_state = media_state_lock.lock().await;
+            let entry = media_state
+                .entry(connection_id)
+                .or_insert_with(|| ConnectionMediaState::new(channel_id));
+
+            if entry.channel_id != channel_id {
+                *entry = ConnectionMediaState::new(channel_id);
+            }
+
+            // Replace any existing screen PlainTransport
+            if let Some(old_id) = entry
+                .screen_plain_transport_id
+                .replace(transport_id.clone())
+            {
+                entry.plain_transports.remove(&old_id);
+            }
+
+            entry.plain_transports.insert(transport_id, transport);
+        }
+
+        Ok(created)
+    }
+
+    pub async fn connect_plain_transport_for_connection(
+        &self,
+        connection_id: Uuid,
+        channel_id: Uuid,
+        transport_id: &str,
+        ip: &str,
+        port: u16,
+        rtcp_port: Option<u16>,
+    ) -> Result<(), String> {
+        let transport = {
+            let media_state_lock = self.connection_media();
+            let media_state = media_state_lock.lock().await;
+            let Some(entry) = media_state.get(&connection_id) else {
+                return Err("No media session exists for this connection".into());
+            };
+
+            if entry.channel_id != channel_id {
+                return Err("PlainTransport does not belong to this voice channel".into());
+            }
+
+            let Some(pt) = entry.plain_transports.get(transport_id) else {
+                return Err("PlainTransport not found".into());
+            };
+
+            pt.clone()
+        };
+
+        let parsed_ip = IpAddr::from_str(ip).map_err(|_| format!("Invalid IP address: {ip}"))?;
+
+        transport
+            .connect(PlainTransportRemoteParameters {
+                ip: Some(parsed_ip),
+                port: Some(port),
+                rtcp_port,
+                srtp_parameters: None,
+            })
+            .await
+            .map_err(|error| format!("Failed to connect PlainTransport: {error}"))
+    }
+
     pub async fn create_producer_for_connection(
         &self,
         connection_id: Uuid,
@@ -236,7 +346,12 @@ impl MediaService {
         routing_mode: RoutingMode,
         rtp_parameters: RtpParameters,
     ) -> Result<PublishedProducer, String> {
-        let send_transport = {
+        enum TransportForProduce {
+            WebRtc(WebRtcTransport),
+            Plain(PlainTransport),
+        }
+
+        let transport_for_produce = {
             let media_state_lock = self.connection_media();
             let media_state = media_state_lock.lock().await;
             let Some(entry) = media_state.get(&connection_id) else {
@@ -247,30 +362,52 @@ impl MediaService {
                 return Err("Transport does not belong to this voice channel".into());
             }
 
-            let Some(send_transport_id) = entry.send_transport_id.as_ref() else {
-                return Err("Send transport has not been created".into());
-            };
-
-            let Some(transport) = entry.transports.get(send_transport_id) else {
-                return Err("Send transport not found".into());
-            };
-
-            if source == ProducerSource::Camera
-                && entry
+            if source == ProducerSource::Screen {
+                if kind != MediaKind::Video {
+                    return Err("Screen source requires kind 'video'".into());
+                }
+                if entry
                     .producers
                     .values()
-                    .any(|producer| producer.source == ProducerSource::Camera)
-            {
-                return Err("Only one active camera producer is allowed per connection".into());
-            }
+                    .any(|producer| producer.source == ProducerSource::Screen)
+                {
+                    return Err("Only one active screen producer is allowed per connection".into());
+                }
+                let Some(plain_transport_id) = entry.screen_plain_transport_id.as_ref() else {
+                    return Err("No PlainTransport has been created for screen sharing".into());
+                };
+                let Some(pt) = entry.plain_transports.get(plain_transport_id) else {
+                    return Err("PlainTransport not found".into());
+                };
+                TransportForProduce::Plain(pt.clone())
+            } else {
+                let Some(send_transport_id) = entry.send_transport_id.as_ref() else {
+                    return Err("Send transport has not been created".into());
+                };
 
-            transport.clone()
+                let Some(transport) = entry.transports.get(send_transport_id) else {
+                    return Err("Send transport not found".into());
+                };
+
+                if source == ProducerSource::Camera
+                    && entry
+                        .producers
+                        .values()
+                        .any(|producer| producer.source == ProducerSource::Camera)
+                {
+                    return Err("Only one active camera producer is allowed per connection".into());
+                }
+
+                TransportForProduce::WebRtc(transport.clone())
+            }
         };
 
-        let producer = send_transport
-            .produce(ProducerOptions::new(kind, rtp_parameters))
-            .await
-            .map_err(|error| format!("Failed to create producer: {error}"))?;
+        let produce_options = ProducerOptions::new(kind, rtp_parameters);
+        let producer = match transport_for_produce {
+            TransportForProduce::WebRtc(t) => t.produce(produce_options).await,
+            TransportForProduce::Plain(t) => t.produce(produce_options).await,
+        }
+        .map_err(|error| format!("Failed to create producer: {error}"))?;
 
         let producer_id = producer.id().to_string();
 
@@ -292,6 +429,15 @@ impl MediaService {
                     .any(|existing| existing.source == ProducerSource::Camera)
             {
                 return Err("Only one active camera producer is allowed per connection".into());
+            }
+
+            if source == ProducerSource::Screen
+                && entry
+                    .producers
+                    .values()
+                    .any(|existing| existing.source == ProducerSource::Screen)
+            {
+                return Err("Only one active screen producer is allowed per connection".into());
             }
 
             entry.producers.insert(
@@ -483,6 +629,13 @@ impl MediaService {
             .producers
             .remove(producer_id)
             .ok_or_else(|| "Producer not found for this connection".to_string())?;
+
+        // When a screen producer is closed, also clean up the associated PlainTransport.
+        if closed.source == ProducerSource::Screen {
+            if let Some(pt_id) = entry.screen_plain_transport_id.take() {
+                entry.plain_transports.remove(&pt_id);
+            }
+        }
 
         for (other_conn_id, other_entry) in media_state.iter_mut() {
             if *other_conn_id == connection_id || other_entry.channel_id != channel_id {

@@ -20,6 +20,17 @@ import {
     setSpeakersMuted,
     subscribeAudioPlaybackError,
 } from "../api/media";
+import {
+    createPlainTransport,
+    requestMediaSignal,
+} from "../api/media/signaling";
+import {
+    type CaptureSourceKind,
+    startCapture,
+    stopCapture,
+    onCaptureStateChanged,
+} from "../api/media/nativeBridge";
+import ScreenShareModal from "./ScreenShareModal";
 import { connect, onClose, onMessage, send } from "../api/ws";
 import {
     activeChannelId,
@@ -81,6 +92,9 @@ import {
     voiceMemberMuteState,
     voiceRejoinNotice,
     voiceActionState,
+    screenSharing,
+    setScreenSharing,
+    setScreenShareError,
 } from "../stores/voice";
 import AsyncContent from "./AsyncContent";
 import UserSettingsDock from "./UserSettingsDock";
@@ -139,6 +153,9 @@ export default function ChannelList() {
     const [toastError, setToastError] = createSignal("");
     const [audioFixNeeded, setAudioFixNeeded] = createSignal(false);
     const [cameraActionPending, setCameraActionPending] = createSignal(false);
+    const [showScreenShareModal, setShowScreenShareModal] = createSignal(false);
+    let screenProducerId: string | null = null;
+    let unsubscribeCaptureState: (() => void) | null = null;
     const [pulsingByChannel, setPulsingByChannel] = createSignal<
         Record<string, boolean>
     >({});
@@ -231,6 +248,147 @@ export default function ChannelList() {
         } finally {
             setCameraActionPending(false);
         }
+    }
+
+    function handleToggleScreenShare() {
+        if (screenSharing()) {
+            void handleStopScreenShare();
+        } else {
+            setShowScreenShareModal(true);
+        }
+    }
+
+    async function handleStartScreenShare(source: CaptureSourceKind) {
+        const channelId = joinedVoiceChannelId();
+        if (!channelId) throw new Error("Not in a voice channel");
+
+        setScreenShareError(null);
+        screenProducerId = null;
+
+        let captureStarted = false;
+        let producedId: string | null = null;
+
+        try {
+            // 1. Create PlainTransport on the server.
+            const pt = await createPlainTransport(channelId);
+            // 2. Start Tauri capture -> sender streams RTP directly to PlainTransport.
+            const captureState = await startCapture({
+                source,
+                server_ip: pt.ip,
+                server_port: pt.port,
+                bitrate_kbps: 4000,
+            });
+            captureStarted = true;
+
+            if (captureState.state === "failed") {
+                throw new Error(
+                    captureState.error?.message ??
+                        "Capture pipeline failed to start",
+                );
+            }
+
+            // 3. Produce on PlainTransport (comedia learns the sender tuple from RTP packets).
+            const produceResponse = await requestMediaSignal(
+                channelId,
+                "media_produce",
+                {
+                    kind: "video",
+                    source: "screen",
+                    routing_mode: "sfu",
+                    rtp_parameters: buildScreenRtpParameters(),
+                },
+            );
+
+            producedId = produceResponse.producer_id ?? null;
+            if (!producedId) {
+                throw new Error("Unexpected media_produce response from server");
+            }
+
+            screenProducerId = producedId;
+            setScreenSharing(true);
+
+            // 4. Subscribe to capture state events for error handling.
+            unsubscribeCaptureState = await onCaptureStateChanged((event) => {
+                if (event.state === "failed") {
+                    setScreenShareError(event.error?.message ?? "Capture failed");
+                    void handleStopScreenShare();
+                }
+            });
+        } catch (error) {
+            if (unsubscribeCaptureState) {
+                unsubscribeCaptureState();
+                unsubscribeCaptureState = null;
+            }
+
+            if (channelId && producedId) {
+                try {
+                    await requestMediaSignal(channelId, "media_close_producer", {
+                        producer_id: producedId,
+                    });
+                } catch {
+                    // Ignore producer close errors during rollback.
+                }
+            }
+
+            if (captureStarted) {
+                try {
+                    await stopCapture();
+                } catch {
+                    // Ignore capture stop errors during rollback.
+                }
+            }
+
+            screenProducerId = null;
+            setScreenSharing(false);
+            throw error;
+        }
+    }
+
+    async function handleStopScreenShare() {
+        if (unsubscribeCaptureState) {
+            unsubscribeCaptureState();
+            unsubscribeCaptureState = null;
+        }
+
+        const channelId = joinedVoiceChannelId();
+        const producerId = screenProducerId;
+        screenProducerId = null;
+
+        try {
+            await stopCapture();
+        } catch {
+            // Ignore stop errors.
+        }
+
+        // Close the server-side producer (which also cleans up the PlainTransport).
+        if (channelId && producerId) {
+            try {
+                await requestMediaSignal(channelId, "media_close_producer", {
+                    producer_id: producerId,
+                });
+            } catch {
+                // Ignore close errors.
+            }
+        }
+
+        setScreenSharing(false);
+    }
+
+    function buildScreenRtpParameters() {
+        return {
+            codecs: [
+                {
+                    mimeType: "video/H264",
+                    payloadType: 96,
+                    clockRate: 90000,
+                    parameters: {
+                        "packetization-mode": 1,
+                        "profile-level-id": "640028",
+                    },
+                },
+            ],
+            encodings: [{ ssrc: 0x12345678 }],
+        };
     }
 
     function selectChannel(channel: Channel) {
@@ -560,6 +718,7 @@ export default function ChannelList() {
 
             if (msg.type === "channel_deleted") {
                 if (joinedVoiceChannelId() === msg.id) {
+                    void handleStopScreenShare();
                     setJoinedVoiceChannel(null);
                     setVoiceActionState("idle");
                     cleanupMediaTransports();
@@ -664,6 +823,7 @@ export default function ChannelList() {
 
             if (msg.type === "voice_left") {
                 if (joinedVoiceChannelId() === msg.channel_id) {
+                    void handleStopScreenShare();
                     playVoiceLeaveCue();
                     setJoinedVoiceChannel(null);
                     cleanupMediaTransports();
@@ -732,6 +892,7 @@ export default function ChannelList() {
                 return;
             }
 
+            void handleStopScreenShare();
             setLastVoiceChannelBeforeDisconnect(currentVoiceChannel);
             cleanupMediaTransports();
             setJoinedVoiceChannel(null);
@@ -740,6 +901,7 @@ export default function ChannelList() {
         });
 
         onCleanup(() => {
+            void handleStopScreenShare();
             pulseTimers.forEach((timer) => clearTimeout(timer));
             pulseTimers.clear();
             if (toastTimer) {
@@ -1148,6 +1310,13 @@ export default function ChannelList() {
                             onToggleMicMuted={handleToggleMicMuted}
                             onToggleSpeakerMuted={handleToggleSpeakerMuted}
                             onToggleCamera={() => void handleToggleCamera()}
+                            onToggleScreenShare={handleToggleScreenShare}
+                        />
+                    </Show>
+                    <Show when={showScreenShareModal()}>
+                        <ScreenShareModal
+                            onClose={() => setShowScreenShareModal(false)}
+                            onStartSharing={(source) => handleStartScreenShare(source)}
                         />
                     </Show>
                     <UserSettingsDock />

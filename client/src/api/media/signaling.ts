@@ -13,7 +13,7 @@ import {
   setSignalListenerInitialized,
   signalListenerInitialized,
 } from "./state";
-import type { MediaSignalPayload, TransportOptions } from "./types";
+import type { MediaSignalPayload, PlainTransportInfo, TransportOptions } from "./types";
 import { notifyVideoTilesSubscribers } from "./subscriptions";
 import { disposeRemoteConsumer, queueOrConsumeProducer } from "./consumers";
 
@@ -141,6 +141,34 @@ export function toTransportOptions(payload: MediaSignalPayload): TransportOption
     iceCandidates: transport.ice_candidates,
     dtlsParameters: transport.dtls_parameters,
   };
+}
+
+export async function createPlainTransport(channelId: string): Promise<PlainTransportInfo> {
+  const response = await requestMediaSignal(channelId, "create_plain_transport");
+  if (response.action !== "plain_transport_created" || !response.id || !response.ip || response.port === undefined) {
+    throw new Error("Unexpected create_plain_transport response from server");
+  }
+  return {
+    id: response.id,
+    ip: response.ip,
+    port: response.port,
+    rtcp_port: response.rtcp_port ?? null,
+  };
+}
+
+export async function connectPlainTransport(
+  channelId: string,
+  transportId: string,
+  ip: string,
+  port: number,
+  rtcpPort?: number,
+): Promise<void> {
+  await requestMediaSignal(channelId, "connect_plain_transport", {
+    transport_id: transportId,
+    ip,
+    port,
+    rtcp_port: rtcpPort ?? null,
+  });
 }
 
 export function reportVoiceActivity(channelId: string, speaking: boolean) {

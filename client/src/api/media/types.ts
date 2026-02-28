@@ -34,6 +34,8 @@ export type MediaSignalAction =
   | "router_rtp_capabilities"
   | "webrtc_transport_created"
   | "webrtc_transport_connected"
+  | "plain_transport_created"
+  | "plain_transport_connected"
   | "media_produced"
   | "media_producer_closed"
   | "new_producer"
@@ -43,7 +45,7 @@ export type MediaSignalAction =
   | "signal_error";
 
 export type MediaKind = "audio" | "video";
-export type MediaSource = "microphone" | "camera";
+export type MediaSource = "microphone" | "camera" | "screen";
 export type RoutingMode = "sfu";
 
 export interface MediaConsumerDescription {
@@ -73,6 +75,10 @@ export interface MediaSignalPayload {
   routing_mode?: RoutingMode;
   consumer?: MediaConsumerDescription;
   consumer_id?: string;
+  id?: string;
+  ip?: string;
+  port?: number;
+  rtcp_port?: number | null;
 }
 
 export interface PendingRequest {
@@ -113,8 +119,15 @@ export interface RemoteVideoTile {
   producerId: string;
   username: string;
   stream: MediaStream;
-  source: "camera";
+  source: "camera" | "screen";
   routingMode: RoutingMode;
+}
+
+export interface PlainTransportInfo {
+  id: string;
+  ip: string;
+  port: number;
+  rtcp_port: number | null;
 }
 
 export interface QueuedProducerAnnouncement {

@@ -4,6 +4,8 @@ import {
   cameraEnabled,
   cameraError,
   micMuted,
+  screenSharing,
+  screenShareError,
   speakerMuted,
   voiceActionState,
   voiceHealthLevel,
@@ -12,6 +14,7 @@ import {
   CameraIcon,
   DisconnectIcon,
   MicrophoneIcon,
+  ScreenShareIcon,
   SpeakerIcon,
 } from "../icons";
 import { voiceHealthLabel } from "./helpers";
@@ -23,6 +26,7 @@ export interface VoiceDockProps {
   onToggleMicMuted: () => void;
   onToggleSpeakerMuted: () => void;
   onToggleCamera: () => void;
+  onToggleScreenShare: () => void;
 }
 
 export default function VoiceDock(props: VoiceDockProps): JSX.Element {
@@ -67,6 +71,16 @@ export default function VoiceDock(props: VoiceDockProps): JSX.Element {
         >
           <CameraIcon enabled={cameraEnabled()} />
         </button>
+        <button
+          type="button"
+          class={`voice-dock-icon voice-dock-toggle voice-dock-screen-share${screenSharing() ? " is-active" : ""}`}
+          onClick={props.onToggleScreenShare}
+          disabled={voiceActionState() !== "idle"}
+          title={screenSharing() ? "Stop screen share" : "Share screen"}
+          aria-label={screenSharing() ? "Stop screen share" : "Share screen"}
+        >
+          <ScreenShareIcon active={screenSharing()} />
+        </button>
       </div>
       <p class="voice-dock-channel">Connected: {props.connectedChannelName}</p>
       <p class={`voice-dock-status voice-dock-status-${voiceHealthLevel()}`}>
@@ -80,6 +94,9 @@ export default function VoiceDock(props: VoiceDockProps): JSX.Element {
       </Show>
       <Show when={cameraError()}>
         <p class="voice-dock-error">{cameraError()}</p>
+      </Show>
+      <Show when={screenShareError()}>
+        <p class="voice-dock-error">{screenShareError()}</p>
       </Show>
     </div>
   );
