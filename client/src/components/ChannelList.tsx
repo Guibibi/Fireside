@@ -387,7 +387,11 @@ export default function ChannelList() {
                     },
                 },
             ],
+            headerExtensions: [],
             encodings: [{ ssrc: 0x12345678 }],
+            rtcp: {
+                reducedSize: true,
+            },
         };
     }
 

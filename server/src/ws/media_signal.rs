@@ -381,19 +381,18 @@ pub async fn handle_media_signal_message(
     payload: serde_json::Value,
     out_tx: &mpsc::Sender<String>,
 ) -> bool {
+    let request_id_from_raw_payload = request_id_from_payload(&payload);
     let request = match serde_json::from_value::<MediaSignalRequest>(payload) {
         Ok(request) => request,
         Err(error) => {
-            if send_media_signal_payload(
+            if send_media_signal_error(
                 state,
                 connection_id,
                 username,
                 out_tx,
                 channel_id,
-                serde_json::json!({
-                    "action": "signal_error",
-                    "message": format!("Invalid media signal payload: {error}")
-                }),
+                request_id_from_raw_payload,
+                &format!("Invalid media signal payload: {error}"),
             )
             .should_disconnect()
             {
