@@ -7,11 +7,14 @@ use ring_channel::RingSender;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use windows_capture::{
-    capture::GraphicsCaptureApiHandler,
+    capture::{Context, GraphicsCaptureApiHandler},
     frame::Frame,
     graphics_capture_api::InternalCaptureControl,
     monitor::Monitor,
-    settings::{ColorFormat, CursorCaptureSettings, DrawBorderSettings, Settings},
+    settings::{
+        ColorFormat, CursorCaptureSettings, DirtyRegionSettings, DrawBorderSettings,
+        MinimumUpdateIntervalSettings, SecondaryWindowSettings, Settings,
+    },
     window::Window,
 };
 
@@ -40,7 +43,7 @@ impl GraphicsCaptureApiHandler for CaptureHandler {
     type Flags = ();
     type Error = Box<dyn std::error::Error + Send + Sync>;
 
-    fn new(_: Self::Flags) -> Result<Self, Self::Error> {
+    fn new(_: Context<Self::Flags>) -> Result<Self, Self::Error> {
         unreachable!("use CaptureHandler::with_channel instead");
     }
 
@@ -65,7 +68,7 @@ impl GraphicsCaptureApiHandler for CaptureHandler {
             .map_err(|e| format!("Failed to get frame buffer: {e}"))?;
 
         let data = buffer
-            .as_raw_nopadding_buffer()
+            .as_nopadding_buffer()
             .map_err(|e| format!("Failed to get raw buffer: {e}"))?
             .to_vec();
 
@@ -111,7 +114,7 @@ impl GraphicsCaptureApiHandler for CapturingHandler {
     type Flags = ();
     type Error = Box<dyn std::error::Error + Send + Sync>;
 
-    fn new(_: Self::Flags) -> Result<Self, Self::Error> {
+    fn new(_: Context<Self::Flags>) -> Result<Self, Self::Error> {
         let params = HANDLER_PARAMS
             .with(|p| p.borrow_mut().take())
             .ok_or("No capture handler parameters set")?;
@@ -153,56 +156,48 @@ pub fn start_capture_loop(
         });
     });
 
-    let settings = match build_settings(&source) {
-        Ok(s) => s,
-        Err(e) => {
-            return Err(format!("Failed to build capture settings: {e}"));
-        }
-    };
-
-    if let Err(e) = CapturingHandler::start(settings) {
-        return Err(format!("Capture loop error: {e}"));
-    }
-
-    Ok(())
-}
-
-fn build_settings(
-    source: &CaptureSource,
-) -> Result<
-    Settings<impl windows_capture::capture::WindowsCaptureItem, ()>,
-    Box<dyn std::error::Error + Send + Sync>,
-> {
-    let settings = match source {
+    match source {
         CaptureSource::Monitor { index, .. } => {
-            let monitors = Monitor::enumerate()?;
+            let monitors =
+                Monitor::enumerate().map_err(|e| format!("Failed to enumerate monitors: {e}"))?;
             let monitor = monitors
                 .into_iter()
-                .nth(*index as usize)
+                .nth(index as usize)
                 .ok_or_else(|| format!("Monitor index {} not found", index))?;
-            Settings::new(
+
+            let settings = Settings::new(
                 monitor,
                 CursorCaptureSettings::Default,
                 DrawBorderSettings::Default,
+                SecondaryWindowSettings::Default,
+                MinimumUpdateIntervalSettings::Default,
+                DirtyRegionSettings::Default,
                 ColorFormat::Bgra8,
                 (),
-            )
+            );
+
+            CapturingHandler::start(settings).map_err(|e| format!("Capture loop error: {e}"))
         }
         CaptureSource::Window { id, title } => {
-            let hwnd_value: isize = id.parse().map_err(|_| format!("Invalid window id: {id}"))?;
-            let windows = Window::enumerate()?;
+            let windows =
+                Window::enumerate().map_err(|e| format!("Failed to enumerate windows: {e}"))?;
             let window = windows
                 .into_iter()
-                .find(|w| format!("{:?}", w.as_raw_hwnd()) == *id)
+                .find(|w| format!("{:?}", w.as_raw_hwnd()) == id)
                 .ok_or_else(|| format!("Window '{}' not found", title))?;
-            Settings::new(
+
+            let settings = Settings::new(
                 window,
                 CursorCaptureSettings::Default,
                 DrawBorderSettings::Default,
+                SecondaryWindowSettings::Default,
+                MinimumUpdateIntervalSettings::Default,
+                DirtyRegionSettings::Default,
                 ColorFormat::Bgra8,
                 (),
-            )
+            );
+
+            CapturingHandler::start(settings).map_err(|e| format!("Capture loop error: {e}"))
         }
-    };
-    Ok(settings)
+    }
 }
