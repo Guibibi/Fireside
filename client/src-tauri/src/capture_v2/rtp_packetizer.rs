@@ -112,7 +112,7 @@ pub fn packetize(data: &[u8], mut seq: u16, timestamp: u32, ssrc: u32) -> Vec<Ve
             // FU-A fragmentation.
             let nal_type = nal[0] & 0x1F;
             let nal_nri = nal[0] & 0x60;
-            let fu_indicator = 0x60 | 28u8; // NRI=3 (max), type=28 (FU-A)
+            let fu_indicator = nal_nri | 28u8; // keep NRI from source NAL, type=28 (FU-A)
             let payload_mtu = MTU - RTP_HEADER_SIZE - FU_HEADER_SIZE;
 
             let mut offset = 1; // skip the original NAL header byte

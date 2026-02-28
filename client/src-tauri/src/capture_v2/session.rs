@@ -177,7 +177,7 @@ fn run_pipeline_windows(
     transition(&app, &inner, CaptureState::Running, None, Some(local_port));
 
     // Phase 2: Set up channels.
-    let (frame_tx, frame_rx) = ring_channel::<CaptureFrame>(NonZeroUsize::new(1).unwrap());
+    let (frame_tx, mut frame_rx) = ring_channel::<CaptureFrame>(NonZeroUsize::new(1).unwrap());
     let (encoded_tx, encoded_rx) = bounded::<Vec<u8>>(2);
 
     // Phase 3: Start capture loop.
@@ -324,6 +324,7 @@ pub fn enumerate_sources_impl() -> Result<EnumeratedSources, String> {
         use windows_capture::monitor::Monitor;
         use windows_capture::window::Window;
 
+        let primary_monitor = Monitor::primary().ok();
         let monitors: Vec<super::CaptureSource> = Monitor::enumerate()
             .map_err(|e| format!("Failed to enumerate monitors: {e}"))?
             .into_iter()
@@ -331,7 +332,7 @@ pub fn enumerate_sources_impl() -> Result<EnumeratedSources, String> {
             .map(|(idx, m)| super::CaptureSource::Monitor {
                 index: idx as u32,
                 name: m.name().unwrap_or_else(|_| format!("Display {idx}")),
-                is_primary: m.is_primary().unwrap_or(false),
+                is_primary: primary_monitor.map(|p| p == m).unwrap_or(false),
             })
             .collect();
 

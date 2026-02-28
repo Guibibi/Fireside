@@ -3,6 +3,7 @@
 use dcv_color_primitives as dcp;
 use openh264::encoder::{Encoder, EncoderConfig};
 use openh264::formats::YUVSource;
+use openh264::OpenH264API;
 
 use super::capture_loop::CaptureFrame;
 
@@ -55,7 +56,7 @@ impl H264Encoder {
             .set_bitrate_bps(bitrate_kbps * 1000)
             .enable_skip_frame(false);
 
-        let encoder = Encoder::with_config(config)
+        let encoder = Encoder::with_api_config(OpenH264API::from_source(), config)
             .map_err(|e| format!("Failed to create OpenH264 encoder: {e}"))?;
 
         Ok(Self {
@@ -118,18 +119,18 @@ impl H264Encoder {
             v: &self.v_buf,
         };
 
+        if self.force_idr {
+            self.encoder.force_intra_frame();
+            self.force_idr = false;
+        }
+
         // Encode.
         let bitstream = self
             .encoder
             .encode(&yuv)
             .map_err(|e| format!("OpenH264 encode error: {e}"))?;
 
-        let mut output = Vec::new();
-        for layer in bitstream.layers() {
-            for nal in layer.nal_units() {
-                output.extend_from_slice(nal);
-            }
-        }
+        let output = bitstream.to_vec();
 
         if output.is_empty() {
             Ok(None)
@@ -152,7 +153,7 @@ fn bgra_to_i420(
 
     let src_format = ImageFormat {
         pixel_format: PixelFormat::Bgra,
-        color_space: ColorSpace::Lrgb,
+        color_space: ColorSpace::Rgb,
         num_planes: 1,
     };
     let dst_format = ImageFormat {
