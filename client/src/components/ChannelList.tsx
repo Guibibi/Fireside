@@ -1313,12 +1313,11 @@ export default function ChannelList() {
                             onToggleScreenShare={handleToggleScreenShare}
                         />
                     </Show>
-                    <Show when={showScreenShareModal()}>
-                        <ScreenShareModal
-                            onClose={() => setShowScreenShareModal(false)}
-                            onStartSharing={(source) => handleStartScreenShare(source)}
-                        />
-                    </Show>
+                    <ScreenShareModal
+                        open={showScreenShareModal()}
+                        onClose={() => setShowScreenShareModal(false)}
+                        onStartSharing={(source) => handleStartScreenShare(source)}
+                    />
                     <UserSettingsDock />
                 </div>
             </AsyncContent>

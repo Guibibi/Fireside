@@ -1,0 +1,197 @@
+.screen-share-modal-backdrop {
+  z-index: 1190;
+}
+
+.screen-share-modal {
+  width: min(700px, calc(100vw - 2rem));
+}
+
+.screen-share-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.screen-share-intro {
+  margin: 0;
+  color: var(--mist);
+  font-size: 0.82rem;
+}
+
+.screen-share-notice {
+  margin: 0;
+  padding: var(--space-md);
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(196, 112, 112, 0.4);
+  background: rgba(196, 112, 112, 0.12);
+  color: var(--pearl);
+}
+
+.screen-share-tabs {
+  display: inline-flex;
+  gap: var(--space-2xs);
+  align-self: flex-start;
+  padding: var(--space-2xs);
+  border: 1px solid var(--cloud-dark);
+  border-radius: var(--radius-md);
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.screen-share-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: var(--space-xs) var(--space-md);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--soft);
+  box-shadow: none;
+}
+
+.screen-share-tab:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--snow);
+  transform: none;
+  box-shadow: none;
+}
+
+.screen-share-tab.is-active {
+  background: var(--accent-dim);
+  color: var(--accent);
+}
+
+.screen-share-tab-count {
+  min-width: 1.25rem;
+  height: 1.25rem;
+  padding: 0 0.35rem;
+  border-radius: var(--radius-full);
+  display: grid;
+  place-items: center;
+  font-size: 0.7rem;
+  font-family: var(--font-mono);
+  background: rgba(0, 0, 0, 0.2);
+  color: inherit;
+}
+
+.screen-share-source-list {
+  min-height: 220px;
+  max-height: 340px;
+  overflow-y: auto;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--cloud-dark);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.025), rgba(255, 255, 255, 0.01)),
+    var(--gray-4);
+  padding: var(--space-sm);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.screen-share-source-state {
+  margin: 0;
+  color: var(--mist);
+  font-size: 0.82rem;
+  text-align: center;
+  padding: var(--space-xl) var(--space-sm);
+}
+
+.screen-share-source-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  text-align: left;
+  border: 1px solid var(--cloud-dark);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--pearl);
+  box-shadow: none;
+}
+
+.screen-share-source-item:hover:not(:disabled) {
+  border-color: rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.06);
+  transform: none;
+  box-shadow: none;
+}
+
+.screen-share-source-item.is-selected {
+  border-color: var(--accent-border);
+  background: var(--accent-dim);
+  color: var(--snow);
+}
+
+.screen-share-source-main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2xs);
+  min-width: 0;
+}
+
+.screen-share-source-label {
+  display: block;
+  font-size: 0.86rem;
+  color: inherit;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.screen-share-source-type {
+  display: block;
+  font-size: 0.72rem;
+  color: var(--mist);
+  font-family: var(--font-mono);
+}
+
+.screen-share-source-item.is-selected .screen-share-source-type {
+  color: var(--gray-10);
+}
+
+.screen-share-badge {
+  flex-shrink: 0;
+  padding: 0.2rem 0.5rem;
+  border-radius: var(--radius-full);
+  background: rgba(0, 0, 0, 0.26);
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--gray-10);
+}
+
+.screen-share-error {
+  margin: 0;
+  color: var(--coral);
+  font-size: 0.8rem;
+}
+
+.screen-share-actions {
+  justify-content: flex-end;
+}
+
+@media (max-width: 720px) {
+  .screen-share-modal {
+    width: min(100%, calc(100vw - 1rem));
+    padding: var(--space-xl);
+  }
+
+  .screen-share-tabs {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .screen-share-tab {
+    justify-content: center;
+  }
+
+  .screen-share-actions {
+    width: 100%;
+  }
+
+  .screen-share-actions button {
+    flex: 1;
+  }
+}
