@@ -26,6 +26,15 @@ There currently no roles or permissions, so make sure that only people you trust
 - Lightweight join flow (server URL + password + username)
 - Self-hosted deployment on infrastructure you control
 
+## Clients
+
+| Client | Directory | Status |
+|--------|-----------|--------|
+| Web (SolidJS + Tauri) | `client/` | Production |
+| Native (Flutter) | `flutter-client/` | In development |
+
+The Flutter client targets Windows, macOS, Linux, iOS, and Android natively — using `flutter_webrtc` (libwebrtc) for full native codec control. See `flutter-client/` for setup instructions.
+
 ## Quick Start
 
 ### 1) Prepare environment
