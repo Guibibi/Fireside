@@ -18,7 +18,7 @@
   padding: var(--space-md);
   border-radius: var(--radius-lg);
   background: var(--danger-dim);
-  border: 1px solid rgba(196, 112, 112, 0.3);
+  border: 1px solid var(--coral-glow);
   color: var(--danger);
   font-size: 0.8rem;
   font-weight: 500;
@@ -41,16 +41,21 @@
   padding: var(--space-xs) var(--space-md);
   font-size: 0.75rem;
   border-radius: var(--radius-full);
-  background: rgba(196, 112, 112, 0.2);
+  background: var(--danger-dim);
   color: var(--gray-11);
   border: none;
   box-shadow: none;
 }
 
 .channel-footer-banner-dismiss:hover:not(:disabled) {
-  background: rgba(196, 112, 112, 0.3);
+  background: var(--coral-glow);
   transform: none;
   box-shadow: none;
+}
+
+.channel-footer-banner-dismiss:focus-visible {
+  outline: 2px solid var(--danger);
+  outline-offset: 2px;
 }
 
 .voice-dock {
@@ -123,6 +128,11 @@
 }
 
 .voice-dock-camera.is-active {
+  background: var(--success);
+  color: var(--gray-1);
+}
+
+.voice-dock-screen-share.is-active {
   background: var(--success);
   color: var(--gray-1);
 }

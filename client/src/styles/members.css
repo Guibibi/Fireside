@@ -5,7 +5,7 @@
 .member-list {
   width: var(--member-list-width);
   background: var(--gray-4);
-  border: 1px solid var(--cloud-dark);
+  border: 1px solid var(--gray-5);
   border-radius: var(--radius-xl);
   padding: var(--space-xl);
   flex-shrink: 0;
@@ -16,7 +16,7 @@
 .member-list h3 {
   font-size: 1rem;
   font-weight: 600;
-  color: var(--snow);
+  color: var(--gray-11);
   margin-bottom: var(--space-lg);
 }
 
@@ -26,7 +26,7 @@
   font-size: 0.68rem;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: var(--mist);
+  color: var(--gray-7);
 }
 
 .member-items {
@@ -45,12 +45,18 @@
   border-radius: var(--radius-md);
   background: rgba(255, 255, 255, 0.02);
   font-size: 0.85rem;
-  color: var(--pearl);
+  color: var(--gray-10);
   cursor: pointer;
   transition: all 0.15s var(--ease-soft);
 }
 
 .member-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.member-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
   background: rgba(255, 255, 255, 0.05);
 }
 
@@ -61,7 +67,7 @@
   gap: var(--space-sm);
   padding: var(--space-md);
   border-radius: var(--radius-lg);
-  border: 1px solid var(--cloud-dark);
+  border: 1px solid var(--gray-5);
   background:
     radial-gradient(circle at top right, rgba(201, 149, 107, 0.12), transparent 48%),
     var(--gray-3);
@@ -83,7 +89,7 @@
 
 .member-hover-preview-name {
   margin: 0;
-  color: var(--snow);
+  color: var(--gray-11);
   font-weight: 600;
   line-height: 1.2;
   overflow: hidden;
@@ -95,7 +101,7 @@
   margin: 0;
   font-family: var(--font-mono);
   font-size: 0.72rem;
-  color: var(--mist);
+  color: var(--gray-7);
   line-height: 1.2;
 }
 
@@ -105,14 +111,14 @@
   border-radius: var(--radius-sm);
   border: 1px solid rgba(255, 255, 255, 0.1);
   background: rgba(255, 255, 255, 0.03);
-  color: var(--pearl);
+  color: var(--gray-10);
   line-height: 1.35;
   overflow-wrap: anywhere;
 }
 
 .member-hover-preview-description {
   margin: 0;
-  color: var(--mist);
+  color: var(--gray-7);
   font-size: 0.78rem;
   line-height: 1.45;
   display: -webkit-box;
@@ -142,7 +148,7 @@
 
 .member-profile-status {
   font-size: 0.68rem;
-  color: var(--mist);
+  color: var(--gray-7);
   line-height: 1.2;
   max-width: 100%;
   white-space: nowrap;
@@ -174,7 +180,7 @@
 }
 
 .member-status-dot-offline {
-  background: var(--cloud);
+  background: var(--gray-6);
 }
 
 .member-voice-indicator {
@@ -189,12 +195,12 @@
 }
 
 .member-item-offline {
-  color: var(--mist);
+  color: var(--gray-7);
   opacity: 0.7;
 }
 
 .member-item-idle {
-  color: var(--snow);
+  color: var(--gray-11);
 }
 
 .user-profile-modal {
@@ -215,13 +221,13 @@
 
 .user-profile-identity h5 {
   margin: 0;
-  color: var(--snow);
+  color: var(--gray-11);
   font-size: 1rem;
 }
 
 .user-profile-identity p {
   margin: 0;
-  color: var(--mist);
+  color: var(--gray-7);
   font-family: var(--font-mono);
   font-size: 0.75rem;
 }
@@ -229,15 +235,15 @@
 .user-profile-status {
   margin: 0;
   padding: var(--space-sm) var(--space-md);
-  border: 1px solid var(--cloud-dark);
+  border: 1px solid var(--gray-5);
   border-radius: var(--radius-md);
-  color: var(--pearl);
+  color: var(--gray-10);
   background: rgba(255, 255, 255, 0.03);
 }
 
 .user-profile-description {
   margin: 0;
-  color: var(--pearl);
+  color: var(--gray-10);
   line-height: 1.5;
   white-space: pre-wrap;
 }

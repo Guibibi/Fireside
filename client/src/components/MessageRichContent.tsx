@@ -386,7 +386,16 @@ export default function MessageRichContent(props: MessageRichContentProps) {
     }
 
     const previousOverflow = document.body.style.overflow;
+    const previousFocus = document.activeElement as HTMLElement | null;
     document.body.style.overflow = "hidden";
+
+    // Move focus into the popup once it renders
+    requestAnimationFrame(() => {
+      const closeBtn = document.querySelector<HTMLElement>(
+        ".message-image-popup .message-image-modal-action",
+      );
+      closeBtn?.focus();
+    });
 
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
@@ -399,6 +408,7 @@ export default function MessageRichContent(props: MessageRichContentProps) {
     onCleanup(() => {
       document.body.style.overflow = previousOverflow;
       window.removeEventListener("keydown", onKeyDown);
+      previousFocus?.focus();
     });
   });
 

@@ -87,16 +87,16 @@
 .settings-modal-header h4 {
   font-size: 1.15rem;
   font-weight: 600;
-  color: var(--snow);
+  color: var(--gray-11);
 }
 
 .settings-close {
-  width: 2rem;
-  height: 2rem;
+  width: 2.5rem;
+  height: 2.5rem;
   padding: 0;
-  background: var(--cloud-dark);
+  background: var(--gray-5);
   border: none;
-  color: var(--soft);
+  color: var(--gray-9);
   font-size: 1rem;
   border-radius: var(--radius-full);
   display: inline-flex;
@@ -106,14 +106,19 @@
 }
 
 .settings-close:hover:not(:disabled) {
-  background: var(--cloud);
-  color: var(--snow);
+  background: var(--gray-6);
+  color: var(--gray-11);
   transform: none;
   box-shadow: none;
 }
 
+.settings-close:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .settings-section {
-  border: 1px solid var(--cloud-dark);
+  border: 1px solid var(--gray-5);
   border-radius: var(--radius-lg);
   padding: var(--space-xl);
   background: var(--gray-4);
@@ -134,12 +139,12 @@
 .settings-label {
   font-size: 0.85rem;
   font-weight: 500;
-  color: var(--pearl);
+  color: var(--gray-10);
 }
 
 .settings-help {
   font-size: 0.78rem;
-  color: var(--mist);
+  color: var(--gray-7);
   overflow-wrap: anywhere;
 }
 
@@ -148,7 +153,7 @@
   align-items: center;
   gap: var(--space-sm);
   font-size: 0.85rem;
-  color: var(--pearl);
+  color: var(--gray-10);
   cursor: pointer;
 }
 
@@ -163,8 +168,8 @@
   height: 5rem;
   border-radius: var(--radius-lg);
   overflow: hidden;
-  border: 2px solid var(--cloud-dark);
-  background: var(--cloud-dark);
+  border: 2px solid var(--gray-5);
+  background: var(--gray-5);
 }
 
 .settings-avatar-preview img {
@@ -182,21 +187,21 @@
 }
 
 .settings-secondary {
-  background: var(--cloud-dark);
-  color: var(--soft);
+  background: var(--gray-5);
+  color: var(--gray-9);
   box-shadow: none;
 }
 
 .settings-secondary:hover:not(:disabled) {
-  background: var(--cloud);
-  color: var(--snow);
+  background: var(--gray-6);
+  color: var(--gray-11);
   transform: none;
   box-shadow: none;
 }
 
 .settings-danger {
-  background: var(--coral-soft);
-  color: var(--coral);
+  background: var(--danger-dim);
+  color: var(--danger);
   box-shadow: none;
 }
 
@@ -219,7 +224,7 @@
 
 .emoji-upload-card,
 .emoji-library-card {
-  border: 1px solid var(--cloud-dark);
+  border: 1px solid var(--gray-5);
   border-radius: var(--radius-md);
   background: rgba(255, 255, 255, 0.02);
   padding: var(--space-md);
@@ -230,14 +235,14 @@
   font-size: 0.8rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--mist);
+  color: var(--gray-7);
 }
 
 .emoji-upload-preview {
   display: flex;
   align-items: center;
   gap: var(--space-sm);
-  border: 1px solid var(--cloud-dark);
+  border: 1px solid var(--gray-5);
   border-radius: var(--radius-sm);
   padding: var(--space-sm);
   background: rgba(0, 0, 0, 0.18);
@@ -260,7 +265,7 @@
 }
 
 .emoji-upload-preview-name {
-  color: var(--snow);
+  color: var(--gray-11);
   font-size: 0.76rem;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -268,7 +273,7 @@
 }
 
 .emoji-upload-preview-size {
-  color: var(--mist);
+  color: var(--gray-7);
   font-size: 0.72rem;
 }
 
@@ -281,7 +286,7 @@
 }
 
 .emoji-library-count {
-  color: var(--mist);
+  color: var(--gray-7);
   font-size: 0.72rem;
 }
 
@@ -298,7 +303,7 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--space-md);
-  border: 1px solid var(--cloud-dark);
+  border: 1px solid var(--gray-5);
   border-radius: var(--radius-md);
   padding: var(--space-sm) var(--space-md);
   background: rgba(255, 255, 255, 0.02);
@@ -320,12 +325,12 @@
 .emoji-settings-shortcode {
   font-family: var(--font-mono);
   font-size: 0.78rem;
-  color: var(--snow);
+  color: var(--gray-11);
 }
 
 .emoji-settings-name {
   font-size: 0.75rem;
-  color: var(--mist);
+  color: var(--gray-7);
 }
 
 @media (max-width: 900px) {
@@ -350,8 +355,8 @@
   width: 100%;
   min-height: 120px;
   border-radius: var(--radius-lg);
-  border: 1px solid var(--cloud-dark);
-  background: var(--cloud-dark);
+  border: 1px solid var(--gray-5);
+  background: var(--gray-5);
   overflow: hidden;
   display: grid;
   place-items: center;

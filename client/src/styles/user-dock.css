@@ -10,15 +10,15 @@
   padding: var(--space-md);
   border-radius: var(--radius-lg);
   background: var(--nebula-light);
-  border: 1px solid var(--cloud-dark);
+  border: 1px solid var(--gray-5);
 }
 
 .user-dock-avatar {
   width: 2.5rem;
   height: 2.5rem;
   border-radius: var(--radius-md);
-  background: linear-gradient(135deg, var(--cloud-dark), var(--cloud));
-  color: var(--soft);
+  background: linear-gradient(135deg, var(--gray-5), var(--gray-6));
+  color: var(--gray-9);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -47,7 +47,7 @@
 .user-dock-name {
   font-size: 0.9rem;
   font-weight: 600;
-  color: var(--snow);
+  color: var(--gray-11);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -57,7 +57,7 @@
   margin-top: 2px;
   font-family: var(--font-mono);
   font-size: 0.7rem;
-  color: var(--mint);
+  color: var(--success);
   display: flex;
   align-items: center;
   gap: var(--space-xs);
@@ -73,13 +73,13 @@
 
 .user-dock-settings {
   position: relative;
-  width: 2rem;
-  height: 2rem;
+  width: 2.5rem;
+  height: 2.5rem;
   border-radius: var(--radius-full);
   padding: 0;
-  background: var(--cloud-dark);
+  background: var(--gray-5);
   border: none;
-  color: var(--soft);
+  color: var(--gray-9);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -103,6 +103,11 @@
   color: var(--gray-11);
   transform: none;
   box-shadow: none;
+}
+
+.user-dock-settings:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 /* ==========================================================================
@@ -130,7 +135,7 @@
   padding: var(--space-md);
   border-radius: var(--radius-md);
   background: var(--nebula-light);
-  border: 1px solid var(--cloud-dark);
+  border: 1px solid var(--gray-5);
   display: flex;
   flex-direction: column;
   gap: var(--space-xs);
@@ -156,7 +161,7 @@
 
 .invite-card-meta {
   font-size: 0.75rem;
-  color: var(--soft);
+  color: var(--gray-9);
   display: flex;
   align-items: flex-start;
   flex-direction: column;
@@ -164,7 +169,7 @@
 }
 
 .invite-badge-revoked {
-  color: var(--rose);
+  color: var(--danger);
   font-weight: 600;
   font-size: 0.7rem;
   text-transform: uppercase;
@@ -176,21 +181,27 @@
   padding: 2px var(--space-sm);
   font-size: 0.75rem;
   border-radius: var(--radius-sm);
-  border: 1px solid var(--cloud-dark);
-  background: var(--cloud-dark);
-  color: var(--soft);
+  border: 1px solid var(--gray-5);
+  background: var(--gray-5);
+  color: var(--gray-9);
   cursor: pointer;
   box-shadow: none;
 }
 
 .invite-copy-btn:hover,
 .invite-revoke-btn:hover {
-  background: var(--cloud);
-  color: var(--snow);
+  background: var(--gray-6);
+  color: var(--gray-11);
   box-shadow: none;
 }
 
+.invite-copy-btn:focus-visible,
+.invite-revoke-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
 .invite-revoke-btn {
-  color: var(--rose);
+  color: var(--danger);
   align-self: flex-start;
 }

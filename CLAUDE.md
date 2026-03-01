@@ -135,6 +135,38 @@ SolidJS SPA with WebRTC media handling.
 - Server bootstrap: `cp server/.env.example server/.env`, set `DATABASE_URL`, `JWT_SECRET`, `SERVER_PASSWORD`
 - Docker: `docker-compose.prod.yml` runs Postgres + Axum server + Caddy frontend
 
+## Design Context
+
+### Users
+Small, trusted communities — friend groups, gaming circles, clubs, classrooms. They're choosing Fireside specifically because they want a private, self-hosted space away from corporate platforms. They're often mid-activity (gaming, watching, working together), so the interface should feel ambient and unobtrusive, not demanding attention.
+
+### Brand Personality
+**Cozy, private, honest.** Fireside is the warm room you retreat to with people you trust. No ads, no surveillance, no dark patterns. It should feel handcrafted and direct — like software made by someone who uses it, not a product team chasing metrics.
+
+### Emotional Goals
+**Safe & intimate.** Users should feel like they're in a private space with trusted friends — relaxed, unhurried, and in control. The interface should reduce anxiety, not create it. Comfort over excitement. Familiarity over novelty.
+
+### Aesthetic Direction
+- **Reference**: Discord's UX familiarity, but warmer, more human, less corporate
+- **Anti-references**: Avoid Discord's cool blue-gray coldness, notification-anxiety patterns, and gamified badges. Avoid generic SaaS minimalism (all-white, blue primary, SF Pro).
+- **Theme**: Dark mode only, warm charcoal palette with brown undertones (not blue-gray). Single terracotta accent (`#c9956b`). Sparse decoration, subtle shadows, reduced border radius.
+- **Typography**: Geist for UI, IBM Plex Mono for code/metadata. Clear hierarchy without heaviness.
+
+### Design Tokens (key references)
+- Accent: `var(--accent)` (#c9956b terracotta) — use sparingly for primary actions and active states
+- Backgrounds: `var(--gray-2)` inputs, `var(--gray-3)` sidebar, `var(--gray-4)` hover/raised surfaces
+- Text: `var(--gray-12)` primary, `var(--gray-10)` secondary, `var(--gray-8)` muted
+- Semantic: `var(--success)` sage, `var(--warning)` gold, `var(--danger)` rose, `var(--info)` sky
+- Spacing: `--space-sm` (8px) through `--space-3xl` (40px)
+- Radius: `--radius-sm` (4px) through `--radius-xl` (10px) — intentionally small
+
+### Design Principles
+1. **Warmth over flash** — Prefer warm neutrals and earth tones over cool blues or trendy gradients. If it looks like a startup dashboard, it's wrong.
+2. **Ambient, not demanding** — UI elements should recede until needed. No pulsing notifications, no attention-grabbing chrome. The conversation is the product.
+3. **Honest interactions** — Every hover, focus, and click state should be clear and predictable. No decorative animations that obscure intent. Transitions are functional, not theatrical.
+4. **Small-scale craft** — This is software for small communities. Decisions should optimize for intimacy (readable names, human avatars, cozy spacing) not scale (infinite scroll optimizations, engagement metrics).
+5. **Follow the existing system** — CSS variables, spacing tokens, and component patterns are already established. Extend them; don't override them. New UI should look like it was always there.
+
 <!-- rtk-instructions v2 -->
 # RTK (Rust Token Killer) - Token-Optimized Commands
 
