@@ -388,8 +388,9 @@ export default function ChannelList() {
                     payloadType: 96,
                     clockRate: 90000,
                     parameters: {
+                        "level-asymmetry-allowed": 1,
                         "packetization-mode": 1,
-                        "profile-level-id": "640028",
+                        "profile-level-id": "42e01f",
                     },
                 },
             ],
