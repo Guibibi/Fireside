@@ -31,7 +31,7 @@
   font-size: 1.75rem;
   font-weight: 700;
   text-align: center;
-  color: var(--snow);
+  color: var(--gray-11);
   margin-bottom: var(--space-sm);
   letter-spacing: -0.02em;
 }
@@ -47,14 +47,14 @@
 
 .auth-subtitle {
   text-align: center;
-  color: var(--soft);
+  color: var(--gray-9);
   font-size: 0.85rem;
   margin-top: calc(-1 * var(--space-sm));
 }
 
 .auth-link {
   text-align: center;
-  color: var(--soft);
+  color: var(--gray-9);
   font-size: 0.85rem;
 }
 
@@ -62,7 +62,7 @@
   margin-top: calc(-1 * var(--space-md));
   margin-bottom: calc(-1 * var(--space-sm));
   font-size: 0.78rem;
-  color: var(--soft);
+  color: var(--gray-9);
 }
 
 .auth-link a {

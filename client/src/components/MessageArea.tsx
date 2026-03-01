@@ -1283,6 +1283,7 @@ export default function MessageArea() {
     <div class="message-area">
       <MessageTimeline
         activeChannel={activeChannel()}
+        hasActiveTarget={!!activeTarget()}
         loading={historyLoading()}
         error={historyError()}
         groupedMessages={groupedMessages()}

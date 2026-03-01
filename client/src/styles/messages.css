@@ -43,6 +43,43 @@
   min-height: 0;
   overflow-y: auto;
   padding: var(--space-xl);
+  display: flex;
+  flex-direction: column;
+}
+
+/* Empty state — no channel selected or channel with no messages */
+.messages-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-xs);
+  padding: var(--space-3xl);
+  text-align: center;
+  user-select: none;
+}
+
+.messages-empty-glyph {
+  font-family: var(--font-mono);
+  font-size: 2.25rem;
+  font-weight: 500;
+  color: var(--gray-5);
+  line-height: 1;
+  margin-bottom: var(--space-sm);
+}
+
+.messages-empty-label {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--gray-9);
+}
+
+.messages-empty-hint {
+  font-size: 0.82rem;
+  color: var(--gray-7);
+  max-width: 260px;
+  line-height: 1.55;
 }
 
 .messages-sticky-date {

@@ -82,7 +82,8 @@ export default function Register() {
   return (
     <div class="auth-page">
       <form class="auth-form" onSubmit={handleSubmit}>
-        <h1>Create Account</h1>
+        <h1>Join the server</h1>
+        <p class="auth-subtitle">You've been invited — create an account to join.</p>
         {error() && <p class="error">{error()}</p>}
         <input
           type="text"
@@ -124,7 +125,7 @@ export default function Register() {
           value={confirmPassword()}
           onInput={(e) => setConfirmPassword(e.currentTarget.value)}
         />
-        <button type="submit">Create account</button>
+        <button type="submit">Join</button>
         <p class="auth-link">
           Already have an account?{" "}
           <a href="/login" onClick={(e) => { e.preventDefault(); navigate("/login"); }}>

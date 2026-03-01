@@ -23,6 +23,7 @@ import { errorMessage } from "../utils/error";
 
 interface MessageTimelineProps {
   activeChannel: Channel | null | undefined;
+  hasActiveTarget: boolean;
   loading: boolean;
   error: unknown;
   groupedMessages: MessageDayGroup[];
@@ -385,7 +386,37 @@ export default function MessageTimeline(props: MessageTimelineProps) {
           error={props.error}
           errorText="Failed to load messages"
           empty={props.groupedMessages.length === 0}
-          emptyText="No messages yet"
+          emptyContent={
+            <div class="messages-empty">
+              <span class="messages-empty-glyph" aria-hidden="true">#</span>
+              <Show
+                when={props.hasActiveTarget}
+                fallback={
+                  <>
+                    <p class="messages-empty-label">No channel selected</p>
+                    <p class="messages-empty-hint">
+                      Pick a channel from the sidebar to start chatting.
+                    </p>
+                  </>
+                }
+              >
+                <Show
+                  when={props.activeChannel}
+                  fallback={
+                    <>
+                      <p class="messages-empty-label">No messages yet</p>
+                      <p class="messages-empty-hint">Say hello — start the conversation.</p>
+                    </>
+                  }
+                >
+                  <p class="messages-empty-label">{props.activeChannel?.name}</p>
+                  <p class="messages-empty-hint">
+                    No messages yet — say something to get the conversation started.
+                  </p>
+                </Show>
+              </Show>
+            </div>
+          }
         >
           <ul class="message-items" ref={props.onItemsRef}>
             <For each={props.groupedMessages}>
