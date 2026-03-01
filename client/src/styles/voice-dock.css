@@ -182,3 +182,11 @@
   font-size: 0.75rem;
   color: var(--danger);
 }
+
+@media (max-width: 620px) {
+  /* Increase voice action buttons to 44px touch targets on mobile */
+  .voice-dock-icon {
+    width: 2.75rem;
+    height: 2.75rem;
+  }
+}

@@ -582,6 +582,17 @@
   .message-attachment-preview-overlay {
     opacity: 1;
   }
+
+  /* Show message actions on touch (no hover available) */
+  .message-actions {
+    opacity: 1;
+  }
+
+  /* Show add-reaction button on touch */
+  .message-reaction-add {
+    opacity: 1;
+    pointer-events: auto;
+  }
 }
 
 .message-image-popup {
@@ -874,6 +885,22 @@
     left: calc(var(--space-xl) + 132px + calc(var(--space-md) * 3));
     right: calc(var(--space-xl) + 5.8rem + var(--space-sm));
     bottom: calc(var(--space-xl) + 3.2rem);
+  }
+}
+
+@media (max-width: 620px) {
+  /* Reaction chips: larger tap target on touch */
+  .message-reaction-chip,
+  .message-reaction-add {
+    padding: var(--space-xs) var(--space-md);
+    min-height: 1.875rem;
+  }
+
+  /* Mention picker: full-width on mobile (no sidebar offset) */
+  .mention-picker {
+    left: var(--space-md);
+    right: var(--space-md);
+    bottom: calc(var(--space-xl) + 4rem);
   }
 }
 

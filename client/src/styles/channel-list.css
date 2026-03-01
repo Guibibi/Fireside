@@ -366,3 +366,10 @@
   width: 14px;
   height: 14px;
 }
+
+@media (hover: none) {
+  /* Channel delete: show at reduced opacity on touch (no hover available) */
+  .channel-delete {
+    opacity: 0.35;
+  }
+}
