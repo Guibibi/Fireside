@@ -155,6 +155,11 @@ fn run_pipeline_windows(
 
     let bitrate_kbps = request.bitrate_kbps.unwrap_or(4000);
 
+    struct EncodedFrame {
+        timestamp_ms: u64,
+        data: Vec<u8>,
+    }
+
     // Phase 1: Start UDP sender (binds local socket).
     let sender = match RtpSender::new(&request.server_ip, request.server_port) {
         Ok(s) => s,
@@ -178,7 +183,7 @@ fn run_pipeline_windows(
 
     // Phase 2: Set up channels.
     let (frame_tx, mut frame_rx) = ring_channel::<CaptureFrame>(NonZeroUsize::new(1).unwrap());
-    let (encoded_tx, encoded_rx) = bounded::<Vec<u8>>(2);
+    let (encoded_tx, encoded_rx) = bounded::<EncodedFrame>(2);
 
     // Phase 3: Start capture loop.
     let stop_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -219,13 +224,28 @@ fn run_pipeline_windows(
             }
         };
 
+        // Start the stream with an IDR and refresh periodically for decoder recovery.
+        encoder.request_keyframe();
+        let mut next_periodic_keyframe = std::time::Instant::now() + Duration::from_secs(2);
+
         while let Ok(frame) = frame_rx.recv() {
+            if std::time::Instant::now() >= next_periodic_keyframe {
+                encoder.request_keyframe();
+                next_periodic_keyframe = std::time::Instant::now() + Duration::from_secs(2);
+            }
+
             match encoder.encode_frame(&frame) {
                 Ok(Some(nalu_data)) => {
                     metrics_encode
                         .frames_encoded
                         .fetch_add(1, Ordering::Relaxed);
-                    if encoded_tx.send(nalu_data).is_err() {
+                    if encoded_tx
+                        .send(EncodedFrame {
+                            timestamp_ms: frame.timestamp_ms,
+                            data: nalu_data,
+                        })
+                        .is_err()
+                    {
                         break;
                     }
                 }
@@ -244,11 +264,12 @@ fn run_pipeline_windows(
     let metrics_send = metrics.clone();
     let send_handle = std::thread::spawn(move || {
         let mut seq: u16 = 0;
-        let mut ts: u32 = 0;
         const SSRC: u32 = 0x12345678;
 
-        while let Ok(nalu_data) = encoded_rx.recv() {
-            let packets = super::rtp_packetizer::packetize(&nalu_data, seq, ts, SSRC);
+        while let Ok(encoded_frame) = encoded_rx.recv() {
+            let timestamp = (encoded_frame.timestamp_ms.saturating_mul(90)) as u32;
+            let packets =
+                super::rtp_packetizer::packetize(&encoded_frame.data, seq, timestamp, SSRC);
             let pkt_count = packets.len();
             for pkt in packets {
                 if let Err(e) = sender.send_packet(&pkt) {
@@ -257,8 +278,6 @@ fn run_pipeline_windows(
                 }
             }
             seq = seq.wrapping_add(pkt_count as u16);
-            // 90 kHz clock at ~30 fps: 90000/30 = 3000 ticks per frame.
-            ts = ts.wrapping_add(3000);
         }
     });
 

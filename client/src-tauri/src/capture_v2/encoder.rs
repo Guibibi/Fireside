@@ -1,7 +1,7 @@
 //! H264 software encoder using OpenH264 + dcv-color-primitives for BGRA→I420 conversion.
 
 use dcv_color_primitives as dcp;
-use openh264::encoder::{Encoder, EncoderConfig};
+use openh264::encoder::{Encoder, EncoderConfig, RateControlMode, UsageType};
 use openh264::formats::YUVSource;
 use openh264::OpenH264API;
 
@@ -54,6 +54,9 @@ impl H264Encoder {
     pub fn new(bitrate_kbps: u32) -> Result<Self, String> {
         let config = EncoderConfig::new()
             .set_bitrate_bps(bitrate_kbps * 1000)
+            .max_frame_rate(60.0)
+            .usage_type(UsageType::ScreenContentRealTime)
+            .rate_control_mode(RateControlMode::Bitrate)
             .enable_skip_frame(false);
 
         let encoder = Encoder::with_api_config(OpenH264API::from_source(), config)

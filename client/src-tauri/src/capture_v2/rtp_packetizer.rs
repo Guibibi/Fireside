@@ -37,53 +37,44 @@ fn make_header(seq: u16, timestamp: u32, ssrc: u32, marker: bool) -> [u8; RTP_HE
     h
 }
 
+fn find_start_code(data: &[u8], from: usize) -> Option<(usize, usize)> {
+    let mut i = from;
+    while i + 3 <= data.len() {
+        if data[i] == 0x00 && data[i + 1] == 0x00 {
+            if data[i + 2] == 0x01 {
+                return Some((i, 3));
+            }
+            if i + 4 <= data.len() && data[i + 2] == 0x00 && data[i + 3] == 0x01 {
+                return Some((i, 4));
+            }
+        }
+        i += 1;
+    }
+    None
+}
+
 /// Parse a contiguous H264 bitstream (with or without Annex-B start codes) into NAL units.
 fn parse_nal_units(data: &[u8]) -> Vec<&[u8]> {
+    // Some encoders emit a single NALU without Annex-B prefixes. Keep that path.
+    let Some((first_start, first_prefix_len)) = find_start_code(data, 0) else {
+        return if data.is_empty() { vec![] } else { vec![data] };
+    };
+
     let mut units = Vec::new();
-    let mut i = 0;
+    let mut nal_start = first_start + first_prefix_len;
 
-    while i < data.len() {
-        // Skip Annex-B start code (0x00 0x00 0x01 or 0x00 0x00 0x00 0x01).
-        if i + 3 <= data.len() && data[i] == 0x00 && data[i + 1] == 0x00 {
-            if data[i + 2] == 0x01 {
-                i += 3;
-            } else if i + 4 <= data.len() && data[i + 2] == 0x00 && data[i + 3] == 0x01 {
-                i += 4;
-            } else {
-                i += 1;
-                continue;
+    loop {
+        let Some((next_start, next_prefix_len)) = find_start_code(data, nal_start) else {
+            if nal_start < data.len() {
+                units.push(&data[nal_start..]);
             }
-        } else if i > 0 {
-            i += 1;
-            continue;
-        } else {
-            // No start code found — treat the whole buffer as one NAL unit.
-            units.push(data);
-            return units;
-        }
+            break;
+        };
 
-        // Find the end of this NAL unit (next start code or end of buffer).
-        let start = i;
-        while i < data.len() {
-            if i + 3 <= data.len() && data[i] == 0x00 && data[i + 1] == 0x00 {
-                if data[i + 2] == 0x01 {
-                    break;
-                } else if i + 4 <= data.len() && data[i + 2] == 0x00 && data[i + 3] == 0x01 {
-                    break;
-                }
-            }
-            i += 1;
+        if next_start > nal_start {
+            units.push(&data[nal_start..next_start]);
         }
-
-        // Trim trailing zero bytes that are part of the next start code prefix.
-        let mut end = i;
-        while end > start && data[end - 1] == 0x00 {
-            end -= 1;
-        }
-
-        if end > start {
-            units.push(&data[start..end]);
-        }
+        nal_start = next_start + next_prefix_len;
     }
 
     units
